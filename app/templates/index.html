@@ -40,12 +40,15 @@
                     <!-- Plugins -->
                     <div class="mb-3">
                         {{ form.plugins.label(class="form-label fw-bold") }}
-                        <div class="form-text mb-2">Select specific plugins to run, or leave empty to run all available plugins</div>
+                        <div class="form-text mb-2">
+                            All plugins are selected by default. Uncheck any you don't want to run.
+                            <button type="button" class="btn btn-sm btn-link p-0" onclick="toggleAllPlugins()">Toggle All</button>
+                        </div>
                         <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
                             {% if form.plugins.choices %}
                                 {% for value, label in form.plugins.choices %}
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="plugins" value="{{ value }}" id="plugin_{{ value }}">
+                                        <input class="form-check-input" type="checkbox" name="plugins" value="{{ value }}" id="plugin_{{ value }}" checked>
                                         <label class="form-check-label" for="plugin_{{ value }}">
                                             {{ label }}
                                         </label>
@@ -56,6 +59,42 @@
                             {% endif %}
                         </div>
                     </div>
+                    
+                    <script>
+                    function updateSubmitButtonState() {
+                        const checkboxes = document.querySelectorAll('input[name="plugins"]');
+                        const submitButton = document.querySelector('button[type="submit"], input[type="submit"]');
+                        const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+                        
+                        if (submitButton) {
+                            submitButton.disabled = !anyChecked;
+                            if (!anyChecked) {
+                                submitButton.classList.add('disabled');
+                                submitButton.title = 'Please select at least one plugin';
+                            } else {
+                                submitButton.classList.remove('disabled');
+                                submitButton.title = '';
+                            }
+                        }
+                    }
+                    
+                    function toggleAllPlugins() {
+                        const checkboxes = document.querySelectorAll('input[name="plugins"]');
+                        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                        checkboxes.forEach(cb => cb.checked = !allChecked);
+                        updateSubmitButtonState();
+                    }
+                    
+                    // Add event listeners to all plugin checkboxes
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const checkboxes = document.querySelectorAll('input[name="plugins"]');
+                        checkboxes.forEach(cb => {
+                            cb.addEventListener('change', updateSubmitButtonState);
+                        });
+                        // Initial state check
+                        updateSubmitButtonState();
+                    });
+                    </script>
 
                     <!-- Advanced Options -->
                     <div class="card mb-3">

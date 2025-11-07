@@ -43,12 +43,75 @@ def get_scan(scan_id):
 @bp.route('/scans/<int:scan_id>/status', methods=['GET'])
 def get_scan_status(scan_id):
     """API endpoint to get scan status and results (for polling)"""
+    from pathlib import Path
+    import json
+    
     scan = db.session.get(Scan, scan_id)
     if not scan:
         return jsonify({'error': 'Scan not found'}), 404
     
-    # Get all results for this scan
-    results = [result.to_dict() for result in scan.results.all()]
+    # Get all results for this scan from database
+    db_results = {result.plugin_name: result.to_dict() for result in scan.results.all()}
+    
+    # Build plugin status list based on file existence
+    plugin_statuses = []
+    output_dir = Path(scan.output_dir) if scan.output_dir else None
+    
+    # Determine which plugins to check
+    if scan.plugins:
+        # Specific plugins were selected
+        plugin_list = scan.plugin_list
+    elif output_dir and output_dir.exists():
+        # No specific plugins - scan all files in output directory
+        # Only look for files matching the pattern: plugin.json or plugin_processed.json
+        plugin_set = set()
+        for json_file in output_dir.glob("*.json"):
+            filename = json_file.name
+            # Skip non-plugin files
+            if filename == 'kast_report.json':
+                continue
+            # Only consider files ending with .json or _processed.json
+            if filename.endswith('_processed.json'):
+                plugin_name = filename[:-len('_processed.json')]
+            elif filename.endswith('.json') and not '_' in filename[:-5]:
+                # Only accept simple plugin.json files (no underscores before .json)
+                plugin_name = filename[:-len('.json')]
+            else:
+                # Skip files with other patterns (like subfinder_tmp.json)
+                continue
+            plugin_set.add(plugin_name)
+        plugin_list = sorted(plugin_set)
+    else:
+        # No plugins specified and no output directory yet
+        plugin_list = []
+    
+    # Check status for each plugin
+    for plugin in plugin_list:
+        plugin_status = {
+            'plugin_name': plugin,
+            'status': 'pending',
+            'findings_count': 0,
+            'executed_at': None
+        }
+        
+        # Check file existence to determine status
+        if output_dir and output_dir.exists():
+            processed_file = output_dir / f"{plugin}_processed.json"
+            raw_file = output_dir / f"{plugin}.json"
+            
+            if processed_file.exists():
+                # Plugin completed
+                plugin_status['status'] = 'completed'
+                # Get data from database if available
+                if plugin in db_results:
+                    plugin_status['findings_count'] = db_results[plugin]['findings_count']
+                    plugin_status['executed_at'] = db_results[plugin]['executed_at']
+            elif raw_file.exists():
+                # Plugin in progress
+                plugin_status['status'] = 'in_progress'
+            # else: status remains 'pending'
+        
+        plugin_statuses.append(plugin_status)
     
     response = {
         'scan_id': scan.id,
@@ -58,8 +121,8 @@ def get_scan_status(scan_id):
         'completed_at': scan.completed_at.isoformat() if scan.completed_at else None,
         'duration': scan.duration,
         'error_message': scan.error_message,
-        'results': results,
-        'results_count': len(results)
+        'results': plugin_statuses,
+        'results_count': len(plugin_statuses)
     }
     
     return jsonify(response)

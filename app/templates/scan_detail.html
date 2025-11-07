@@ -66,13 +66,19 @@ function updateScanStatus() {
 
 function updatePluginResults(results) {
     const tbody = document.getElementById('plugin-results-tbody');
+    const resultsSection = document.getElementById('plugin-results-section');
+    
     if (!tbody) {
-        // Create results table if it doesn't exist
-        const resultsSection = document.getElementById('plugin-results-section');
+        // Show results section if it exists
         if (resultsSection) {
             resultsSection.style.display = 'block';
         }
         return;
+    }
+    
+    // Show results section
+    if (resultsSection) {
+        resultsSection.style.display = 'block';
     }
     
     // Clear existing rows
@@ -83,17 +89,30 @@ function updatePluginResults(results) {
         const row = document.createElement('tr');
         
         let statusBadge = 'bg-secondary';
-        if (result.status === 'success') {
+        let statusText = 'Pending';
+        
+        if (result.status === 'completed') {
             statusBadge = 'bg-success';
+            statusText = 'Completed';
+        } else if (result.status === 'in_progress') {
+            statusBadge = 'bg-primary';
+            statusText = 'In Progress';
+        } else if (result.status === 'pending') {
+            statusBadge = 'bg-secondary';
+            statusText = 'Pending';
+        } else if (result.status === 'success') {
+            statusBadge = 'bg-success';
+            statusText = 'Success';
         } else if (result.status === 'fail') {
             statusBadge = 'bg-danger';
+            statusText = 'Failed';
         }
         
         const executedTime = result.executed_at ? new Date(result.executed_at).toLocaleTimeString() : 'N/A';
         
         row.innerHTML = `
             <td><strong>${result.plugin_name}</strong></td>
-            <td><span class="badge ${statusBadge}">${result.status.charAt(0).toUpperCase() + result.status.slice(1)}</span></td>
+            <td><span class="badge ${statusBadge}">${statusText}</span></td>
             <td>${result.findings_count > 0 ? `<span class="badge bg-info">${result.findings_count}</span>` : '<span class="text-muted">0</span>'}</td>
             <td><small>${executedTime}</small></td>
         `;
@@ -246,7 +265,7 @@ window.addEventListener('beforeunload', stopPolling);
         </div>
 
         <!-- Plugin Results -->
-        <div id="plugin-results-section" class="card shadow" {% if not results %}style="display: none;"{% endif %}>
+        <div id="plugin-results-section" class="card shadow">
             <div class="card-header bg-secondary text-white">
                 <h5 class="mb-0"><i class="bi bi-puzzle"></i> Plugin Results</h5>
             </div>
@@ -264,25 +283,34 @@ window.addEventListener('beforeunload', stopPolling);
                         <tbody id="plugin-results-tbody">
                             {% for result in results %}
                                 <tr>
-                                    <td><strong>{{ result.plugin_name }}</strong></td>
+                                    <td><strong>{{ result.plugin_name if result is mapping else result['plugin_name'] }}</strong></td>
                                     <td>
-                                        {% if result.status == 'success' %}
+                                        {% set status = result.status if result is mapping else result['status'] %}
+                                        {% if status == 'completed' %}
+                                            <span class="badge bg-success">Completed</span>
+                                        {% elif status == 'in_progress' %}
+                                            <span class="badge bg-primary">In Progress</span>
+                                        {% elif status == 'pending' %}
+                                            <span class="badge bg-secondary">Pending</span>
+                                        {% elif status == 'success' %}
                                             <span class="badge bg-success">Success</span>
-                                        {% elif result.status == 'fail' %}
+                                        {% elif status == 'fail' %}
                                             <span class="badge bg-danger">Failed</span>
                                         {% else %}
-                                            <span class="badge bg-secondary">{{ result.status }}</span>
+                                            <span class="badge bg-secondary">{{ status }}</span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {% if result.findings_count > 0 %}
-                                            <span class="badge bg-info">{{ result.findings_count }}</span>
+                                        {% set findings = result.findings_count if result is mapping else result['findings_count'] %}
+                                        {% if findings > 0 %}
+                                            <span class="badge bg-info">{{ findings }}</span>
                                         {% else %}
                                             <span class="text-muted">0</span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <small>{{ result.executed_at.strftime('%H:%M:%S') if result.executed_at else 'N/A' }}</small>
+                                        {% set executed = result.executed_at if result is mapping else result['executed_at'] %}
+                                        <small>{{ executed.strftime('%H:%M:%S') if executed else 'N/A' }}</small>
                                     </td>
                                 </tr>
                             {% endfor %}

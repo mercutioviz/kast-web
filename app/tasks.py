@@ -36,8 +36,13 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         if not scan:
             return {'success': False, 'error': 'Scan not found'}
         
-        # Update scan status
+        # Generate output directory name
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        output_dir = Path(current_app.config['KAST_RESULTS_DIR']) / f"{target}-{timestamp}"
+        
+        # Update scan status and output directory BEFORE starting the scan
         scan.status = 'running'
+        scan.output_dir = str(output_dir)
         db.session.commit()
         
         # Build command
@@ -56,9 +61,6 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         if dry_run:
             cmd.append('--dry-run')
         
-        # Generate output directory name
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_dir = Path(current_app.config['KAST_RESULTS_DIR']) / f"{target}-{timestamp}"
         cmd.extend(['-o', str(output_dir)])
         
         current_app.logger.info(f"Executing KAST command: {' '.join(cmd)}")

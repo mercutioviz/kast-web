@@ -50,8 +50,68 @@ def detail(scan_id):
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
     
-    # Get scan results
-    results = scan.results.all()
+    # Get scan results from database
+    db_results = {result.plugin_name: result for result in scan.results.all()}
+    
+    # Build plugin status list based on file existence
+    plugin_statuses = []
+    output_dir = Path(scan.output_dir) if scan.output_dir else None
+    
+    # Determine which plugins to check
+    if scan.plugins:
+        # Specific plugins were selected
+        plugin_list = scan.plugin_list
+    elif output_dir and output_dir.exists():
+        # No specific plugins - scan all files in output directory
+        # Only look for files matching the pattern: plugin.json or plugin_processed.json
+        plugin_set = set()
+        for json_file in output_dir.glob("*.json"):
+            filename = json_file.name
+            # Skip non-plugin files
+            if filename == 'kast_report.json':
+                continue
+            # Only consider files ending with .json or _processed.json
+            if filename.endswith('_processed.json'):
+                plugin_name = filename[:-len('_processed.json')]
+            elif filename.endswith('.json') and not '_' in filename[:-5]:
+                # Only accept simple plugin.json files (no underscores before .json)
+                plugin_name = filename[:-len('.json')]
+            else:
+                # Skip files with other patterns (like subfinder_tmp.json)
+                continue
+            plugin_set.add(plugin_name)
+        plugin_list = sorted(plugin_set)
+    else:
+        # No plugins specified and no output directory yet
+        plugin_list = []
+    
+    # Check status for each plugin
+    for plugin in plugin_list:
+        plugin_data = {
+            'plugin_name': plugin,
+            'status': 'pending',
+            'findings_count': 0,
+            'executed_at': None
+        }
+        
+        # Check file existence to determine status
+        if output_dir and output_dir.exists():
+            processed_file = output_dir / f"{plugin}_processed.json"
+            raw_file = output_dir / f"{plugin}.json"
+            
+            if processed_file.exists():
+                # Plugin completed
+                plugin_data['status'] = 'completed'
+                # Get data from database if available
+                if plugin in db_results:
+                    plugin_data['findings_count'] = db_results[plugin].findings_count
+                    plugin_data['executed_at'] = db_results[plugin].executed_at
+            elif raw_file.exists():
+                # Plugin in progress
+                plugin_data['status'] = 'in_progress'
+            # else: status remains 'pending'
+        
+        plugin_statuses.append(plugin_data)
     
     # Check if HTML report exists
     report_path = None
@@ -63,7 +123,7 @@ def detail(scan_id):
     return render_template(
         'scan_detail.html',
         scan=scan,
-        results=results,
+        results=plugin_statuses,
         report_path=report_path,
         format_duration=format_duration
     )
