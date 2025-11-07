@@ -4,6 +4,7 @@ from app.models import Scan, ScanResult
 from app.utils import format_duration
 from pathlib import Path
 import os
+import shutil
 
 bp = Blueprint('scans', __name__, url_prefix='/scans')
 
@@ -137,12 +138,26 @@ def delete(scan_id):
         return redirect(url_for('scans.list'))
     
     target = scan.target
+    output_dir = scan.output_dir
     
     # Delete from database (cascade will delete results)
     db.session.delete(scan)
     db.session.commit()
     
-    flash(f'Scan for {target} deleted successfully', 'success')
+    # Delete output directory from disk if it exists
+    if output_dir:
+        output_path = Path(output_dir)
+        if output_path.exists() and output_path.is_dir():
+            try:
+                shutil.rmtree(output_path)
+                flash(f'Scan for {target} and its output directory deleted successfully', 'success')
+            except Exception as e:
+                flash(f'Scan for {target} deleted from database, but failed to delete output directory: {str(e)}', 'warning')
+        else:
+            flash(f'Scan for {target} deleted successfully', 'success')
+    else:
+        flash(f'Scan for {target} deleted successfully', 'success')
+    
     return redirect(url_for('scans.list'))
 
 @bp.route('/<int:scan_id>/report')

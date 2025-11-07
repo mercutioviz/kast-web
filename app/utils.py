@@ -179,17 +179,41 @@ def parse_scan_results(scan_id, output_dir):
                 
                 plugin_name = data.get('plugin_name', json_file.stem.replace('_processed', ''))
                 
-                # Create scan result entry
-                result = ScanResult(
-                    scan_id=scan_id,
-                    plugin_name=plugin_name,
-                    status=data.get('disposition', 'unknown'),
-                    findings_count=len(data.get('findings', [])),
-                    processed_output_path=str(json_file),
-                    executed_at=datetime.utcnow()
-                )
+                # Count findings correctly - look at results array within findings
+                findings_data = data.get('findings', {})
+                if isinstance(findings_data, dict):
+                    # findings is a dict with a 'results' key containing the actual findings
+                    findings_count = len(findings_data.get('results', []))
+                else:
+                    # fallback: findings is a list
+                    findings_count = len(findings_data) if isinstance(findings_data, list) else 0
                 
-                db.session.add(result)
+                # Get file modification time as executed_at
+                file_mtime = datetime.fromtimestamp(json_file.stat().st_mtime)
+                
+                # Check if result already exists
+                existing_result = ScanResult.query.filter_by(
+                    scan_id=scan_id,
+                    plugin_name=plugin_name
+                ).first()
+                
+                if existing_result:
+                    # Update existing result
+                    existing_result.status = data.get('disposition', 'unknown')
+                    existing_result.findings_count = findings_count
+                    existing_result.processed_output_path = str(json_file)
+                    existing_result.executed_at = file_mtime
+                else:
+                    # Create new scan result entry
+                    result = ScanResult(
+                        scan_id=scan_id,
+                        plugin_name=plugin_name,
+                        status=data.get('disposition', 'unknown'),
+                        findings_count=findings_count,
+                        processed_output_path=str(json_file),
+                        executed_at=file_mtime
+                    )
+                    db.session.add(result)
             
             except Exception as e:
                 current_app.logger.error(f"Error parsing {json_file}: {str(e)}")

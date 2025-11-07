@@ -45,10 +45,16 @@ def get_scan_status(scan_id):
     """API endpoint to get scan status and results (for polling)"""
     from pathlib import Path
     import json
+    from datetime import datetime
     
     scan = db.session.get(Scan, scan_id)
     if not scan:
         return jsonify({'error': 'Scan not found'}), 404
+    
+    # Parse any new results during the scan
+    if scan.status == 'running' and scan.output_dir:
+        from app.tasks import parse_scan_results
+        parse_scan_results(scan_id, scan.output_dir)
     
     # Get all results for this scan from database
     db_results = {result.plugin_name: result.to_dict() for result in scan.results.all()}
