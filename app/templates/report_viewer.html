@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Report - {{ scan.target }} - KAST Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-file-earmark-text"></i> Scan Report: {{ scan.target }}</h2>
+    <div>
+        <a href="{{ url_for('scans.download_report', scan_id=scan.id) }}" class="btn btn-success">
+            <i class="bi bi-download"></i> Download
+        </a>
+        <a href="{{ url_for('scans.detail', scan_id=scan.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Details
+        </a>
+    </div>
+</div>
+
+<div class="card shadow">
+    <div class="card-body p-0">
+        <!-- Embedded Report -->
+        <div class="report-container">
+            {{ report_html|safe }}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-container {
+        padding: 20px;
+        background: white;
+    }
+    /* Override any conflicting styles from the embedded report */
+    .report-container * {
+        max-width: 100%;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Home - KAST Web{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-play-circle"></i> New Scan</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.create_scan') }}">
+                    {{ form.hidden_tag() }}
+                    
+                    <!-- Target Domain -->
+                    <div class="mb-3">
+                        {{ form.target.label(class="form-label fw-bold") }}
+                        {{ form.target(class="form-control form-control-lg") }}
+                        {% if form.target.errors %}
+                            <div class="text-danger small mt-1">
+                                {% for error in form.target.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">Enter the target domain to scan (e.g., example.com)</div>
+                    </div>
+
+                    <!-- Scan Mode -->
+                    <div class="mb-3">
+                        {{ form.scan_mode.label(class="form-label fw-bold") }}
+                        {{ form.scan_mode(class="form-select") }}
+                        <div class="form-text">
+                            <strong>Passive:</strong> Non-intrusive reconnaissance only<br>
+                            <strong>Active:</strong> Direct interaction with target (requires permission)
+                        </div>
+                    </div>
+
+                    <!-- Plugins -->
+                    <div class="mb-3">
+                        {{ form.plugins.label(class="form-label fw-bold") }}
+                        <div class="form-text mb-2">Select specific plugins to run, or leave empty to run all available plugins</div>
+                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                            {% if form.plugins.choices %}
+                                {% for value, label in form.plugins.choices %}
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="plugins" value="{{ value }}" id="plugin_{{ value }}">
+                                        <label class="form-check-label" for="plugin_{{ value }}">
+                                            {{ label }}
+                                        </label>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted mb-0">No plugins available. Make sure KAST CLI is properly configured.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Advanced Options -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <a class="text-decoration-none" data-bs-toggle="collapse" href="#advancedOptions">
+                                <i class="bi bi-gear"></i> Advanced Options
+                            </a>
+                        </div>
+                        <div id="advancedOptions" class="collapse">
+                            <div class="card-body">
+                                <div class="form-check mb-2">
+                                    {{ form.parallel(class="form-check-input") }}
+                                    {{ form.parallel.label(class="form-check-label") }}
+                                    <div class="form-text">Run plugins simultaneously (faster but more resource-intensive)</div>
+                                </div>
+                                
+                                <div class="form-check mb-2">
+                                    {{ form.verbose(class="form-check-input") }}
+                                    {{ form.verbose.label(class="form-check-label") }}
+                                    <div class="form-text">Enable detailed logging output</div>
+                                </div>
+                                
+                                <div class="form-check">
+                                    {{ form.dry_run(class="form-check-input") }}
+                                    {{ form.dry_run.label(class="form-check-label") }}
+                                    <div class="form-text">Preview what would be done without executing</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary btn-lg") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Scans Sidebar -->
+    <div class="col-lg-4">
+        <div class="card shadow">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Scans</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_scans %}
+                    <div class="list-group list-group-flush">
+                        {% for scan in recent_scans %}
+                            <a href="{{ url_for('scans.detail', scan_id=scan.id) }}" class="list-group-item list-group-item-action">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">{{ scan.target }}</h6>
+                                    <small>
+                                        {% if scan.status == 'completed' %}
+                                            <span class="badge bg-success">Completed</span>
+                                        {% elif scan.status == 'running' %}
+                                            <span class="badge bg-primary">Running</span>
+                                        {% elif scan.status == 'failed' %}
+                                            <span class="badge bg-danger">Failed</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ scan.status }}</span>
+                                        {% endif %}
+                                    </small>
+                                </div>
+                                <small class="text-muted">
+                                    {{ scan.started_at.strftime('%Y-%m-%d %H:%M') }} | {{ scan.scan_mode }}
+                                </small>
+                            </a>
+                        {% endfor %}
+                    </div>
+                    <div class="card-footer text-center">
+                        <a href="{{ url_for('scans.list') }}" class="btn btn-sm btn-outline-secondary">
+                            View All Scans <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="p-3 text-center text-muted">
+                        <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                        <p class="mt-2">No scans yet</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Quick Info -->
+        <div class="card shadow mt-3">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle"></i> Quick Info</h6>
+                <ul class="small mb-0">
+                    <li>Scans are executed using the KAST CLI tool</li>
+                    <li>Results are stored in <code>~/kast_results/</code></li>
+                    <li>HTML reports are generated automatically</li>
+                    <li>Database is stored in <code>~/kast-web/db/</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

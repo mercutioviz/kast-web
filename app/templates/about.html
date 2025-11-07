@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}About - KAST Web{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0"><i class="bi bi-info-circle"></i> About KAST Web</h3>
+            </div>
+            <div class="card-body">
+                <h4>What is KAST Web?</h4>
+                <p>
+                    KAST Web is a web-based interface for the <strong>Kali Automated Scan Tool (KAST)</strong>, 
+                    providing an intuitive way to configure, execute, and manage security scans through your browser.
+                </p>
+
+                <h4 class="mt-4">Features</h4>
+                <ul>
+                    <li><strong>Easy Scan Configuration:</strong> Web form interface for setting up scans</li>
+                    <li><strong>Plugin Selection:</strong> Choose which security tools to run</li>
+                    <li><strong>Scan History:</strong> Track all your scans with filtering and search</li>
+                    <li><strong>Report Viewing:</strong> View and download HTML reports directly in the browser</li>
+                    <li><strong>Scan Management:</strong> Re-run or delete scans with ease</li>
+                    <li><strong>RESTful API:</strong> Programmatic access to scan data</li>
+                </ul>
+
+                <h4 class="mt-4">Technology Stack</h4>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Backend</h6>
+                        <ul>
+                            <li>Flask (Python web framework)</li>
+                            <li>SQLAlchemy (Database ORM)</li>
+                            <li>SQLite (Database)</li>
+                            <li>WTForms (Form handling)</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Frontend</h6>
+                        <ul>
+                            <li>Bootstrap 5 (UI framework)</li>
+                            <li>Bootstrap Icons</li>
+                            <li>Jinja2 (Templating)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4 class="mt-4">Architecture</h4>
+                <p>
+                    KAST Web is built as a separate project from the core KAST CLI tool, providing a clean 
+                    separation of concerns. The web interface communicates with KAST by executing it as a 
+                    subprocess and parsing the results.
+                </p>
+
+                <div class="alert alert-info">
+                    <h6><i class="bi bi-folder"></i> Project Structure</h6>
+                    <ul class="mb-0 small">
+                        <li><strong>KAST CLI:</strong> <code>/opt/kast/kast/</code></li>
+                        <li><strong>KAST Web:</strong> <code>/opt/kast-web/</code></li>
+                        <li><strong>Database:</strong> <code>~/kast-web/db/kast.db</code></li>
+                        <li><strong>Scan Results:</strong> <code>~/kast_results/</code></li>
+                    </ul>
+                </div>
+
+                <h4 class="mt-4">Future Enhancements</h4>
+                <p>Planned features for future releases:</p>
+                <ul>
+                    <li>User authentication and multi-user support</li>
+                    <li>Asynchronous scan execution with Celery</li>
+                    <li>Real-time progress updates via WebSockets</li>
+                    <li>Scan scheduling and automation</li>
+                    <li>Scan comparison tools</li>
+                    <li>Email notifications</li>
+                    <li>Advanced analytics and dashboards</li>
+                </ul>
+
+                <h4 class="mt-4">API Access</h4>
+                <p>KAST Web provides a RESTful API for programmatic access:</p>
+                <ul class="small">
+                    <li><code>GET /api/scans</code> - List all scans</li>
+                    <li><code>GET /api/scans/{id}</code> - Get scan details</li>
+                    <li><code>GET /api/plugins</code> - List available plugins</li>
+                    <li><code>GET /api/stats</code> - Get scan statistics</li>
+                </ul>
+
+                <div class="text-center mt-4">
+                    <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg">
+                        <i class="bi bi-play-circle"></i> Start Scanning
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
