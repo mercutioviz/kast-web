@@ -40,6 +40,30 @@ def get_scan(scan_id):
         'results': results
     })
 
+@bp.route('/scans/<int:scan_id>/status', methods=['GET'])
+def get_scan_status(scan_id):
+    """API endpoint to get scan status and results (for polling)"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return jsonify({'error': 'Scan not found'}), 404
+    
+    # Get all results for this scan
+    results = [result.to_dict() for result in scan.results.all()]
+    
+    response = {
+        'scan_id': scan.id,
+        'status': scan.status,
+        'target': scan.target,
+        'started_at': scan.started_at.isoformat() if scan.started_at else None,
+        'completed_at': scan.completed_at.isoformat() if scan.completed_at else None,
+        'duration': scan.duration,
+        'error_message': scan.error_message,
+        'results': results,
+        'results_count': len(results)
+    }
+    
+    return jsonify(response)
+
 @bp.route('/plugins', methods=['GET'])
 def get_plugins():
     """API endpoint to get available plugins"""

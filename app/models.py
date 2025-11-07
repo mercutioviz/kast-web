@@ -16,6 +16,7 @@ class Scan(db.Model):
     output_dir = db.Column(db.String(500))
     config_json = db.Column(db.Text)  # JSON string of full configuration
     error_message = db.Column(db.Text)
+    celery_task_id = db.Column(db.String(255))  # Celery task ID for tracking
     started_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     completed_at = db.Column(db.DateTime)
     
@@ -53,6 +54,7 @@ class Scan(db.Model):
             'status': self.status,
             'output_dir': self.output_dir,
             'error_message': self.error_message,
+            'celery_task_id': self.celery_task_id,
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'duration': self.duration

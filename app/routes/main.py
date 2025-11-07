@@ -2,7 +2,8 @@ from flask import Blueprint, render_template, redirect, url_for, flash, current_
 from app import db
 from app.models import Scan
 from app.forms import ScanConfigForm
-from app.utils import get_available_plugins, execute_kast_scan
+from app.utils import get_available_plugins
+from app.tasks import execute_scan_task
 import json
 from datetime import datetime
 
@@ -56,10 +57,9 @@ def create_scan():
         
         current_app.logger.info(f"Created scan {scan.id} for target {scan.target}")
         
-        # Execute scan synchronously (for MVP)
-        # In Phase 3, this would be sent to Celery
+        # Execute scan asynchronously using Celery
         try:
-            result = execute_kast_scan(
+            task = execute_scan_task.delay(
                 scan.id,
                 scan.target,
                 scan.scan_mode,
@@ -69,14 +69,15 @@ def create_scan():
                 dry_run=scan.dry_run
             )
             
-            if result['success']:
-                flash(f'Scan completed successfully for {scan.target}', 'success')
-            else:
-                flash(f'Scan failed: {result.get("error", "Unknown error")}', 'danger')
+            # Store task ID for tracking
+            scan.celery_task_id = task.id
+            db.session.commit()
+            
+            flash(f'Scan started for {scan.target}. Results will update automatically.', 'success')
         
         except Exception as e:
-            current_app.logger.exception(f"Error executing scan: {str(e)}")
-            flash(f'Error executing scan: {str(e)}', 'danger')
+            current_app.logger.exception(f"Error starting scan: {str(e)}")
+            flash(f'Error starting scan: {str(e)}', 'danger')
         
         return redirect(url_for('scans.detail', scan_id=scan.id))
     
