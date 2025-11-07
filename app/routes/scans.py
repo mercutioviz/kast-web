@@ -205,6 +205,35 @@ def download_report(scan_id):
         download_name=f'kast_report_{scan.target}_{scan.id}.html'
     )
 
+@bp.route('/<int:scan_id>/<path:filename>')
+def serve_scan_file(scan_id, filename):
+    """Serve static files from scan output directory (e.g., kast_style.css)"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan or not scan.output_dir:
+        abort(404)
+    
+    # Security: only allow specific file types
+    allowed_extensions = {'.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg'}
+    file_path = Path(scan.output_dir) / filename
+    
+    # Check file extension
+    if file_path.suffix.lower() not in allowed_extensions:
+        abort(403)
+    
+    # Prevent directory traversal
+    try:
+        file_path = file_path.resolve()
+        output_dir = Path(scan.output_dir).resolve()
+        if not str(file_path).startswith(str(output_dir)):
+            abort(403)
+    except Exception:
+        abort(403)
+    
+    if not file_path.exists() or not file_path.is_file():
+        abort(404)
+    
+    return send_file(file_path)
+
 @bp.route('/<int:scan_id>/rerun', methods=['POST'])
 def rerun(scan_id):
     """Re-run a scan with the same configuration"""

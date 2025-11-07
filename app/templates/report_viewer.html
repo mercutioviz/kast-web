@@ -35,5 +35,22 @@
     .report-container * {
         max-width: 100%;
     }
+    /* Tree view expand/collapse styles */
+    .tree-collapsed > .tree-children {
+        display: none;
+    }
+    .tree-toggle {
+        cursor: pointer;
+        user-select: none;
+        font-weight: bold;
+        margin-right: 5px;
+    }
+    .tree-toggle:hover {
+        color: #0d6efd;
+    }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/report-viewer.js') }}"></script>
 {% endblock %}
