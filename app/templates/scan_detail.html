@@ -340,6 +340,15 @@ window.addEventListener('beforeunload', stopPolling);
                     <hr>
                 {% endif %}
                 
+                {% if scan.output_dir %}
+                    <a href="{{ url_for('scans.list_files', scan_id=scan.id) }}" 
+                       target="_blank"
+                       class="btn btn-outline-primary w-100 mb-2">
+                        <i class="bi bi-folder2-open"></i> View Output Files
+                    </a>
+                    <hr>
+                {% endif %}
+                
                 <form method="POST" action="{{ url_for('scans.rerun', scan_id=scan.id) }}" 
                       onsubmit="return confirm('Re-run this scan with the same configuration?');">
                     <button type="submit" class="btn btn-info w-100 mb-2">

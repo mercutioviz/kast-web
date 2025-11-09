@@ -234,6 +234,105 @@ def serve_scan_file(scan_id, filename):
     
     return send_file(file_path)
 
+@bp.route('/<int:scan_id>/files')
+def list_files(scan_id):
+    """Display directory listing of scan output files"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    if not scan.output_dir:
+        flash('No output directory found for this scan', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    output_path = Path(scan.output_dir)
+    
+    if not output_path.exists():
+        flash('Output directory does not exist', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    # Collect all files and directories
+    files = []
+    directories = []
+    
+    try:
+        for item in sorted(output_path.iterdir()):
+            item_stat = item.stat()
+            item_info = {
+                'name': item.name,
+                'size': item_stat.st_size if item.is_file() else 0,
+                'modified': item_stat.st_mtime,
+                'is_dir': item.is_dir()
+            }
+            
+            if item.is_dir():
+                directories.append(item_info)
+            else:
+                files.append(item_info)
+    except Exception as e:
+        flash(f'Error reading directory: {str(e)}', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    return render_template(
+        'scan_files.html',
+        scan=scan,
+        files=files,
+        directories=directories,
+        output_dir=scan.output_dir
+    )
+
+@bp.route('/<int:scan_id>/view-file/<path:filename>')
+def view_file(scan_id, filename):
+    """View a file from the scan output directory"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan or not scan.output_dir:
+        abort(404)
+    
+    file_path = Path(scan.output_dir) / filename
+    
+    # Prevent directory traversal
+    try:
+        file_path = file_path.resolve()
+        output_dir = Path(scan.output_dir).resolve()
+        if not str(file_path).startswith(str(output_dir)):
+            abort(403)
+    except Exception:
+        abort(403)
+    
+    if not file_path.exists() or not file_path.is_file():
+        abort(404)
+    
+    # Determine MIME type based on file extension
+    mime_type = None
+    extension = file_path.suffix.lower()
+    
+    if extension == '.json':
+        mime_type = 'application/json'
+    elif extension == '.html':
+        mime_type = 'text/html'
+    elif extension == '.txt':
+        mime_type = 'text/plain'
+    elif extension == '.css':
+        mime_type = 'text/css'
+    elif extension == '.js':
+        mime_type = 'application/javascript'
+    elif extension == '.xml':
+        mime_type = 'application/xml'
+    elif extension in ['.jpg', '.jpeg']:
+        mime_type = 'image/jpeg'
+    elif extension == '.png':
+        mime_type = 'image/png'
+    elif extension == '.gif':
+        mime_type = 'image/gif'
+    elif extension == '.svg':
+        mime_type = 'image/svg+xml'
+    else:
+        # Default to plain text for unknown types
+        mime_type = 'text/plain'
+    
+    return send_file(file_path, mimetype=mime_type)
+
 @bp.route('/<int:scan_id>/rerun', methods=['POST'])
 def rerun(scan_id):
     """Re-run a scan with the same configuration"""
