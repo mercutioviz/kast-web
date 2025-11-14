@@ -1,0 +1,45 @@
+[Unit]
+Description=KAST Web Application (Gunicorn)
+After=network.target redis.service postgresql.service
+Wants=redis.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+RuntimeDirectory=kast-web
+WorkingDirectory=/opt/kast-web
+Environment="PATH=/opt/kast-web/venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/opt/kast-web/.env
+
+# Create necessary directories
+ExecStartPre=/bin/mkdir -p /var/log/kast-web
+ExecStartPre=/bin/mkdir -p /var/run/kast-web
+ExecStartPre=/bin/chown www-data:www-data /var/log/kast-web
+ExecStartPre=/bin/chown www-data:www-data /var/run/kast-web
+
+# Start Gunicorn
+ExecStart=/opt/kast-web/venv/bin/gunicorn \
+    --config /opt/kast-web/gunicorn_config.py \
+    wsgi:app
+
+# Restart policy
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=5
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/kast-web /var/log/kast-web /var/run/kast-web /home/kali/kast-web /home/kali/kast_results
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

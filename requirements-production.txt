@@ -1,0 +1,33 @@
+# KAST Web Production Requirements
+# Install with: pip install -r requirements-production.txt
+
+# Core Flask dependencies
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-WTF==1.2.1
+WTForms==3.1.1
+python-dotenv==1.0.0
+celery==5.3.4
+redis==5.0.1
+Flask-SocketIO==5.3.5
+
+# Production WSGI server
+gunicorn==21.2.0
+
+# Database drivers (uncomment as needed)
+# PostgreSQL
+# psycopg2-binary==2.9.9
+
+# MySQL/MariaDB
+# PyMySQL==1.1.0
+
+# Performance and monitoring
+gevent==23.9.1
+eventlet==0.33.3
+
+# Security
+cryptography==41.0.7
+
+# Optional: Production monitoring and error tracking
+# sentry-sdk[flask]==1.39.1
+# newrelic==9.4.0
