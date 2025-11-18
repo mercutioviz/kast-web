@@ -106,9 +106,22 @@
                         <div id="advancedOptions" class="collapse">
                             <div class="card-body">
                                 <div class="form-check mb-2">
-                                    {{ form.parallel(class="form-check-input") }}
+                                    {{ form.parallel(class="form-check-input", id="parallelCheckbox") }}
                                     {{ form.parallel.label(class="form-check-label") }}
                                     <div class="form-text">Run plugins simultaneously (faster but more resource-intensive)</div>
+                                </div>
+                                
+                                <div class="mb-3" id="maxWorkersField">
+                                    {{ form.max_workers.label(class="form-label") }}
+                                    {{ form.max_workers(class="form-control") }}
+                                    {% if form.max_workers.errors %}
+                                        <div class="text-danger small mt-1">
+                                            {% for error in form.max_workers.errors %}
+                                                {{ error }}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <div class="form-text">Maximum number of workers when running in parallel mode (1-32)</div>
                                 </div>
                                 
                                 <div class="form-check mb-2">

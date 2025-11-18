@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField
-from wtforms.validators import DataRequired, Regexp, Length
+from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField
+from wtforms.validators import DataRequired, Regexp, Length, NumberRange
 from wtforms.widgets import CheckboxInput, ListWidget
 
 class MultiCheckboxField(SelectMultipleField):
@@ -57,6 +57,24 @@ class ScanConfigForm(FlaskForm):
         'Dry run (preview only)',
         default=False,
         render_kw={'class': 'form-check-input'}
+    )
+    
+    max_workers = IntegerField(
+        'Max Workers',
+        default=5,
+        validators=[
+            NumberRange(
+                min=1, 
+                max=32, 
+                message='Max workers must be between 1 and 32'
+            )
+        ],
+        render_kw={
+            'class': 'form-control',
+            'min': '1',
+            'max': '32',
+            'placeholder': '5'
+        }
     )
     
     submit = SubmitField('Start Scan', render_kw={'class': 'btn btn-primary btn-lg'})

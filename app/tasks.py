@@ -12,7 +12,7 @@ from app.models import Scan, ScanResult
 
 
 @celery.task(bind=True)
-def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=False, verbose=False, dry_run=False):
+def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=False, verbose=False, dry_run=False, max_workers=5):
     """
     Celery task to execute a KAST scan asynchronously
     
@@ -24,6 +24,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         parallel: Run plugins in parallel
         verbose: Enable verbose output
         dry_run: Dry run mode
+        max_workers: Maximum number of workers for parallel mode (default: 5)
     
     Returns:
         dict with 'success', 'output_dir', 'error' keys
@@ -54,6 +55,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         if parallel:
             cmd.append('-p')
+            cmd.extend(['--max-workers', str(max_workers)])
         
         if verbose:
             cmd.append('-v')

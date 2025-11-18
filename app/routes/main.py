@@ -48,7 +48,8 @@ def create_scan():
                 'plugins': form.plugins.data,
                 'parallel': form.parallel.data,
                 'verbose': form.verbose.data,
-                'dry_run': form.dry_run.data
+                'dry_run': form.dry_run.data,
+                'max_workers': form.max_workers.data
             })
         )
         
@@ -66,7 +67,8 @@ def create_scan():
                 plugins=scan.plugin_list if scan.plugins else None,
                 parallel=scan.parallel,
                 verbose=scan.verbose,
-                dry_run=scan.dry_run
+                dry_run=scan.dry_run,
+                max_workers=form.max_workers.data
             )
             
             # Store task ID for tracking
