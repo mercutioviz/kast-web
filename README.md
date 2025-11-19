@@ -520,7 +520,7 @@ Planned features for future releases:
 
 ## License
 
-This project is part of the KAST ecosystem.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 
