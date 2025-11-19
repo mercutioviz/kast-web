@@ -82,7 +82,7 @@ def execute_kast_scan(scan_id, target, scan_mode, plugins=None, parallel=False, 
         
         # Build command
         kast_cli = current_app.config['KAST_CLI_PATH']
-        cmd = [kast_cli, '-t', target, '-m', scan_mode]
+        cmd = [kast_cli, '-t', target, '-m', scan_mode, '--format', 'both']
         
         if plugins:
             cmd.extend(['--run-only', ','.join(plugins)])

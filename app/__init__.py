@@ -1,10 +1,12 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager
 from config import config
 from datetime import datetime
 
 # Initialize extensions
 db = SQLAlchemy()
+login_manager = LoginManager()
 
 def create_app(config_name='default'):
     """Application factory pattern"""
@@ -13,6 +15,18 @@ def create_app(config_name='default'):
     
     # Initialize extensions with app
     db.init_app(app)
+    login_manager.init_app(app)
+    
+    # Configure Flask-Login
+    login_manager.login_view = 'auth.login'
+    login_manager.login_message = 'Please log in to access this page.'
+    login_manager.login_message_category = 'info'
+    
+    @login_manager.user_loader
+    def load_user(user_id):
+        """Load user by ID for Flask-Login"""
+        from app.models import User
+        return db.session.get(User, int(user_id))
     
     # Register custom template filters
     @app.template_filter('timestamp_to_datetime')
@@ -41,10 +55,11 @@ def create_app(config_name='default'):
             return '0 B'
     
     # Register blueprints
-    from app.routes import main, scans, api
+    from app.routes import main, scans, api, auth
     app.register_blueprint(main.bp)
     app.register_blueprint(scans.bp)
     app.register_blueprint(api.bp)
+    app.register_blueprint(auth.bp)
     
     # Create database tables
     with app.app_context():

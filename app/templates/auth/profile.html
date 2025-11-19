@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <h2 class="mb-4"><i class="fas fa-user-circle me-2"></i>My Profile</h2>
+
+            <div class="card shadow mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Account Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Username:</strong></div>
+                        <div class="col-md-8">{{ current_user.username }}</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Email:</strong></div>
+                        <div class="col-md-8">{{ current_user.email }}</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Full Name:</strong></div>
+                        <div class="col-md-8">
+                            {% if current_user.first_name or current_user.last_name %}
+                                {{ current_user.first_name }} {{ current_user.last_name }}
+                            {% else %}
+                                <span class="text-muted">Not provided</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Role:</strong></div>
+                        <div class="col-md-8">
+                            {% if current_user.role == 'admin' %}
+                                <span class="badge bg-danger">Administrator</span>
+                            {% elif current_user.role == 'user' %}
+                                <span class="badge bg-primary">User</span>
+                            {% elif current_user.role == 'viewer' %}
+                                <span class="badge bg-secondary">Viewer</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Account Status:</strong></div>
+                        <div class="col-md-8">
+                            {% if current_user.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-warning">Inactive</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Member Since:</strong></div>
+                        <div class="col-md-8">{{ current_user.created_at.strftime('%B %d, %Y') }}</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Last Login:</strong></div>
+                        <div class="col-md-8">
+                            {% if current_user.last_login %}
+                                {{ current_user.last_login.strftime('%Y-%m-%d %H:%M:%S') }}
+                            {% else %}
+                                <span class="text-muted">This is your first login</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4"><strong>Total Logins:</strong></div>
+                        <div class="col-md-8">{{ current_user.login_count }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Scan Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Total Scans:</strong></div>
+                        <div class="col-md-8">{{ current_user.scans.count() }}</div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Completed Scans:</strong></div>
+                        <div class="col-md-8">
+                            {{ current_user.scans.filter_by(status='completed').count() }}
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4"><strong>Failed Scans:</strong></div>
+                        <div class="col-md-8">
+                            {{ current_user.scans.filter_by(status='failed').count() }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4"><strong>Running Scans:</strong></div>
+                        <div class="col-md-8">
+                            {{ current_user.scans.filter_by(status='running').count() }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Account Actions</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{{ url_for('auth.change_password') }}" class="btn btn-warning">
+                        <i class="fas fa-key me-2"></i>Change Password
+                    </a>
+                    <a href="{{ url_for('scans.history') }}" class="btn btn-primary ms-2">
+                        <i class="fas fa-history me-2"></i>View My Scans
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
