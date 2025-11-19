@@ -204,3 +204,74 @@ def parse_scan_results_task(scan_id, output_dir):
         output_dir: Path to scan output directory
     """
     parse_scan_results(scan_id, output_dir)
+
+
+@celery.task(bind=True)
+def regenerate_report_task(self, scan_id):
+    """
+    Celery task to regenerate the KAST HTML report using --report-only flag
+    
+    Args:
+        scan_id: Database scan ID
+    
+    Returns:
+        dict with 'success', 'error' keys
+    """
+    from flask import current_app
+    
+    try:
+        # Get scan from database
+        scan = db.session.get(Scan, scan_id)
+        if not scan:
+            return {'success': False, 'error': 'Scan not found'}
+        
+        if not scan.output_dir:
+            return {'success': False, 'error': 'No output directory found for this scan'}
+        
+        output_dir = Path(scan.output_dir)
+        if not output_dir.exists():
+            return {'success': False, 'error': 'Output directory does not exist'}
+        
+        # Build command with --report-only flag
+        kast_cli = current_app.config['KAST_CLI_PATH']
+        cmd = [kast_cli, '--report-only', str(output_dir)]
+        
+        current_app.logger.info(f"Executing KAST report regeneration: {' '.join(cmd)}")
+        
+        # Update task state to show progress
+        self.update_state(state='PROGRESS', meta={'status': 'regenerating', 'scan_id': scan_id})
+        
+        # Execute command
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Wait for process to complete
+        stdout, stderr = process.communicate(timeout=300)  # 5 minute timeout
+        
+        if process.returncode == 0:
+            current_app.logger.info(f"Report regenerated successfully for scan {scan_id}")
+            return {
+                'success': True,
+                'stdout': stdout,
+                'stderr': stderr
+            }
+        else:
+            error_msg = stderr or 'Report regeneration failed with no error message'
+            current_app.logger.error(f"Report regeneration failed for scan {scan_id}: {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg,
+                'stdout': stdout
+            }
+    
+    except subprocess.TimeoutExpired:
+        current_app.logger.error(f"Report regeneration timed out for scan {scan_id}")
+        return {'success': False, 'error': 'Report regeneration timed out after 5 minutes'}
+    
+    except Exception as e:
+        current_app.logger.exception(f"Error regenerating report for scan {scan_id}: {str(e)}")
+        return {'success': False, 'error': str(e)}

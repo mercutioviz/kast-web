@@ -182,6 +182,32 @@ def view_report(scan_id):
     with open(report_path, 'r') as f:
         report_html = f.read()
     
+    # Fix relative paths in the HTML to work with Flask routes
+    # Replace asset paths to use Flask's static folder
+    import re
+    
+    # Map of asset filenames to their location in Flask's static folder
+    # For now, we're primarily handling the logo
+    def replace_asset_path(match):
+        attr = match.group(1)  # 'src' or 'href'
+        filename = match.group(2)  # e.g., 'kast-logo.png'
+        
+        # Map known assets to Flask static paths
+        if 'logo' in filename.lower() and filename.endswith('.png'):
+            return f'{attr}="{url_for("static", filename="images/kast-logo.png")}"'
+        
+        # For other assets, try to serve from scan directory first
+        return f'{attr}="{url_for("scans.serve_scan_file", scan_id=scan_id, filename="assets/" + filename)}"'
+    
+    # Pattern to match src="../assets/..." or href="../assets/..."
+    report_html = re.sub(r'(src|href)=["\']\.\.\/assets\/([^"\']+)["\']', replace_asset_path, report_html)
+    
+    # Also handle src="./assets/..." or href="./assets/..."
+    report_html = re.sub(r'(src|href)=["\']\.\/assets\/([^"\']+)["\']', replace_asset_path, report_html)
+    
+    # Also handle src="assets/..." or href="assets/..." (no relative prefix)
+    report_html = re.sub(r'(src|href)=["\']assets\/([^"\']+)["\']', replace_asset_path, report_html)
+    
     return render_template('report_viewer.html', scan=scan, report_html=report_html)
 
 @bp.route('/<int:scan_id>/download')
@@ -332,6 +358,34 @@ def view_file(scan_id, filename):
         mime_type = 'text/plain'
     
     return send_file(file_path, mimetype=mime_type)
+
+@bp.route('/<int:scan_id>/regenerate-report', methods=['POST'])
+def regenerate_report(scan_id):
+    """Regenerate the HTML report for a completed scan"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    if not scan.output_dir:
+        flash('No output directory found for this scan', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    # Check if output directory exists
+    output_path = Path(scan.output_dir)
+    if not output_path.exists():
+        flash('Output directory does not exist', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    # Call the regenerate report task
+    from app.tasks import regenerate_report_task
+    try:
+        task = regenerate_report_task.delay(scan_id)
+        flash(f'Report regeneration started for {scan.target}', 'info')
+    except Exception as e:
+        flash(f'Error starting report regeneration: {str(e)}', 'danger')
+    
+    return redirect(url_for('scans.detail', scan_id=scan_id))
 
 @bp.route('/<int:scan_id>/rerun', methods=['POST'])
 def rerun(scan_id):
