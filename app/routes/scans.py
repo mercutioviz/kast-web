@@ -1,20 +1,59 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, send_file, abort
+from flask import Blueprint, render_template, redirect, url_for, flash, request, send_file, abort, jsonify
 from flask_login import login_required, current_user
 from app import db
-from app.models import Scan, ScanResult
+from app.models import Scan, ScanResult, ScanShare, User, AuditLog
+from app.forms import ShareWithUserForm, GeneratePublicLinkForm, TransferOwnershipForm
 from app.utils import format_duration
 from pathlib import Path
+from datetime import datetime, timedelta
 import os
 import shutil
 
 bp = Blueprint('scans', __name__, url_prefix='/scans')
 
 
-def check_scan_access(scan):
-    """Check if current user can access this scan"""
-    if current_user.is_admin:
-        return True
-    return scan.user_id == current_user.id
+def check_scan_access(scan, required_permission='view'):
+    """
+    Check if current user can access this scan
+    
+    Args:
+        scan: Scan object
+        required_permission: 'view' or 'edit'
+    
+    Returns:
+        tuple: (has_access: bool, permission_level: str or None)
+    """
+    # Admin always has full access
+    if current_user.is_authenticated and current_user.is_admin:
+        return (True, 'edit')
+    
+    # Owner always has full access
+    if current_user.is_authenticated and scan.user_id == current_user.id:
+        return (True, 'edit')
+    
+    # Check if shared with current user
+    if current_user.is_authenticated:
+        share = ScanShare.query.filter_by(
+            scan_id=scan.id,
+            shared_with_user_id=current_user.id
+        ).first()
+        
+        if share and not share.is_expired():
+            # Check if user has required permission level
+            if required_permission == 'view':
+                return (True, share.permission_level)
+            elif required_permission == 'edit' and share.permission_level == 'edit':
+                return (True, 'edit')
+            else:
+                return (False, None)
+    
+    return (False, None)
+
+
+def check_scan_access_simple(scan):
+    """Simple access check for backward compatibility (returns bool)"""
+    has_access, _ = check_scan_access(scan, 'view')
+    return has_access
 
 
 @bp.route('/')
@@ -66,7 +105,7 @@ def detail(scan_id):
         return redirect(url_for('scans.list'))
     
     # Check access permission
-    if not check_scan_access(scan):
+    if not check_scan_access_simple(scan):
         flash('You do not have permission to view this scan', 'danger')
         return redirect(url_for('scans.list'))
     
@@ -157,8 +196,9 @@ def delete(scan_id):
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
     
-    # Check permission to delete
-    if not check_scan_access(scan):
+    # Check permission to delete (need edit permission)
+    has_access, permission = check_scan_access(scan, 'edit')
+    if not has_access:
         flash('You do not have permission to delete this scan', 'danger')
         return redirect(url_for('scans.list'))
     
@@ -195,7 +235,7 @@ def view_report(scan_id):
         return redirect(url_for('scans.list'))
     
     # Check access permission
-    if not check_scan_access(scan):
+    if not check_scan_access_simple(scan):
         flash('You do not have permission to view this report', 'danger')
         return redirect(url_for('scans.list'))
     
@@ -250,7 +290,7 @@ def download_report(scan_id):
         abort(404)
     
     # Check access permission
-    if not check_scan_access(scan):
+    if not check_scan_access_simple(scan):
         abort(403)
     
     if not scan.output_dir:
@@ -311,7 +351,7 @@ def list_files(scan_id):
         return redirect(url_for('scans.list'))
     
     # Check access permission
-    if not check_scan_access(scan):
+    if not check_scan_access_simple(scan):
         flash('You do not have permission to view this scan\'s files', 'danger')
         return redirect(url_for('scans.list'))
     
@@ -420,8 +460,9 @@ def regenerate_report(scan_id):
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
     
-    # Check access permission
-    if not check_scan_access(scan):
+    # Check access permission (need edit permission)
+    has_access, permission = check_scan_access(scan, 'edit')
+    if not has_access:
         flash('You do not have permission to regenerate this report', 'danger')
         return redirect(url_for('scans.list'))
     
@@ -454,8 +495,9 @@ def rerun(scan_id):
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
     
-    # Check access permission
-    if not check_scan_access(original_scan):
+    # Check access permission (need edit permission)
+    has_access, permission = check_scan_access(original_scan, 'edit')
+    if not has_access:
         flash('You do not have permission to re-run this scan', 'danger')
         return redirect(url_for('scans.list'))
     
@@ -499,3 +541,257 @@ def rerun(scan_id):
         flash(f'Error executing scan: {str(e)}', 'danger')
     
     return redirect(url_for('scans.detail', scan_id=new_scan.id))
+
+
+# ============================================================================
+# PHASE 4: SHARING & COLLABORATION ROUTES
+# ============================================================================
+
+@bp.route('/<int:scan_id>/share/user', methods=['POST'])
+@login_required
+def share_with_user(scan_id):
+    """Share scan with specific user"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Only owner or admin can share
+    has_access, permission = check_scan_access(scan, 'edit')
+    if not has_access:
+        flash('You do not have permission to share this scan', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    form = ShareWithUserForm()
+    # Populate user choices (exclude owner and current shares)
+    active_users = User.query.filter(
+        User.id != scan.user_id,
+        User.is_active == True
+    ).all()
+    form.user_id.choices = [(u.id, f"{u.username} ({u.email})") for u in active_users]
+    
+    if form.validate_on_submit():
+        # Check if already shared
+        existing = ScanShare.query.filter_by(
+            scan_id=scan_id,
+            shared_with_user_id=form.user_id.data
+        ).first()
+        
+        if existing:
+            # Update existing share
+            existing.permission_level = form.permission_level.data
+            if form.expires_in_days.data > 0:
+                existing.expires_at = datetime.utcnow() + timedelta(days=form.expires_in_days.data)
+            else:
+                existing.expires_at = None
+            db.session.commit()
+            flash('Share updated successfully', 'success')
+        else:
+            # Calculate expiration
+            expires_at = None
+            if form.expires_in_days.data > 0:
+                expires_at = datetime.utcnow() + timedelta(days=form.expires_in_days.data)
+            
+            # Create share
+            share = ScanShare(
+                scan_id=scan_id,
+                shared_with_user_id=form.user_id.data,
+                permission_level=form.permission_level.data,
+                created_by=current_user.id,
+                expires_at=expires_at
+            )
+            db.session.add(share)
+            db.session.commit()
+            
+            # Log the action
+            shared_user = db.session.get(User, form.user_id.data)
+            AuditLog.log(
+                user_id=current_user.id,
+                action='share_scan',
+                resource_type='scan',
+                resource_id=scan_id,
+                details=f'Shared with user {shared_user.username} ({form.permission_level.data})'
+            )
+            
+            flash(f'Scan shared successfully with {shared_user.username}', 'success')
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{field}: {error}', 'danger')
+    
+    return redirect(url_for('scans.detail', scan_id=scan_id))
+
+
+@bp.route('/<int:scan_id>/share/public', methods=['POST'])
+@login_required
+def generate_public_link(scan_id):
+    """Generate public sharing link"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Only owner or admin can create public links
+    has_access, permission = check_scan_access(scan, 'edit')
+    if not has_access:
+        flash('You do not have permission to create public links for this scan', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    form = GeneratePublicLinkForm()
+    
+    if form.validate_on_submit():
+        # Check if public link already exists
+        existing = ScanShare.query.filter_by(
+            scan_id=scan_id,
+            shared_with_user_id=None  # Public share
+        ).first()
+        
+        if existing and not existing.is_expired():
+            flash('A public link already exists for this scan', 'warning')
+        else:
+            # Calculate expiration
+            expires_at = datetime.utcnow() + timedelta(days=form.expires_in_days.data)
+            
+            # Generate unique token
+            token = ScanShare.generate_token()
+            
+            # Create public share
+            share = ScanShare(
+                scan_id=scan_id,
+                shared_with_user_id=None,  # Public share
+                permission_level='view',  # Public links are view-only
+                share_token=token,
+                created_by=current_user.id,
+                expires_at=expires_at
+            )
+            db.session.add(share)
+            db.session.commit()
+            
+            # Log the action
+            AuditLog.log(
+                user_id=current_user.id,
+                action='create_public_link',
+                resource_type='scan',
+                resource_id=scan_id,
+                details=f'Created public link (expires in {form.expires_in_days.data} days)'
+            )
+            
+            flash('Public link generated successfully', 'success')
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{field}: {error}', 'danger')
+    
+    return redirect(url_for('scans.detail', scan_id=scan_id))
+
+
+@bp.route('/<int:scan_id>/share/<int:share_id>/revoke', methods=['POST'])
+@login_required
+def revoke_share(scan_id, share_id):
+    """Revoke a share"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Only owner or admin can revoke shares
+    has_access, permission = check_scan_access(scan, 'edit')
+    if not has_access:
+        flash('You do not have permission to revoke shares for this scan', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    share = db.session.get(ScanShare, share_id)
+    if not share or share.scan_id != scan_id:
+        flash('Share not found', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    # Log the action before deletion
+    if share.is_public():
+        details = 'Revoked public link'
+    else:
+        shared_user = share.shared_with_user
+        details = f'Revoked share with user {shared_user.username if shared_user else "Unknown"}'
+    
+    AuditLog.log(
+        user_id=current_user.id,
+        action='revoke_share',
+        resource_type='scan',
+        resource_id=scan_id,
+        details=details
+    )
+    
+    # Delete the share
+    db.session.delete(share)
+    db.session.commit()
+    
+    flash('Share revoked successfully', 'success')
+    return redirect(url_for('scans.detail', scan_id=scan_id))
+
+
+@bp.route('/<int:scan_id>/shares')
+@login_required
+def list_shares(scan_id):
+    """List all shares for a scan (API endpoint)"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return jsonify({'error': 'Scan not found'}), 404
+    
+    # Only owner or admin can list shares
+    has_access, permission = check_scan_access(scan, 'edit')
+    if not has_access:
+        return jsonify({'error': 'Permission denied'}), 403
+    
+    shares = ScanShare.query.filter_by(scan_id=scan_id).all()
+    
+    return jsonify({
+        'shares': [share.to_dict() for share in shares]
+    })
+
+
+@bp.route('/<int:scan_id>/transfer', methods=['POST'])
+@login_required
+def transfer_ownership(scan_id):
+    """Transfer scan ownership to another user"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Only owner or admin can transfer ownership
+    if not current_user.is_admin and scan.user_id != current_user.id:
+        flash('You do not have permission to transfer ownership of this scan', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    form = TransferOwnershipForm()
+    # Populate user choices (exclude current owner)
+    active_users = User.query.filter(
+        User.id != scan.user_id,
+        User.is_active == True
+    ).all()
+    form.new_owner_id.choices = [(u.id, f"{u.username} ({u.email})") for u in active_users]
+    
+    if form.validate_on_submit():
+        old_owner_id = scan.user_id
+        old_owner = db.session.get(User, old_owner_id)
+        new_owner = db.session.get(User, form.new_owner_id.data)
+        
+        # Transfer ownership
+        scan.user_id = form.new_owner_id.data
+        db.session.commit()
+        
+        # Log the action
+        AuditLog.log(
+            user_id=current_user.id,
+            action='transfer_ownership',
+            resource_type='scan',
+            resource_id=scan_id,
+            details=f'Transferred from {old_owner.username if old_owner else "Unknown"} to {new_owner.username}'
+        )
+        
+        flash(f'Scan ownership transferred to {new_owner.username}', 'success')
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f'{field}: {error}', 'danger')
+    
+    return redirect(url_for('scans.detail', scan_id=scan_id))

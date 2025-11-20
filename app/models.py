@@ -200,6 +200,63 @@ class AuditLog(db.Model):
         }
 
 
+class ScanShare(db.Model):
+    """Model for sharing scans with users or via public links"""
+    __tablename__ = 'scan_shares'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), nullable=False, index=True)
+    shared_with_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)  # NULL for public shares
+    permission_level = db.Column(db.String(20), nullable=False)  # 'view' or 'edit'
+    share_token = db.Column(db.String(64), unique=True, index=True)  # For public link shares
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    expires_at = db.Column(db.DateTime, index=True)  # NULL = never expires
+    
+    # Relationships
+    scan = db.relationship('Scan', backref='shares')
+    shared_with_user = db.relationship('User', foreign_keys=[shared_with_user_id], backref='shared_scans')
+    creator = db.relationship('User', foreign_keys=[created_by])
+    
+    def __repr__(self):
+        if self.is_public():
+            return f'<ScanShare {self.id}: Public link for Scan {self.scan_id}>'
+        return f'<ScanShare {self.id}: Scan {self.scan_id} shared with User {self.shared_with_user_id}>'
+    
+    def is_expired(self):
+        """Check if share has expired"""
+        if self.expires_at is None:
+            return False
+        return datetime.utcnow() > self.expires_at
+    
+    def is_public(self):
+        """Check if this is a public share"""
+        return self.shared_with_user_id is None
+    
+    @staticmethod
+    def generate_token():
+        """Generate unique share token"""
+        import secrets
+        return secrets.token_urlsafe(48)
+    
+    def to_dict(self):
+        """Convert share to dictionary"""
+        return {
+            'id': self.id,
+            'scan_id': self.scan_id,
+            'shared_with_user_id': self.shared_with_user_id,
+            'shared_with_username': self.shared_with_user.username if self.shared_with_user else None,
+            'permission_level': self.permission_level,
+            'share_token': self.share_token,
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'is_expired': self.is_expired(),
+            'is_public': self.is_public()
+        }
+
+
 class SystemSettings(db.Model):
     """Model for storing system-wide settings"""
     __tablename__ = 'system_settings'

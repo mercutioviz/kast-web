@@ -346,8 +346,17 @@ window.addEventListener('beforeunload', stopPolling);
                        class="btn btn-outline-primary w-100 mb-2">
                         <i class="bi bi-folder2-open"></i> View Output Files
                     </a>
-                    <hr>
                 {% endif %}
+                
+                <!-- Share Button (Owner/Admin only) -->
+                {% if current_user.is_admin or scan.user_id == current_user.id %}
+                    <button type="button" class="btn btn-outline-info w-100 mb-2" 
+                            data-bs-toggle="modal" data-bs-target="#shareModal">
+                        <i class="bi bi-share"></i> Share Scan
+                    </button>
+                {% endif %}
+                
+                <hr>
                 
                 {% if scan.status == 'completed' and scan.output_dir %}
                     <form method="POST" action="{{ url_for('scans.regenerate_report', scan_id=scan.id) }}" 
@@ -410,4 +419,243 @@ window.addEventListener('beforeunload', stopPolling);
         </div>
     </div>
 </div>
+
+<!-- Share Modal -->
+{% if current_user.is_admin or scan.user_id == current_user.id %}
+<div class="modal fade" id="shareModal" tabindex="-1" aria-labelledby="shareModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="shareModalLabel">
+                    <i class="bi bi-share"></i> Share Scan: {{ scan.target }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" id="shareTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="share-user-tab" data-bs-toggle="tab" 
+                                data-bs-target="#share-user" type="button" role="tab">
+                            <i class="bi bi-person-plus"></i> Share with User
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="public-link-tab" data-bs-toggle="tab" 
+                                data-bs-target="#public-link" type="button" role="tab">
+                            <i class="bi bi-link-45deg"></i> Public Link
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="current-shares-tab" data-bs-toggle="tab" 
+                                data-bs-target="#current-shares" type="button" role="tab"
+                                onclick="loadShares()">
+                            <i class="bi bi-list-ul"></i> Current Shares
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="shareTabContent">
+                    <!-- Share with User Tab -->
+                    <div class="tab-pane fade show active" id="share-user" role="tabpanel">
+                        <form method="POST" action="{{ url_for('scans.share_with_user', scan_id=scan.id) }}">
+                            <div class="mb-3">
+                                <label for="user_id" class="form-label">Select User</label>
+                                <select class="form-select" id="user_id" name="user_id" required>
+                                    <option value="">Choose a user...</option>
+                                    {% for user in [] %}{% endfor %}
+                                </select>
+                                <small class="form-text text-muted">Select a user to share this scan with</small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="permission_level" class="form-label">Permission Level</label>
+                                <select class="form-select" id="permission_level" name="permission_level" required>
+                                    <option value="view">View Only - Can view scan details and reports</option>
+                                    <option value="edit">Can Edit - Can also regenerate reports and re-run scans</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="expires_in_days" class="form-label">Expires in (days)</label>
+                                <input type="number" class="form-control" id="expires_in_days" 
+                                       name="expires_in_days" value="0" min="0" max="365">
+                                <small class="form-text text-muted">0 = Never expires</small>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-share"></i> Share with User
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- Public Link Tab -->
+                    <div class="tab-pane fade" id="public-link" role="tabpanel">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> Public links allow anyone with the link to view this scan without logging in. 
+                            Links are view-only and will expire after the specified period.
+                        </div>
+                        
+                        <form method="POST" action="{{ url_for('scans.generate_public_link', scan_id=scan.id) }}">
+                            <div class="mb-3">
+                                <label for="expires_in_days_public" class="form-label">Expires in (days)</label>
+                                <input type="number" class="form-control" id="expires_in_days_public" 
+                                       name="expires_in_days" value="7" min="1" max="365" required>
+                                <small class="form-text text-muted">Public links must have an expiration date</small>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-link-45deg"></i> Generate Public Link
+                            </button>
+                        </form>
+                        
+                        <div id="public-link-display" class="mt-4" style="display: none;">
+                            <div class="alert alert-success">
+                                <strong>Public Link Generated!</strong>
+                                <div class="input-group mt-2">
+                                    <input type="text" class="form-control" id="public-link-url" readonly>
+                                    <button class="btn btn-outline-secondary" type="button" onclick="copyPublicLink()">
+                                        <i class="bi bi-clipboard"></i> Copy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Current Shares Tab -->
+                    <div class="tab-pane fade" id="current-shares" role="tabpanel">
+                        <div id="shares-loading" class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                        
+                        <div id="shares-list" style="display: none;">
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Shared With</th>
+                                            <th>Permission</th>
+                                            <th>Expires</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="shares-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div id="no-shares" class="alert alert-info" style="display: none;">
+                                <i class="bi bi-info-circle"></i> No shares found for this scan.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function loadShares() {
+    document.getElementById('shares-loading').style.display = 'block';
+    document.getElementById('shares-list').style.display = 'none';
+    
+    fetch(`/scans/{{ scan.id }}/shares`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('shares-loading').style.display = 'none';
+            document.getElementById('shares-list').style.display = 'block';
+            
+            const tbody = document.getElementById('shares-tbody');
+            tbody.innerHTML = '';
+            
+            if (data.shares && data.shares.length > 0) {
+                document.getElementById('no-shares').style.display = 'none';
+                
+                data.shares.forEach(share => {
+                    const row = document.createElement('tr');
+                    
+                    const sharedWith = share.is_public ? 
+                        '<span class="badge bg-success">Public Link</span>' : 
+                        share.shared_with_username;
+                    
+                    const permission = share.permission_level === 'edit' ? 
+                        '<span class="badge bg-warning">Edit</span>' : 
+                        '<span class="badge bg-info">View</span>';
+                    
+                    const expires = share.expires_at ? 
+                        new Date(share.expires_at).toLocaleDateString() : 
+                        '<span class="text-muted">Never</span>';
+                    
+                    const expired = share.is_expired ? 
+                        '<span class="badge bg-danger ms-1">Expired</span>' : '';
+                    
+                    row.innerHTML = `
+                        <td>${sharedWith}</td>
+                        <td>${permission}</td>
+                        <td>${expires}${expired}</td>
+                        <td>
+                            <form method="POST" action="/scans/{{ scan.id }}/share/${share.id}/revoke" 
+                                  style="display: inline;" 
+                                  onsubmit="return confirm('Revoke this share?');">
+                                <button type="submit" class="btn btn-sm btn-danger">
+                                    <i class="bi bi-x-circle"></i> Revoke
+                                </button>
+                            </form>
+                        </td>
+                    `;
+                    
+                    tbody.appendChild(row);
+                });
+            } else {
+                document.getElementById('no-shares').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading shares:', error);
+            document.getElementById('shares-loading').style.display = 'none';
+            alert('Error loading shares');
+        });
+}
+
+function copyPublicLink() {
+    const input = document.getElementById('public-link-url');
+    input.select();
+    document.execCommand('copy');
+    alert('Link copied to clipboard!');
+}
+
+// Load users for sharing dropdown when modal opens
+const scanOwnerId = {{ scan.user_id }};
+document.getElementById('shareModal').addEventListener('show.bs.modal', function() {
+    fetch('/api/users/active')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('user_id');
+            // Clear existing options except first
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            
+            // Add users
+            if (data.users) {
+                data.users.forEach(user => {
+                    // Don't show scan owner
+                    if (user.id !== scanOwnerId) {
+                        const option = document.createElement('option');
+                        option.value = user.id;
+                        option.textContent = user.username + ' (' + user.email + ')';
+                        select.appendChild(option);
+                    }
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error loading users:', error);
+        });
+});
+</script>
+{% endif %}
+
 {% endblock %}

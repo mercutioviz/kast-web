@@ -231,3 +231,74 @@ class ChangePasswordForm(FlaskForm):
     )
     
     submit = SubmitField('Change Password', render_kw={'class': 'btn btn-primary'})
+
+
+class ShareWithUserForm(FlaskForm):
+    """Form for sharing a scan with a specific user"""
+    
+    user_id = SelectField(
+        'User',
+        coerce=int,
+        validators=[DataRequired(message='Please select a user')],
+        render_kw={'class': 'form-select'}
+    )
+    
+    permission_level = SelectField(
+        'Permission Level',
+        choices=[
+            ('view', 'View Only - Can view scan details and reports'),
+            ('edit', 'Can Edit - Can also regenerate reports and re-run scans')
+        ],
+        default='view',
+        validators=[DataRequired()],
+        render_kw={'class': 'form-select'}
+    )
+    
+    expires_in_days = IntegerField(
+        'Expires in (days)',
+        default=0,
+        validators=[
+            NumberRange(min=0, max=365, message='Expiration must be between 0 and 365 days')
+        ],
+        render_kw={
+            'class': 'form-control',
+            'placeholder': '0 = Never expires',
+            'min': '0',
+            'max': '365'
+        }
+    )
+    
+    submit = SubmitField('Share with User', render_kw={'class': 'btn btn-primary'})
+
+
+class GeneratePublicLinkForm(FlaskForm):
+    """Form for generating a public sharing link"""
+    
+    expires_in_days = IntegerField(
+        'Expires in (days)',
+        default=7,
+        validators=[
+            NumberRange(min=1, max=365, message='Expiration must be between 1 and 365 days')
+        ],
+        render_kw={
+            'class': 'form-control',
+            'placeholder': '7',
+            'min': '1',
+            'max': '365'
+        }
+    )
+    
+    submit = SubmitField('Generate Public Link', render_kw={'class': 'btn btn-success'})
+
+
+class TransferOwnershipForm(FlaskForm):
+    """Form for transferring scan ownership to another user"""
+    
+    new_owner_id = SelectField(
+        'New Owner',
+        coerce=int,
+        validators=[DataRequired(message='Please select a new owner')],
+        render_kw={'class': 'form-select'}
+    )
+    
+    submit = SubmitField('Transfer Ownership', render_kw={'class': 'btn btn-warning'})

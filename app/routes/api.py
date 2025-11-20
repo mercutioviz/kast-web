@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
+from flask_login import login_required
 from app import db
-from app.models import Scan, ScanResult
+from app.models import Scan, ScanResult, User
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -218,4 +219,18 @@ def get_stats():
         'completed': completed_scans,
         'failed': failed_scans,
         'running': running_scans
+    })
+
+@bp.route('/users/active', methods=['GET'])
+@login_required
+def get_active_users():
+    """API endpoint to get active users for sharing"""
+    users = User.query.filter_by(is_active=True).order_by(User.username).all()
+    
+    return jsonify({
+        'users': [{
+            'id': user.id,
+            'username': user.username,
+            'email': user.email
+        } for user in users]
     })
