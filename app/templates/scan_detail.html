@@ -333,10 +333,28 @@ window.addEventListener('beforeunload', stopPolling);
                        class="btn btn-success w-100 mb-2">
                         <i class="bi bi-file-earmark-text"></i> View Report
                     </a>
-                    <a href="{{ url_for('scans.download_report', scan_id=scan.id) }}" 
-                       class="btn btn-outline-success w-100 mb-2">
-                        <i class="bi bi-download"></i> Download Report
-                    </a>
+                    <div class="btn-group w-100 mb-2" role="group">
+                        <a href="{{ url_for('scans.download_report', scan_id=scan.id, format='pdf') }}" 
+                           class="btn btn-outline-success">
+                            <i class="bi bi-download"></i> Download Report (PDF)
+                        </a>
+                        <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" 
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="visually-hidden">Toggle Dropdown</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('scans.download_report', scan_id=scan.id, format='pdf') }}">
+                                    <i class="bi bi-file-earmark-pdf"></i> PDF Report
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('scans.download_report', scan_id=scan.id, format='html') }}">
+                                    <i class="bi bi-file-earmark-text"></i> HTML Report
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                     <hr>
                 {% endif %}
                 

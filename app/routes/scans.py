@@ -284,7 +284,7 @@ def view_report(scan_id):
 @bp.route('/<int:scan_id>/download')
 @login_required
 def download_report(scan_id):
-    """Download HTML report"""
+    """Download report (PDF or HTML)"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         abort(404)
@@ -296,15 +296,29 @@ def download_report(scan_id):
     if not scan.output_dir:
         abort(404)
     
-    report_path = Path(scan.output_dir) / 'kast_report.html'
+    # Get format parameter (default to PDF)
+    report_format = request.args.get('format', 'pdf').lower()
+    
+    # Determine file path and download name based on format
+    if report_format == 'pdf':
+        report_path = Path(scan.output_dir) / 'kast_report.pdf'
+        download_name = f'kast_report_{scan.target}_{scan.id}.pdf'
+    elif report_format == 'html':
+        report_path = Path(scan.output_dir) / 'kast_report.html'
+        download_name = f'kast_report_{scan.target}_{scan.id}.html'
+    else:
+        # Invalid format
+        flash('Invalid report format requested', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
     
     if not report_path.exists():
-        abort(404)
+        flash(f'{report_format.upper()} report not found. Please ensure the scan has completed and generated the report.', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
     
     return send_file(
         report_path,
         as_attachment=True,
-        download_name=f'kast_report_{scan.target}_{scan.id}.html'
+        download_name=download_name
     )
 
 @bp.route('/<int:scan_id>/<path:filename>')
