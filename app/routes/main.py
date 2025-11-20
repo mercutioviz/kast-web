@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app
+from flask_login import login_required, current_user
 from app import db
 from app.models import Scan
 from app.forms import ScanConfigForm
@@ -10,6 +11,7 @@ from datetime import datetime
 bp = Blueprint('main', __name__)
 
 @bp.route('/')
+@login_required
 def index():
     """Home page with scan configuration form"""
     form = ScanConfigForm()
@@ -18,12 +20,16 @@ def index():
     plugins = get_available_plugins()
     form.plugins.choices = plugins
     
-    # Get recent scans for display
-    recent_scans = Scan.query.order_by(Scan.started_at.desc()).limit(5).all()
+    # Get recent scans for display (user's own scans unless admin)
+    if current_user.is_admin:
+        recent_scans = Scan.query.order_by(Scan.started_at.desc()).limit(5).all()
+    else:
+        recent_scans = Scan.query.filter_by(user_id=current_user.id).order_by(Scan.started_at.desc()).limit(5).all()
     
     return render_template('index.html', form=form, recent_scans=recent_scans)
 
 @bp.route('/scan/new', methods=['POST'])
+@login_required
 def create_scan():
     """Create and execute a new scan"""
     form = ScanConfigForm()
@@ -33,8 +39,9 @@ def create_scan():
     form.plugins.choices = plugins
     
     if form.validate_on_submit():
-        # Create scan record
+        # Create scan record (assign to current user)
         scan = Scan(
+            user_id=current_user.id,
             target=form.target.data,
             scan_mode=form.scan_mode.data,
             plugins=','.join(form.plugins.data) if form.plugins.data else None,

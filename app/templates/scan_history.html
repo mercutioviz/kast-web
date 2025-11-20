@@ -50,6 +50,9 @@
                     <tr>
                         <th>ID</th>
                         <th>Target</th>
+                        {% if current_user.is_admin %}
+                        <th>Owner</th>
+                        {% endif %}
                         <th>Mode</th>
                         <th>Status</th>
                         <th>Started</th>
@@ -66,6 +69,14 @@
                                     <strong>{{ scan.target }}</strong>
                                 </a>
                             </td>
+                            {% if current_user.is_admin %}
+                            <td>
+                                <small>{{ scan.user.username }}</small>
+                                {% if scan.user_id == current_user.id %}
+                                    <span class="badge bg-info">You</span>
+                                {% endif %}
+                            </td>
+                            {% endif %}
                             <td>
                                 <span class="badge bg-{% if scan.scan_mode == 'active' %}warning{% else %}info{% endif %}">
                                     {{ scan.scan_mode }}

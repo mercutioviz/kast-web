@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, send_file, abort
+from flask_login import login_required, current_user
 from app import db
 from app.models import Scan, ScanResult
 from app.utils import format_duration
@@ -8,9 +9,18 @@ import shutil
 
 bp = Blueprint('scans', __name__, url_prefix='/scans')
 
+
+def check_scan_access(scan):
+    """Check if current user can access this scan"""
+    if current_user.is_admin:
+        return True
+    return scan.user_id == current_user.id
+
+
 @bp.route('/')
+@login_required
 def list():
-    """List all scans with pagination"""
+    """List scans with pagination (filtered by user unless admin)"""
     page = request.args.get('page', 1, type=int)
     per_page = 20
     
@@ -18,8 +28,11 @@ def list():
     status_filter = request.args.get('status', '')
     target_filter = request.args.get('target', '')
     
-    # Build query
-    query = Scan.query
+    # Build query - filter by user unless admin
+    if current_user.is_admin:
+        query = Scan.query
+    else:
+        query = Scan.query.filter_by(user_id=current_user.id)
     
     if status_filter:
         query = query.filter(Scan.status == status_filter)
@@ -44,11 +57,17 @@ def list():
     )
 
 @bp.route('/<int:scan_id>')
+@login_required
 def detail(scan_id):
     """View scan details"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        flash('You do not have permission to view this scan', 'danger')
         return redirect(url_for('scans.list'))
     
     # Get scan results from database
@@ -130,11 +149,17 @@ def detail(scan_id):
     )
 
 @bp.route('/<int:scan_id>/delete', methods=['POST'])
+@login_required
 def delete(scan_id):
-    """Delete a scan"""
+    """Delete a scan (owner or admin only)"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Check permission to delete
+    if not check_scan_access(scan):
+        flash('You do not have permission to delete this scan', 'danger')
         return redirect(url_for('scans.list'))
     
     target = scan.target
@@ -161,11 +186,17 @@ def delete(scan_id):
     return redirect(url_for('scans.list'))
 
 @bp.route('/<int:scan_id>/report')
+@login_required
 def view_report(scan_id):
     """View HTML report"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        flash('You do not have permission to view this report', 'danger')
         return redirect(url_for('scans.list'))
     
     if not scan.output_dir:
@@ -211,11 +242,16 @@ def view_report(scan_id):
     return render_template('report_viewer.html', scan=scan, report_html=report_html)
 
 @bp.route('/<int:scan_id>/download')
+@login_required
 def download_report(scan_id):
     """Download HTML report"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         abort(404)
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        abort(403)
     
     if not scan.output_dir:
         abort(404)
@@ -232,11 +268,16 @@ def download_report(scan_id):
     )
 
 @bp.route('/<int:scan_id>/<path:filename>')
+@login_required
 def serve_scan_file(scan_id, filename):
     """Serve static files from scan output directory (e.g., kast_style.css)"""
     scan = db.session.get(Scan, scan_id)
     if not scan or not scan.output_dir:
         abort(404)
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        abort(403)
     
     # Security: only allow specific file types
     allowed_extensions = {'.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg'}
@@ -261,11 +302,17 @@ def serve_scan_file(scan_id, filename):
     return send_file(file_path)
 
 @bp.route('/<int:scan_id>/files')
+@login_required
 def list_files(scan_id):
     """Display directory listing of scan output files"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        flash('You do not have permission to view this scan\'s files', 'danger')
         return redirect(url_for('scans.list'))
     
     if not scan.output_dir:
@@ -309,11 +356,16 @@ def list_files(scan_id):
     )
 
 @bp.route('/<int:scan_id>/view-file/<path:filename>')
+@login_required
 def view_file(scan_id, filename):
     """View a file from the scan output directory"""
     scan = db.session.get(Scan, scan_id)
     if not scan or not scan.output_dir:
         abort(404)
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        abort(403)
     
     file_path = Path(scan.output_dir) / filename
     
@@ -360,11 +412,17 @@ def view_file(scan_id, filename):
     return send_file(file_path, mimetype=mime_type)
 
 @bp.route('/<int:scan_id>/regenerate-report', methods=['POST'])
+@login_required
 def regenerate_report(scan_id):
     """Regenerate the HTML report for a completed scan"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Check access permission
+    if not check_scan_access(scan):
+        flash('You do not have permission to regenerate this report', 'danger')
         return redirect(url_for('scans.list'))
     
     if not scan.output_dir:
@@ -388,6 +446,7 @@ def regenerate_report(scan_id):
     return redirect(url_for('scans.detail', scan_id=scan_id))
 
 @bp.route('/<int:scan_id>/rerun', methods=['POST'])
+@login_required
 def rerun(scan_id):
     """Re-run a scan with the same configuration"""
     original_scan = db.session.get(Scan, scan_id)
@@ -395,8 +454,14 @@ def rerun(scan_id):
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
     
-    # Create new scan with same configuration
+    # Check access permission
+    if not check_scan_access(original_scan):
+        flash('You do not have permission to re-run this scan', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Create new scan with same configuration (assigned to current user)
     new_scan = Scan(
+        user_id=current_user.id,
         target=original_scan.target,
         scan_mode=original_scan.scan_mode,
         plugins=original_scan.plugins,
