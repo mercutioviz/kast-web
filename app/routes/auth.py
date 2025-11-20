@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from datetime import datetime
 
 from app import db
-from app.models import User
+from app.models import User, SystemSettings
 from app.forms import LoginForm, RegistrationForm, ChangePasswordForm
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -40,6 +40,12 @@ def login():
         # Check if account is active
         if not user.is_active:
             flash('Your account has been deactivated. Please contact an administrator.', 'warning')
+            return redirect(url_for('auth.login'))
+        
+        # Check maintenance mode - only allow admin users during maintenance
+        maintenance_mode = SystemSettings.get_setting('maintenance_mode', False)
+        if maintenance_mode and not user.is_admin:
+            flash('The system is currently in maintenance mode. Only administrators can log in at this time. Please try again later.', 'warning')
             return redirect(url_for('auth.login'))
         
         # Successful login
