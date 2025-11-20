@@ -48,7 +48,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         # Build command
         kast_cli = current_app.config['KAST_CLI_PATH']
-        cmd = [kast_cli, '-t', target, '-m', scan_mode]
+        cmd = [kast_cli, '-t', target, '-m', scan_mode, '--format', 'both']
         
         if plugins:
             cmd.extend(['--run-only', ','.join(plugins)])
@@ -232,9 +232,9 @@ def regenerate_report_task(self, scan_id):
         if not output_dir.exists():
             return {'success': False, 'error': 'Output directory does not exist'}
         
-        # Build command with --report-only flag
+        # Build command with --report-only flag and format both
         kast_cli = current_app.config['KAST_CLI_PATH']
-        cmd = [kast_cli, '--report-only', str(output_dir)]
+        cmd = [kast_cli, '--report-only', str(output_dir), '--format', 'both']
         
         current_app.logger.info(f"Executing KAST report regeneration: {' '.join(cmd)}")
         

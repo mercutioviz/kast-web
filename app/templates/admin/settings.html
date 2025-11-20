@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}System Settings - KAST Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-gear"></i> System Settings</h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Dashboard
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('admin.settings') }}">
+                    <!-- General Settings -->
+                    <h6 class="mb-3">General Settings</h6>
+                    
+                    <div class="mb-3">
+                        <label for="site_name" class="form-label">Site Name</label>
+                        <input type="text" class="form-control" id="site_name" name="site_name" 
+                               value="{{ settings.get('site_name', 'KAST Web') }}">
+                        <small class="form-text text-muted">Name displayed in navigation and page titles</small>
+                    </div>
+                    
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="maintenance_mode" 
+                               name="maintenance_mode" {% if settings.get('maintenance_mode') %}checked{% endif %}>
+                        <label class="form-check-label" for="maintenance_mode">
+                            Maintenance Mode
+                        </label>
+                        <div><small class="form-text text-muted">Prevents non-admin users from accessing the system</small></div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- User Management -->
+                    <h6 class="mb-3">User Management</h6>
+                    
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_registration" 
+                               name="allow_registration" {% if settings.get('allow_registration') %}checked{% endif %}>
+                        <label class="form-check-label" for="allow_registration">
+                            Allow User Registration
+                        </label>
+                        <div><small class="form-text text-muted">Enable self-service user registration</small></div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="session_timeout_minutes" class="form-label">Session Timeout (minutes)</label>
+                        <input type="number" class="form-control" id="session_timeout_minutes" 
+                               name="session_timeout_minutes" min="5" max="1440"
+                               value="{{ settings.get('session_timeout_minutes', 60) }}">
+                        <small class="form-text text-muted">Automatically log out inactive users after this period</small>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- Scan Settings -->
+                    <h6 class="mb-3">Scan Settings</h6>
+                    
+                    <div class="mb-3">
+                        <label for="max_scan_age_days" class="form-label">Maximum Scan Age (days)</label>
+                        <input type="number" class="form-control" id="max_scan_age_days" 
+                               name="max_scan_age_days" min="0" max="365"
+                               value="{{ settings.get('max_scan_age_days', 90) }}">
+                        <small class="form-text text-muted">Automatically delete scans older than this (0 = never delete)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="max_scans_per_user" class="form-label">Maximum Scans Per User</label>
+                        <input type="number" class="form-control" id="max_scans_per_user" 
+                               name="max_scans_per_user" min="0" max="1000"
+                               value="{{ settings.get('max_scans_per_user', 0) }}">
+                        <small class="form-text text-muted">Limit scans per user (0 = unlimited)</small>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- Audit Log -->
+                    <h6 class="mb-3">Audit Log</h6>
+                    
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="enable_audit_log" 
+                               name="enable_audit_log" {% if settings.get('enable_audit_log', True) %}checked{% endif %}>
+                        <label class="form-check-label" for="enable_audit_log">
+                            Enable Audit Logging
+                        </label>
+                        <div><small class="form-text text-muted">Track system actions and user activity</small></div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-info-circle"></i> About Settings</h6>
+            </div>
+            <div class="card-body">
+                <p class="small">Configure system-wide settings that affect all users and scans.</p>
+                <p class="small mb-0"><strong>Note:</strong> Changes take effect immediately upon saving.</p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-shield-check"></i> Security Tips</h6>
+            </div>
+            <div class="card-body">
+                <ul class="small mb-0">
+                    <li>Enable maintenance mode during system updates</li>
+                    <li>Disable registration unless needed</li>
+                    <li>Keep audit logging enabled for security</li>
+                    <li>Set reasonable session timeouts</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

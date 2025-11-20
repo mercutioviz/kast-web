@@ -55,11 +55,12 @@ def create_app(config_name='default'):
             return '0 B'
     
     # Register blueprints
-    from app.routes import main, scans, api, auth
+    from app.routes import main, scans, api, auth, admin
     app.register_blueprint(main.bp)
     app.register_blueprint(scans.bp)
     app.register_blueprint(api.bp)
     app.register_blueprint(auth.bp)
+    app.register_blueprint(admin.bp)
     
     # Create database tables
     with app.app_context():

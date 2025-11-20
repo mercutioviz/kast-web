@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - KAST Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2"></i> Admin Dashboard</h2>
+    <div>
+        <a href="{{ url_for('admin.settings') }}" class="btn btn-outline-primary me-2">
+            <i class="bi bi-gear"></i> Settings
+        </a>
+        <a href="{{ url_for('admin.audit_log') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-journal-text"></i> Audit Log
+        </a>
+    </div>
+</div>
+
+<!-- System Status -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Total Users</h6>
+                        <h2 class="mb-0">{{ stats.users.total }}</h2>
+                    </div>
+                    <i class="bi bi-people" style="font-size: 2.5rem; opacity: 0.5;"></i>
+                </div>
+                <small>{{ stats.users.active }} active, {{ stats.users.admins }} admins</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Total Scans</h6>
+                        <h2 class="mb-0">{{ stats.scans.total }}</h2>
+                    </div>
+                    <i class="bi bi-radar" style="font-size: 2.5rem; opacity: 0.5;"></i>
+                </div>
+                <small>{{ stats.scans.completed }} completed</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Running Scans</h6>
+                        <h2 class="mb-0">{{ stats.scans.running }}</h2>
+                    </div>
+                    <i class="bi bi-arrow-repeat" style="font-size: 2.5rem; opacity: 0.5;"></i>
+                </div>
+                <small>Currently active</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-danger">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Failed Scans</h6>
+                        <h2 class="mb-0">{{ stats.scans.failed }}</h2>
+                    </div>
+                    <i class="bi bi-x-circle" style="font-size: 2.5rem; opacity: 0.5;"></i>
+                </div>
+                <small>Need attention</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity & Top Users -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Activity (24h)</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>New Scans:</span>
+                        <strong>{{ stats.scans.recent }}</strong>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>User Logins:</span>
+                        <strong>{{ stats.activity.recent_logins }}</strong>
+                    </div>
+                </div>
+                <hr>
+                <a href="{{ url_for('admin.activity') }}" class="btn btn-sm btn-outline-primary">
+                    View Detailed Activity <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-trophy"></i> Top Users by Scans</h5>
+            </div>
+            <div class="card-body">
+                {% if stats.activity.top_users %}
+                    <div class="list-group list-group-flush">
+                        {% for user in stats.activity.top_users %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            <span>{{ user.username }}</span>
+                            <span class="badge bg-primary rounded-pill">{{ user.scan_count }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No scan activity yet</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Status & Recent Logs -->
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> System Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Maintenance Mode:</label>
+                    {% if stats.system.maintenance_mode %}
+                        <span class="badge bg-warning">Enabled</span>
+                    {% else %}
+                        <span class="badge bg-success">Normal</span>
+                    {% endif %}
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">User Registration:</label>
+                    {% if stats.system.registration_enabled %}
+                        <span class="badge bg-success">Enabled</span>
+                    {% else %}
+                        <span class="badge bg-secondary">Disabled</span>
+                    {% endif %}
+                </div>
+                <a href="{{ url_for('admin.settings') }}" class="btn btn-sm btn-outline-primary">
+                    Manage Settings
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-journal-text"></i> Recent Audit Log</h5>
+                <a href="{{ url_for('admin.audit_log') }}" class="btn btn-sm btn-outline-secondary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_logs %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Time</th>
+                                    <th>User</th>
+                                    <th>Action</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for log in recent_logs %}
+                                <tr>
+                                    <td><small>{{ log.timestamp.strftime('%H:%M:%S') }}</small></td>
+                                    <td><small>{{ log.user.username }}</small></td>
+                                    <td><span class="badge bg-info">{{ log.action }}</span></td>
+                                    <td><small>{{ log.details[:50] }}...</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center py-3">No audit logs yet</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
