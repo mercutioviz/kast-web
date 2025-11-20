@@ -627,7 +627,7 @@ function copyPublicLink() {
 }
 
 // Load users for sharing dropdown when modal opens
-const scanOwnerId = {{ scan.user_id }};
+const scanOwnerId = parseInt('{{ scan.user_id }}');
 document.getElementById('shareModal').addEventListener('show.bs.modal', function() {
     fetch('/api/users/active')
         .then(response => response.json())
