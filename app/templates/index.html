@@ -30,11 +30,19 @@
                     <!-- Scan Mode -->
                     <div class="mb-3">
                         {{ form.scan_mode.label(class="form-label fw-bold") }}
-                        {{ form.scan_mode(class="form-select") }}
+                        <select name="scan_mode" id="scan_mode" class="form-select" {% if not can_run_active %}onchange="checkActiveScanPermission(this)"{% endif %}>
+                            <option value="passive" selected>Passive - Non-intrusive reconnaissance</option>
+                            <option value="active" {% if not can_run_active %}disabled{% endif %}>Active - Direct interaction with target</option>
+                        </select>
                         <div class="form-text">
                             <strong>Passive:</strong> Non-intrusive reconnaissance only<br>
                             <strong>Active:</strong> Direct interaction with target (requires permission)
                         </div>
+                        {% if not can_run_active %}
+                        <div class="alert alert-warning mt-2 mb-0" id="active-scan-warning" style="display: none;">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>This user is not allowed to run active scans.</strong> Only Power Users and Admins can run active scans.
+                        </div>
+                        {% endif %}
                     </div>
 
                     <!-- Plugins -->
@@ -59,6 +67,32 @@
                             {% endif %}
                         </div>
                     </div>
+                    
+                    {% if not can_run_active %}
+                    <script>
+                    function checkActiveScanPermission(selectElement) {
+                        const warning = document.getElementById('active-scan-warning');
+                        if (selectElement.value === 'active') {
+                            warning.style.display = 'block';
+                            // Reset to passive
+                            selectElement.value = 'passive';
+                        } else {
+                            warning.style.display = 'none';
+                        }
+                    }
+                    
+                    // Show warning on page load if active is attempted
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const scanModeSelect = document.getElementById('scan_mode');
+                        const activeOption = scanModeSelect.querySelector('option[value="active"]');
+                        
+                        // Add hover effect to show tooltip
+                        if (activeOption) {
+                            activeOption.title = 'This user is not allowed to run active scans. Only Power Users and Admins can run active scans.';
+                        }
+                    });
+                    </script>
+                    {% endif %}
                     
                     <script>
                     function updateSubmitButtonState() {

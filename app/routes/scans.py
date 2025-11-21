@@ -515,6 +515,11 @@ def rerun(scan_id):
         flash('You do not have permission to re-run this scan', 'danger')
         return redirect(url_for('scans.list'))
     
+    # Check if user is allowed to run active scans if the original was active
+    if original_scan.scan_mode == 'active' and not current_user.can_run_active_scans:
+        flash('You do not have permission to run active scans. Only Power Users and Admins can run active scans.', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
     # Create new scan with same configuration (assigned to current user)
     new_scan = Scan(
         user_id=current_user.id,

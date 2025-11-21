@@ -26,7 +26,7 @@ def index():
     else:
         recent_scans = Scan.query.filter_by(user_id=current_user.id).order_by(Scan.started_at.desc()).limit(5).all()
     
-    return render_template('index.html', form=form, recent_scans=recent_scans)
+    return render_template('index.html', form=form, recent_scans=recent_scans, can_run_active=current_user.can_run_active_scans)
 
 @bp.route('/scan/new', methods=['POST'])
 @login_required
@@ -39,6 +39,11 @@ def create_scan():
     form.plugins.choices = plugins
     
     if form.validate_on_submit():
+        # Check if user is allowed to run active scans
+        if form.scan_mode.data == 'active' and not current_user.can_run_active_scans:
+            flash('You do not have permission to run active scans. Only Power Users and Admins can run active scans.', 'danger')
+            return redirect(url_for('main.index'))
+        
         # Create scan record (assign to current user)
         scan = Scan(
             user_id=current_user.id,

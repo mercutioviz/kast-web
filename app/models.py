@@ -13,7 +13,7 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     first_name = db.Column(db.String(100))
     last_name = db.Column(db.String(100))
-    role = db.Column(db.String(20), nullable=False, default='user')  # admin, user, viewer
+    role = db.Column(db.String(20), nullable=False, default='user')  # admin, power_user, user, viewer
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
@@ -39,6 +39,16 @@ class User(UserMixin, db.Model):
     def is_admin(self):
         """Check if user is admin"""
         return self.role == 'admin'
+    
+    @property
+    def is_power_user(self):
+        """Check if user is power user"""
+        return self.role == 'power_user'
+    
+    @property
+    def can_run_active_scans(self):
+        """Check if user can run active scans"""
+        return self.role in ('admin', 'power_user')
     
     def to_dict(self):
         """Convert user to dictionary"""

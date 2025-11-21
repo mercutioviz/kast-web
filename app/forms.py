@@ -169,7 +169,8 @@ class RegistrationForm(FlaskForm):
     role = SelectField(
         'Role',
         choices=[
-            ('user', 'User - Can create and manage own scans'),
+            ('user', 'User - Can create and manage own scans (passive only)'),
+            ('power_user', 'Power User - Can run active and passive scans'),
             ('admin', 'Admin - Full system access'),
             ('viewer', 'Viewer - Read-only access')
         ],
