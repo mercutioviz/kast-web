@@ -16,6 +16,25 @@ The user migration process uses two scripts:
 - Excludes scans and scan-related data
 - Options to skip or update existing users during import
 
+## Prerequisites
+
+Both the source and destination servers must have:
+- Python 3.x installed
+- kast-web application installed
+- Python dependencies installed (Flask, SQLAlchemy, etc.)
+- Virtual environment activated (if using one)
+
+**On the destination server, ensure dependencies are installed:**
+
+```bash
+cd /opt/kast-web
+# If using a virtual environment, activate it first:
+source venv/bin/activate  # or your venv path
+
+# Install dependencies if not already installed:
+pip install -r requirements.txt
+```
+
 ## Migration Process
 
 ### Step 1: Export Users from Current Server
@@ -46,12 +65,18 @@ Or use any other file transfer method (rsync, sftp, etc.)
 
 ### Step 3: Import Users on New Server
 
-On the **new/destination server**, run:
+On the **new/destination server**:
 
-```bash
-cd /opt/kast-web
-python import_users.py
-```
+1. **Activate the virtual environment** (if using one):
+   ```bash
+   cd /opt/kast-web
+   source venv/bin/activate  # or your venv path
+   ```
+
+2. **Run the import script**:
+   ```bash
+   python import_users.py
+   ```
 
 **Options:**
 
@@ -157,6 +182,11 @@ with app.app_context():
 ```
 
 ## Troubleshooting
+
+### "ModuleNotFoundError: No module named 'flask'"
+- The Python dependencies are not installed
+- Activate the virtual environment: `source venv/bin/activate`
+- Install dependencies: `pip install -r requirements.txt`
 
 ### "No users found in database"
 - The source database is empty
