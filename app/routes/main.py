@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from app import db
-from app.models import Scan
+from app.models import Scan, ReportLogo, SystemSettings
 from app.forms import ScanConfigForm
 from app.utils import get_available_plugins
 from app.tasks import execute_scan_task
@@ -19,6 +19,13 @@ def index():
     # Populate plugin choices dynamically
     plugins = get_available_plugins()
     form.plugins.choices = plugins
+    
+    # Populate logo choices
+    logos = ReportLogo.query.order_by(ReportLogo.name).all()
+    logo_choices = [(0, 'Use System Default')]  # 0 means use default
+    for logo in logos:
+        logo_choices.append((logo.id, logo.name))
+    form.logo_id.choices = logo_choices
     
     # Get recent scans for display (user's own scans unless admin)
     if current_user.is_admin:
@@ -38,11 +45,21 @@ def create_scan():
     plugins = get_available_plugins()
     form.plugins.choices = plugins
     
+    # Populate logo choices for validation
+    logos = ReportLogo.query.order_by(ReportLogo.name).all()
+    logo_choices = [(0, 'Use System Default')]
+    for logo in logos:
+        logo_choices.append((logo.id, logo.name))
+    form.logo_id.choices = logo_choices
+    
     if form.validate_on_submit():
         # Check if user is allowed to run active scans
         if form.scan_mode.data == 'active' and not current_user.can_run_active_scans:
             flash('You do not have permission to run active scans. Only Power Users and Admins can run active scans.', 'danger')
             return redirect(url_for('main.index'))
+        
+        # Handle logo selection (0 means use system default, so store as None)
+        logo_id = form.logo_id.data if form.logo_id.data and form.logo_id.data != 0 else None
         
         # Create scan record (assign to current user)
         scan = Scan(
@@ -53,6 +70,7 @@ def create_scan():
             parallel=form.parallel.data,
             verbose=form.verbose.data,
             dry_run=form.dry_run.data,
+            logo_id=logo_id,
             status='pending',
             config_json=json.dumps({
                 'target': form.target.data,
@@ -61,7 +79,8 @@ def create_scan():
                 'parallel': form.parallel.data,
                 'verbose': form.verbose.data,
                 'dry_run': form.dry_run.data,
-                'max_workers': form.max_workers.data
+                'max_workers': form.max_workers.data,
+                'logo_id': logo_id
             })
         )
         

@@ -77,6 +77,13 @@ class ScanConfigForm(FlaskForm):
         }
     )
     
+    logo_id = SelectField(
+        'Report Logo',
+        coerce=int,
+        choices=[],  # Will be populated dynamically
+        render_kw={'class': 'form-select'}
+    )
+    
     submit = SubmitField('Start Scan', render_kw={'class': 'btn btn-primary btn-lg'})
 
 

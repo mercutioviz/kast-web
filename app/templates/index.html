@@ -130,6 +130,15 @@
                     });
                     </script>
 
+                    <!-- Report Logo -->
+                    <div class="mb-3">
+                        {{ form.logo_id.label(class="form-label fw-bold") }}
+                        {{ form.logo_id(class="form-select") }}
+                        <div class="form-text">
+                            Select a logo for this scan's report, or use the system default
+                        </div>
+                    </div>
+
                     <!-- Advanced Options -->
                     <div class="card mb-3">
                         <div class="card-header">
