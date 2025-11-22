@@ -54,6 +54,13 @@ def create_app(config_name='default'):
         except (ValueError, TypeError):
             return '0 B'
     
+    # Context processor to inject version into all templates
+    @app.context_processor
+    def inject_version():
+        """Make version available to all templates"""
+        from config import VERSION
+        return {'app_version': VERSION}
+    
     # Register blueprints
     from app.routes import main, scans, api, auth, admin
     app.register_blueprint(main.bp)
