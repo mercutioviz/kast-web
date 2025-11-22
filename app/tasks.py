@@ -30,6 +30,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         dict with 'success', 'output_dir', 'error' keys
     """
     from flask import current_app
+    from app.utils import get_logo_for_scan
     
     try:
         # Get scan from database
@@ -49,6 +50,12 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         # Build command
         kast_cli = current_app.config['KAST_CLI_PATH']
         cmd = [kast_cli, '-t', target, '-m', scan_mode, '--format', 'both']
+        
+        # Add logo if available
+        logo_path = get_logo_for_scan(scan)
+        if logo_path:
+            cmd.extend(['--logo', logo_path])
+            current_app.logger.info(f"Using logo: {logo_path}")
         
         if plugins:
             cmd.extend(['--run-only', ','.join(plugins)])
@@ -218,6 +225,7 @@ def regenerate_report_task(self, scan_id):
         dict with 'success', 'error' keys
     """
     from flask import current_app
+    from app.utils import get_logo_for_scan
     
     try:
         # Get scan from database
@@ -235,6 +243,12 @@ def regenerate_report_task(self, scan_id):
         # Build command with --report-only flag and format both
         kast_cli = current_app.config['KAST_CLI_PATH']
         cmd = [kast_cli, '--report-only', str(output_dir), '--format', 'both']
+        
+        # Add logo if available
+        logo_path = get_logo_for_scan(scan)
+        if logo_path:
+            cmd.extend(['--logo', logo_path])
+            current_app.logger.info(f"Using logo for report regeneration: {logo_path}")
         
         current_app.logger.info(f"Executing KAST report regeneration: {' '.join(cmd)}")
         

@@ -85,6 +85,7 @@ class Scan(db.Model):
     celery_task_id = db.Column(db.String(255))  # Celery task ID for tracking
     started_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     completed_at = db.Column(db.DateTime)
+    logo_id = db.Column(db.Integer, db.ForeignKey('report_logos.id'), nullable=True)  # NULL = use system default
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
@@ -264,6 +265,42 @@ class ScanShare(db.Model):
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'is_expired': self.is_expired(),
             'is_public': self.is_public()
+        }
+
+
+class ReportLogo(db.Model):
+    """Model for storing report logo files for white-labeling"""
+    __tablename__ = 'report_logos'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    filename = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(500), nullable=False)
+    mime_type = db.Column(db.String(100), nullable=False)
+    file_size = db.Column(db.Integer)
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    uploader = db.relationship('User', backref='uploaded_logos')
+    
+    def __repr__(self):
+        return f'<ReportLogo {self.id}: {self.name}>'
+    
+    def to_dict(self):
+        """Convert logo to dictionary"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'filename': self.filename,
+            'file_path': self.file_path,
+            'mime_type': self.mime_type,
+            'file_size': self.file_size,
+            'uploaded_by': self.uploaded_by,
+            'uploader_username': self.uploader.username if self.uploader else None,
+            'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None
         }
 
 
