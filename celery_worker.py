@@ -21,6 +21,7 @@ celery.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
+    broker_connection_retry_on_startup=True,  # Explicitly enable connection retries during startup (Celery 6.0+ compatibility)
 )
 
 # Import Flask app for context (done after Celery init to avoid circular import)
