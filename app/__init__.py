@@ -70,6 +70,10 @@ def create_app(config_name='default'):
     app.register_blueprint(admin.bp)
     app.register_blueprint(logos.bp)
     
+    # Initialize Flask-Admin for database explorer
+    from app.admin_db import init_admin
+    init_admin(app, db)
+    
     # Create database tables
     with app.app_context():
         db.create_all()
