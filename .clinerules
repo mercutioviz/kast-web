@@ -1,0 +1,32 @@
+# Cline Custom Instructions for KAST-Web Project
+
+## Project Context
+This is the KAST-Web project - a Flask-based web interface for security scanning with Celery async task processing, user authentication, and role-based access control.
+
+## Primary Instruction
+Before working on any task, always review the comprehensive project documentation in `genai-instructions.md`. This file contains:
+- Project architecture and structure
+- Code standards and conventions
+- Database models and relationships
+- Authentication/authorization patterns
+- Development workflow
+- Common pitfalls and solutions
+- Best practices specific to this project
+
+## Key Reminders
+- Follow PEP 8 style guidelines (4 spaces, snake_case for functions, PascalCase for classes)
+- Use SQLAlchemy ORM patterns (never raw SQL)
+- Always include @login_required and permission checks for protected routes
+- Log sensitive actions to AuditLog model
+- Test with Celery worker running for any scan-related features
+- Create migration scripts for database schema changes
+- Update documentation when adding/changing features
+- Follow existing patterns in similar files before creating new approaches
+
+## File References
+When unsure about implementation details, refer to:
+- `genai-instructions.md` - Complete project guidelines
+- `README.md` - Project overview and setup
+- `app/models.py` - Database schema and relationships
+- `config.py` - Configuration patterns
+- Existing route files in `app/routes/` for route patterns
