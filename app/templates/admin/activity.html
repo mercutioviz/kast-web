@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}User Activity - KAST Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-activity"></i> User Activity</h2>
+    <div>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Period Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label for="period" class="col-form-label">Activity Period:</label>
+            </div>
+            <div class="col-auto">
+                <select name="period" id="period" class="form-select" onchange="this.form.submit()">
+                    <option value="1" {% if period == 1 %}selected{% endif %}>Last 24 hours</option>
+                    <option value="7" {% if period == 7 %}selected{% endif %}>Last 7 days</option>
+                    <option value="30" {% if period == 30 %}selected{% endif %}>Last 30 days</option>
+                    <option value="90" {% if period == 90 %}selected{% endif %}>Last 90 days</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- User Scans Activity -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-people"></i> User Scan Activity</h5>
+    </div>
+    <div class="card-body">
+        {% if user_scans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Last Login</th>
+                            <th class="text-end">Scans</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in user_scans %}
+                        <tr>
+                            <td>{{ user.username }}</td>
+                            <td><small>{{ user.email }}</small></td>
+                            <td>
+                                {% if user.last_login %}
+                                    <small>{{ user.last_login.strftime('%Y-%m-%d %H:%M') }}</small>
+                                {% else %}
+                                    <small class="text-muted">Never</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <span class="badge bg-primary rounded-pill">{{ user.scan_count }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted text-center py-3">No user activity in this period</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Daily Scans Chart -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Daily Scan Activity</h5>
+    </div>
+    <div class="card-body">
+        {% if daily_scans %}
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th class="text-end">Scans</th>
+                            <th>Activity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for scan in daily_scans %}
+                        <tr>
+                            <td>{{ scan.date if scan.date else 'N/A' }}</td>
+                            <td class="text-end">{{ scan.count }}</td>
+                            <td>
+                                {% set max_count = daily_scans|map(attribute='count')|max %}
+                                {% set width_pct = (scan.count / max_count * 100) if max_count > 0 else 0 %}
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-success" role="progressbar" 
+                                         style="width: {{ width_pct|round(2) }}%"
+                                         aria-valuenow="{{ scan.count }}" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="{{ max_count }}">
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted text-center py-3">No scan activity in this period</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Failed Scans by User -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Failed Scans by User</h5>
+    </div>
+    <div class="card-body">
+        {% if failed_scans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Username</th>
+                            <th class="text-end">Failed Scans</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in failed_scans %}
+                        <tr>
+                            <td>{{ user.username }}</td>
+                            <td class="text-end">
+                                <span class="badge bg-danger rounded-pill">{{ user.failed_count }}</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted text-center py-3">No failed scans in this period</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

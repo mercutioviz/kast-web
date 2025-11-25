@@ -187,7 +187,7 @@ def activity():
     """User activity monitoring"""
     
     # Get activity period
-    period = request.args.get('period', '7', type=int)  # days
+    period = request.args.get('period', 7, type=int)  # days
     start_date = datetime.utcnow() - timedelta(days=period)
     
     # Active users in period
