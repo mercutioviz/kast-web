@@ -8,7 +8,8 @@ from flask import current_app
 def get_available_plugins():
     """
     Get list of available KAST plugins by calling kast --list-plugins
-    Returns list of tuples: [(plugin_name, description), ...]
+    Returns list of tuples: [(plugin_name, description, plugin_type), ...]
+    where plugin_type is 'passive' or 'active'
     """
     try:
         kast_cli = current_app.config['KAST_CLI_PATH']
@@ -23,7 +24,7 @@ def get_available_plugins():
             current_app.logger.error(f"Failed to get plugins: {result.stderr}")
             return []
         
-        # Parse the output to extract plugin names
+        # Parse the output to extract plugin names and types
         # The output format from kast is:
         # ✓ plugin_name (priority: X, type: passive/active)
         #   Description
@@ -34,22 +35,50 @@ def get_available_plugins():
         while i < len(lines):
             line = lines[i].strip()
             if line.startswith('✓') or line.startswith('✗'):
-                # Extract plugin name from line like: "✓ subfinder (priority: 1, type: passive)"
-                parts = line.split('(')[0].strip()
-                plugin_name = parts.split()[-1]  # Get the last word (plugin name)
+                # Extract plugin name and type from line like: "✓ subfinder (priority: 1, type: passive)"
+                parts = line.split('(')
+                plugin_name = parts[0].strip().split()[-1]  # Get the last word (plugin name)
+                
+                # Extract plugin type from the parentheses
+                plugin_type = 'passive'  # default
+                if len(parts) > 1:
+                    paren_content = parts[1]
+                    if 'type:' in paren_content:
+                        type_part = paren_content.split('type:')[1].split(')')[0].strip()
+                        plugin_type = type_part
                 
                 # Get description from next line if available
                 description = ''
                 if i + 1 < len(lines) and not lines[i + 1].strip().startswith(('✓', '✗', 'Available')):
                     description = lines[i + 1].strip()
                 
-                plugins.append((plugin_name, f"{plugin_name} - {description}" if description else plugin_name))
+                full_description = f"{plugin_name} - {description}" if description else plugin_name
+                plugins.append((plugin_name, full_description, plugin_type))
             i += 1
         
         return plugins
     except Exception as e:
         current_app.logger.error(f"Error getting plugins: {str(e)}")
         return []
+
+
+def filter_plugins_by_mode(plugins, scan_mode):
+    """
+    Filter plugins based on scan mode
+    
+    Args:
+        plugins: List of tuples [(plugin_name, description, plugin_type), ...]
+        scan_mode: 'passive' or 'active'
+    
+    Returns:
+        Filtered list of tuples [(plugin_name, description), ...] for form choices
+    """
+    if scan_mode == 'active':
+        # Active scans can use both passive and active plugins
+        return [(name, desc) for name, desc, _ in plugins]
+    else:
+        # Passive scans can only use passive plugins
+        return [(name, desc) for name, desc, ptype in plugins if ptype == 'passive']
 
 def execute_kast_scan(scan_id, target, scan_mode, plugins=None, parallel=False, verbose=False, dry_run=False):
     """

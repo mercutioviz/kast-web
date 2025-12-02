@@ -144,8 +144,20 @@ def detail(scan_id):
         # No plugins specified and no output directory yet
         plugin_list = []
     
+    # Get plugin types to filter based on scan mode
+    from app.utils import get_available_plugins
+    all_plugins = get_available_plugins()
+    plugin_types = {name: ptype for name, _, ptype in all_plugins}
+    
     # Check status for each plugin
     for plugin in plugin_list:
+        # Filter based on scan mode
+        plugin_type = plugin_types.get(plugin, 'passive')  # Default to passive if unknown
+        
+        # Skip active plugins if this is a passive scan
+        if scan.scan_mode == 'passive' and plugin_type == 'active':
+            continue
+        
         plugin_data = {
             'plugin_name': plugin,
             'status': 'pending',

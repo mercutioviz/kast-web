@@ -16,9 +16,11 @@ def index():
     """Home page with scan configuration form"""
     form = ScanConfigForm()
     
-    # Populate plugin choices dynamically
-    plugins = get_available_plugins()
-    form.plugins.choices = plugins
+    # Populate plugin choices dynamically with type information
+    all_plugins = get_available_plugins()
+    # For initial load, show passive plugins only (default scan mode)
+    from app.utils import filter_plugins_by_mode
+    form.plugins.choices = filter_plugins_by_mode(all_plugins, 'passive')
     
     # Populate logo choices
     logos = ReportLogo.query.order_by(ReportLogo.name).all()
@@ -33,7 +35,12 @@ def index():
     else:
         recent_scans = Scan.query.filter_by(user_id=current_user.id).order_by(Scan.started_at.desc()).limit(5).all()
     
-    return render_template('index.html', form=form, recent_scans=recent_scans, can_run_active=current_user.can_run_active_scans)
+    # Pass all plugins with type info to template for dynamic filtering
+    plugins_with_types = all_plugins
+    
+    return render_template('index.html', form=form, recent_scans=recent_scans, 
+                         can_run_active=current_user.can_run_active_scans,
+                         plugins_with_types=plugins_with_types)
 
 @bp.route('/scan/new', methods=['POST'])
 @login_required
@@ -57,6 +64,18 @@ def create_scan():
         if form.scan_mode.data == 'active' and not current_user.can_run_active_scans:
             flash('You do not have permission to run active scans. Only Power Users and Admins can run active scans.', 'danger')
             return redirect(url_for('main.index'))
+        
+        # Validate that passive scans don't include active plugins
+        if form.scan_mode.data == 'passive' and form.plugins.data:
+            # Get plugin types
+            all_plugins = get_available_plugins()
+            plugin_types = {name: ptype for name, _, ptype in all_plugins}
+            
+            # Check if any selected plugins are active-only
+            active_plugins_selected = [p for p in form.plugins.data if plugin_types.get(p) == 'active']
+            if active_plugins_selected:
+                flash(f'Passive scans cannot include active plugins. Remove these plugins: {", ".join(active_plugins_selected)}', 'danger')
+                return redirect(url_for('main.index'))
         
         # Handle logo selection (0 means use system default, so store as None)
         logo_id = form.logo_id.data if form.logo_id.data and form.logo_id.data != 0 else None
