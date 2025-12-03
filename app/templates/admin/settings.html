@@ -94,6 +94,91 @@
                         <div><small class="form-text text-muted">Track system actions and user activity</small></div>
                     </div>
                     
+                    <hr class="my-4">
+                    
+                    <!-- Email Settings -->
+                    <h6 class="mb-3"><i class="bi bi-envelope"></i> Email Settings</h6>
+                    
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="email_enabled" 
+                               name="email_enabled" {% if settings.get('email_enabled') %}checked{% endif %}>
+                        <label class="form-check-label" for="email_enabled">
+                            Enable Email Functionality
+                        </label>
+                        <div><small class="form-text text-muted">Allow users to send reports via email</small></div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <small><i class="bi bi-info-circle"></i> Configure SMTP settings to enable email sending. Common SMTP ports: 587 (TLS), 465 (SSL), 25 (unencrypted).</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="smtp_host" class="form-label">SMTP Host</label>
+                        <input type="text" class="form-control" id="smtp_host" name="smtp_host" 
+                               value="{{ settings.get('smtp_host', '') }}" placeholder="smtp.gmail.com">
+                        <small class="form-text text-muted">SMTP server address</small>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="smtp_port" class="form-label">SMTP Port</label>
+                            <input type="number" class="form-control" id="smtp_port" name="smtp_port" 
+                                   value="{{ settings.get('smtp_port', 587) }}" min="1" max="65535">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Security</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="use_tls" 
+                                       name="use_tls" {% if settings.get('use_tls', True) %}checked{% endif %}>
+                                <label class="form-check-label" for="use_tls">
+                                    Use TLS (Port 587)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="use_ssl" 
+                                       name="use_ssl" {% if settings.get('use_ssl', False) %}checked{% endif %}>
+                                <label class="form-check-label" for="use_ssl">
+                                    Use SSL (Port 465)
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">TLS is recommended for most providers</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="smtp_username" class="form-label">SMTP Username</label>
+                        <input type="text" class="form-control" id="smtp_username" name="smtp_username" 
+                               value="{{ settings.get('smtp_username', '') }}" placeholder="your-email@example.com">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="smtp_password" class="form-label">SMTP Password</label>
+                        <input type="password" class="form-control" id="smtp_password" name="smtp_password" 
+                               value="{{ settings.get('smtp_password', '') }}" placeholder="Enter password">
+                        <small class="form-text text-muted">App-specific password recommended for Gmail/Outlook</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="from_email" class="form-label">From Email Address</label>
+                        <input type="email" class="form-control" id="from_email" name="from_email" 
+                               value="{{ settings.get('from_email', '') }}" placeholder="noreply@example.com">
+                        <small class="form-text text-muted">Email address that will appear as sender</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="from_name" class="form-label">From Name</label>
+                        <input type="text" class="form-control" id="from_name" name="from_name" 
+                               value="{{ settings.get('from_name', 'KAST Security') }}" placeholder="KAST Security">
+                        <small class="form-text text-muted">Display name for outgoing emails</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-info btn-sm" id="testSmtpBtn">
+                            <i class="bi bi-plug"></i> Test SMTP Connection
+                        </button>
+                        <div id="smtpTestResult" class="mt-2"></div>
+                    </div>
+                    
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-check-circle"></i> Save Settings
@@ -130,4 +215,55 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('testSmtpBtn').addEventListener('click', function() {
+    const btn = this;
+    const resultDiv = document.getElementById('smtpTestResult');
+    
+    // Disable button and show loading
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+    resultDiv.innerHTML = '';
+    
+    // Get form data
+    const formData = new FormData();
+    formData.append('smtp_host', document.getElementById('smtp_host').value);
+    formData.append('smtp_port', document.getElementById('smtp_port').value);
+    formData.append('smtp_username', document.getElementById('smtp_username').value);
+    formData.append('smtp_password', document.getElementById('smtp_password').value);
+    formData.append('from_email', document.getElementById('from_email').value);
+    formData.append('from_name', document.getElementById('from_name').value);
+    if (document.getElementById('use_tls').checked) {
+        formData.append('use_tls', 'on');
+    }
+    if (document.getElementById('use_ssl').checked) {
+        formData.append('use_ssl', 'on');
+    }
+    
+    // Send test request
+    fetch('{{ url_for("admin.test_smtp") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            resultDiv.innerHTML = '<div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> ' + data.message + '</div>';
+        } else {
+            resultDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-x-circle"></i> ' + data.message + '</div>';
+        }
+    })
+    .catch(error => {
+        resultDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-x-circle"></i> Test failed: ' + error + '</div>';
+    })
+    .finally(() => {
+        // Re-enable button
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug"></i> Test SMTP Connection';
+    });
+});
+</script>
 {% endblock %}

@@ -289,3 +289,94 @@ def regenerate_report_task(self, scan_id):
     except Exception as e:
         current_app.logger.exception(f"Error regenerating report for scan {scan_id}: {str(e)}")
         return {'success': False, 'error': str(e)}
+
+
+@celery.task(bind=True)
+def send_report_email_task(self, scan_id, recipients, sender_user_id):
+    """
+    Celery task to send scan report via email asynchronously
+    
+    Args:
+        scan_id: Database scan ID
+        recipients: List of recipient email addresses
+        sender_user_id: ID of user sending the email
+    
+    Returns:
+        dict with 'success', 'error', 'recipients_count' keys
+    """
+    from flask import current_app
+    from app.models import User, AuditLog
+    from app.email import send_scan_report_email
+    
+    try:
+        # Get scan from database
+        scan = db.session.get(Scan, scan_id)
+        if not scan:
+            return {'success': False, 'error': 'Scan not found'}
+        
+        # Get sender information
+        sender = db.session.get(User, sender_user_id)
+        if not sender:
+            return {'success': False, 'error': 'Sender not found'}
+        
+        sender_name = f"{sender.first_name} {sender.last_name}".strip() or sender.username
+        
+        # Get SMTP settings from SystemSettings
+        from app.models import SystemSettings
+        smtp_settings = {
+            'smtp_host': SystemSettings.get_setting('smtp_host'),
+            'smtp_port': SystemSettings.get_setting('smtp_port', 587),
+            'smtp_username': SystemSettings.get_setting('smtp_username'),
+            'smtp_password': SystemSettings.get_setting('smtp_password'),
+            'from_email': SystemSettings.get_setting('from_email'),
+            'from_name': SystemSettings.get_setting('from_name', 'KAST Security'),
+            'use_tls': SystemSettings.get_setting('use_tls', True),
+            'use_ssl': SystemSettings.get_setting('use_ssl', False)
+        }
+        
+        # Check if email is enabled
+        email_enabled = SystemSettings.get_setting('email_enabled', False)
+        if not email_enabled:
+            return {'success': False, 'error': 'Email functionality is disabled in system settings'}
+        
+        # Update task state to show progress
+        self.update_state(state='PROGRESS', meta={'status': 'sending', 'scan_id': scan_id})
+        
+        # Send email
+        current_app.logger.info(f"Sending report for scan {scan_id} to {len(recipients)} recipient(s)")
+        success, error = send_scan_report_email(
+            scan=scan,
+            recipients=recipients,
+            sender_name=sender_name,
+            smtp_settings=smtp_settings
+        )
+        
+        # Log the action
+        if success:
+            AuditLog.log(
+                user_id=sender_user_id,
+                action='email_report_sent',
+                resource_type='scan',
+                resource_id=scan_id,
+                details=f'Report sent to {len(recipients)} recipient(s): {", ".join(recipients)}'
+            )
+            current_app.logger.info(f"Report email sent successfully for scan {scan_id}")
+        else:
+            AuditLog.log(
+                user_id=sender_user_id,
+                action='email_report_failed',
+                resource_type='scan',
+                resource_id=scan_id,
+                details=f'Failed to send report: {error}'
+            )
+            current_app.logger.error(f"Failed to send report email for scan {scan_id}: {error}")
+        
+        return {
+            'success': success,
+            'error': error,
+            'recipients_count': len(recipients)
+        }
+    
+    except Exception as e:
+        current_app.logger.exception(f"Error sending report email for scan {scan_id}: {str(e)}")
+        return {'success': False, 'error': str(e)}

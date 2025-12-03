@@ -108,10 +108,20 @@ def settings():
             'max_scan_age_days': int(request.form.get('max_scan_age_days', 90)),
             'max_scans_per_user': int(request.form.get('max_scans_per_user', 0)),
             'enable_audit_log': request.form.get('enable_audit_log') == 'on',
-            'session_timeout_minutes': int(request.form.get('session_timeout_minutes', 60))
+            'session_timeout_minutes': int(request.form.get('session_timeout_minutes', 60)),
+            # Email settings
+            'email_enabled': request.form.get('email_enabled') == 'on',
+            'smtp_host': request.form.get('smtp_host', ''),
+            'smtp_port': int(request.form.get('smtp_port', 587)),
+            'smtp_username': request.form.get('smtp_username', ''),
+            'smtp_password': request.form.get('smtp_password', ''),
+            'from_email': request.form.get('from_email', ''),
+            'from_name': request.form.get('from_name', 'KAST Security'),
+            'use_tls': request.form.get('use_tls') == 'on',
+            'use_ssl': request.form.get('use_ssl') == 'on'
         }
         
-        SystemSettings.update_settings(settings_data)
+        SystemSettings.update_settings(settings_data, user_id=current_user.id)
         
         # Log the change
         AuditLog.log(
@@ -271,3 +281,32 @@ def api_stats():
     }
     
     return jsonify(stats)
+
+
+@bp.route('/test-smtp', methods=['POST'])
+@login_required
+@admin_required
+def test_smtp():
+    """Test SMTP connection with current settings"""
+    from app.email import EmailService
+    
+    # Get SMTP settings from form
+    smtp_settings = {
+        'smtp_host': request.form.get('smtp_host'),
+        'smtp_port': int(request.form.get('smtp_port', 587)),
+        'smtp_username': request.form.get('smtp_username'),
+        'smtp_password': request.form.get('smtp_password'),
+        'from_email': request.form.get('from_email'),
+        'from_name': request.form.get('from_name', 'KAST Security'),
+        'use_tls': request.form.get('use_tls') == 'on',
+        'use_ssl': request.form.get('use_ssl') == 'on'
+    }
+    
+    # Test connection
+    email_service = EmailService(smtp_settings)
+    success, error = email_service.test_connection()
+    
+    if success:
+        return jsonify({'success': True, 'message': 'SMTP connection successful!'})
+    else:
+        return jsonify({'success': False, 'message': error}), 400

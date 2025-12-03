@@ -826,3 +826,62 @@ def transfer_ownership(scan_id):
                 flash(f'{field}: {error}', 'danger')
     
     return redirect(url_for('scans.detail', scan_id=scan_id))
+
+
+# ============================================================================
+# EMAIL FUNCTIONALITY
+# ============================================================================
+
+@bp.route('/<int:scan_id>/send-email', methods=['POST'])
+@login_required
+def send_email(scan_id):
+    """Send scan report via email"""
+    from app.models import SystemSettings
+    from app.email import parse_email_list
+    from app.tasks import send_report_email_task
+    
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return jsonify({'success': False, 'error': 'Scan not found'}), 404
+    
+    # Check access permission
+    if not check_scan_access_simple(scan):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    
+    # Check if scan is completed
+    if scan.status != 'completed':
+        return jsonify({'success': False, 'error': 'Scan must be completed before sending report'}), 400
+    
+    # Check if email is enabled
+    email_enabled = SystemSettings.get_setting('email_enabled', False)
+    if not email_enabled:
+        return jsonify({'success': False, 'error': 'Email functionality is disabled'}), 400
+    
+    # Get and validate recipients
+    recipients_str = request.form.get('recipients', '').strip()
+    if not recipients_str:
+        return jsonify({'success': False, 'error': 'No recipients specified'}), 400
+    
+    # Parse and validate email addresses
+    recipients = parse_email_list(recipients_str)
+    if not recipients:
+        return jsonify({'success': False, 'error': 'No valid email addresses provided'}), 400
+    
+    # Limit number of recipients (prevent abuse)
+    max_recipients = 10
+    if len(recipients) > max_recipients:
+        return jsonify({'success': False, 'error': f'Maximum {max_recipients} recipients allowed'}), 400
+    
+    try:
+        # Queue email sending task
+        task = send_report_email_task.delay(scan_id, recipients, current_user.id)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Email queued for delivery to {len(recipients)} recipient(s)',
+            'task_id': task.id,
+            'recipients_count': len(recipients)
+        })
+    
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to queue email: {str(e)}'}), 500
