@@ -158,6 +158,15 @@ if (currentStatus === 'running' || currentStatus === 'pending') {
 
 // Stop polling when page is unloaded
 window.addEventListener('beforeunload', stopPolling);
+
+// Initialize Bootstrap tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all tooltips on the page
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
 </script>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -355,10 +364,27 @@ window.addEventListener('beforeunload', stopPolling);
                             </li>
                         </ul>
                     </div>
-                    <button type="button" class="btn btn-outline-primary w-100 mb-2" 
-                            data-bs-toggle="modal" data-bs-target="#emailModal">
-                        <i class="bi bi-envelope"></i> Send via Email
-                    </button>
+                    {% if email_enabled %}
+                        <button type="button" 
+                                class="btn btn-outline-primary w-100 mb-2" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#emailModal">
+                            <i class="bi bi-envelope"></i> Send via Email
+                        </button>
+                    {% else %}
+                        <span class="d-inline-block w-100 mb-2" 
+                              tabindex="0"
+                              data-bs-toggle="tooltip" 
+                              data-bs-placement="top" 
+                              title="Email functionality is disabled. Please contact your system administrator to enable email features.">
+                            <button type="button" 
+                                    class="btn btn-outline-primary w-100" 
+                                    style="pointer-events: none;" 
+                                    disabled>
+                                <i class="bi bi-envelope"></i> Send via Email
+                            </button>
+                        </span>
+                    {% endif %}
                     <hr>
                 {% endif %}
                 

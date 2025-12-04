@@ -191,12 +191,17 @@ def detail(scan_id):
         if potential_report.exists():
             report_path = str(potential_report)
     
+    # Check if email functionality is enabled
+    from app.models import SystemSettings
+    email_enabled = SystemSettings.get_setting('email_enabled', False)
+    
     return render_template(
         'scan_detail.html',
         scan=scan,
         results=plugin_statuses,
         report_path=report_path,
-        format_duration=format_duration
+        format_duration=format_duration,
+        email_enabled=email_enabled
     )
 
 @bp.route('/<int:scan_id>/delete', methods=['POST'])
