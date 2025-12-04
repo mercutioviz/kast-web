@@ -706,6 +706,16 @@ document.getElementById('shareModal').addEventListener('show.bs.modal', function
                         </small>
                     </div>
                     
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="include_zip" name="include_zip">
+                        <label class="form-check-label" for="include_zip">
+                            Include zip of all results
+                        </label>
+                        <small class="form-text text-muted d-block ms-4">
+                            Attaches a zip file containing all scan output files in addition to the PDF report.
+                        </small>
+                    </div>
+                    
                     <div id="emailResult"></div>
                 </form>
             </div>
@@ -739,29 +749,49 @@ document.getElementById('sendEmailBtn').addEventListener('click', function() {
     // Prepare form data
     const formData = new FormData();
     formData.append('recipients', recipients);
+    const includeZip = document.getElementById('include_zip').checked;
+    formData.append('include_zip', includeZip ? 'true' : 'false');
     
     // Send email request
     fetch('{{ url_for("scans.send_email", scan_id=scan.id) }}', {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ' + data.message + '</div>';
-            // Clear form
-            document.getElementById('email_recipients').value = '';
-            // Close modal after 2 seconds
-            setTimeout(() => {
-                bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
-                resultDiv.innerHTML = '';
-            }, 2000);
-        } else {
-            resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ' + data.error + '</div>';
+    .then(response => {
+        // Get the response text to parse
+        return response.text().then(text => ({
+            ok: response.ok,
+            status: response.status,
+            text: text
+        }));
+    })
+    .then(({ok, status, text}) => {
+        // Try to parse as JSON
+        try {
+            const data = JSON.parse(text);
+            if (data.success) {
+                resultDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ' + data.message + '</div>';
+                // Clear form
+                document.getElementById('email_recipients').value = '';
+                document.getElementById('include_zip').checked = false;
+                // Close modal after 2 seconds
+                setTimeout(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
+                    resultDiv.innerHTML = '';
+                }, 2000);
+            } else {
+                // Show the actual error message from the server
+                resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ' + (data.error || 'Unknown error') + '</div>';
+            }
+        } catch (e) {
+            // If JSON parsing fails, show the raw response
+            console.error('Failed to parse JSON. Status:', status, 'Response:', text);
+            resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Server error (status ' + status + '): ' + text.substring(0, 200) + '</div>';
         }
     })
     .catch(error => {
-        resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Failed to send email: ' + error + '</div>';
+        console.error('Fetch error:', error);
+        resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Network error: ' + error + '</div>';
     })
     .finally(() => {
         // Re-enable button

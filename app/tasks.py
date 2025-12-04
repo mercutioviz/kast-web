@@ -292,7 +292,7 @@ def regenerate_report_task(self, scan_id):
 
 
 @celery.task(bind=True)
-def send_report_email_task(self, scan_id, recipients, sender_user_id):
+def send_report_email_task(self, scan_id, recipients, sender_user_id, include_zip=False):
     """
     Celery task to send scan report via email asynchronously
     
@@ -300,6 +300,7 @@ def send_report_email_task(self, scan_id, recipients, sender_user_id):
         scan_id: Database scan ID
         recipients: List of recipient email addresses
         sender_user_id: ID of user sending the email
+        include_zip: Whether to include zip file of all results
     
     Returns:
         dict with 'success', 'error', 'recipients_count' keys
@@ -343,22 +344,26 @@ def send_report_email_task(self, scan_id, recipients, sender_user_id):
         self.update_state(state='PROGRESS', meta={'status': 'sending', 'scan_id': scan_id})
         
         # Send email
-        current_app.logger.info(f"Sending report for scan {scan_id} to {len(recipients)} recipient(s)")
+        current_app.logger.info(f"Sending report for scan {scan_id} to {len(recipients)} recipient(s){' with zip file' if include_zip else ''}")
         success, error = send_scan_report_email(
             scan=scan,
             recipients=recipients,
             sender_name=sender_name,
-            smtp_settings=smtp_settings
+            smtp_settings=smtp_settings,
+            include_zip=include_zip
         )
         
         # Log the action
         if success:
+            details = f'Report sent to {len(recipients)} recipient(s): {", ".join(recipients)}'
+            if include_zip:
+                details += ' (with results zip)'
             AuditLog.log(
                 user_id=sender_user_id,
                 action='email_report_sent',
                 resource_type='scan',
                 resource_id=scan_id,
-                details=f'Report sent to {len(recipients)} recipient(s): {", ".join(recipients)}'
+                details=details
             )
             current_app.logger.info(f"Report email sent successfully for scan {scan_id}")
         else:

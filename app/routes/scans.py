@@ -872,9 +872,12 @@ def send_email(scan_id):
     if len(recipients) > max_recipients:
         return jsonify({'success': False, 'error': f'Maximum {max_recipients} recipients allowed'}), 400
     
+    # Get include_zip parameter
+    include_zip = request.form.get('include_zip', 'false').lower() == 'true'
+    
     try:
         # Queue email sending task
-        task = send_report_email_task.delay(scan_id, recipients, current_user.id)
+        task = send_report_email_task.delay(scan_id, recipients, current_user.id, include_zip)
         
         return jsonify({
             'success': True,
