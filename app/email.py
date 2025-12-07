@@ -5,6 +5,9 @@ Handles SMTP configuration, email composition, and PDF attachments
 
 import smtplib
 import logging
+import zipfile
+import tempfile
+import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -328,7 +331,8 @@ def send_scan_report_email(
     scan,
     recipients: List[str],
     sender_name: str,
-    smtp_settings: dict
+    smtp_settings: dict,
+    include_zip: bool = False
 ) -> Tuple[bool, Optional[str]]:
     """
     Send scan report via email
@@ -338,10 +342,13 @@ def send_scan_report_email(
         recipients: List of recipient email addresses
         sender_name: Name of the user sending the email
         smtp_settings: SMTP configuration dictionary
+        include_zip: Whether to include zip file of all results
     
     Returns:
         Tuple of (success, error_message)
     """
+    zip_path = None
+    
     try:
         # Check if PDF report exists
         if not scan.output_dir:
@@ -371,9 +378,41 @@ def send_scan_report_email(
         # Create email subject
         subject = f"Security Scan Report: {scan.target}"
         
-        # Prepare attachment
+        # Prepare PDF attachment
         pdf_filename = f"kast_report_{scan.target}_{scan.id}.pdf"
         attachments = [(pdf_filename, pdf_content, 'application/pdf')]
+        
+        # Create zip file if requested
+        if include_zip and scan.output_dir:
+            output_dir = Path(scan.output_dir)
+            if output_dir.exists():
+                try:
+                    # Create temporary zip file
+                    zip_fd, zip_path = tempfile.mkstemp(suffix='.zip')
+                    os.close(zip_fd)  # Close file descriptor
+                    
+                    # Create zip archive
+                    logger.info(f"Creating zip file for scan {scan.id} output directory")
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        for file_path in output_dir.rglob('*'):
+                            if file_path.is_file():
+                                # Use relative path from output directory
+                                arcname = file_path.relative_to(output_dir)
+                                zipf.write(file_path, arcname)
+                    
+                    # Read zip content
+                    with open(zip_path, 'rb') as f:
+                        zip_content = f.read()
+                    
+                    # Add to attachments
+                    zip_filename = f"kast_results_{scan.target}_{scan.id}.zip"
+                    attachments.append((zip_filename, zip_content, 'application/zip'))
+                    
+                    logger.info(f"Created zip file for scan {scan.id}: {len(zip_content)} bytes")
+                
+                except Exception as e:
+                    logger.error(f"Failed to create zip file for scan {scan.id}: {str(e)}")
+                    # Continue without zip rather than failing entirely
         
         # Send email
         email_service = EmailService(smtp_settings)
@@ -391,3 +430,12 @@ def send_scan_report_email(
         error_msg = f"Error preparing email: {str(e)}"
         logger.error(error_msg)
         return False, error_msg
+    
+    finally:
+        # Clean up temporary zip file
+        if zip_path and os.path.exists(zip_path):
+            try:
+                os.unlink(zip_path)
+                logger.debug(f"Cleaned up temporary zip file: {zip_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up zip file {zip_path}: {str(e)}")

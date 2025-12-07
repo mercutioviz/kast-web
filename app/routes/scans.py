@@ -191,12 +191,17 @@ def detail(scan_id):
         if potential_report.exists():
             report_path = str(potential_report)
     
+    # Check if email functionality is enabled
+    from app.models import SystemSettings
+    email_enabled = SystemSettings.get_setting('email_enabled', False)
+    
     return render_template(
         'scan_detail.html',
         scan=scan,
         results=plugin_statuses,
         report_path=report_path,
-        format_duration=format_duration
+        format_duration=format_duration,
+        email_enabled=email_enabled
     )
 
 @bp.route('/<int:scan_id>/delete', methods=['POST'])
@@ -872,9 +877,12 @@ def send_email(scan_id):
     if len(recipients) > max_recipients:
         return jsonify({'success': False, 'error': f'Maximum {max_recipients} recipients allowed'}), 400
     
+    # Get include_zip parameter
+    include_zip = request.form.get('include_zip', 'false').lower() == 'true'
+    
     try:
         # Queue email sending task
-        task = send_report_email_task.delay(scan_id, recipients, current_user.id)
+        task = send_report_email_task.delay(scan_id, recipients, current_user.id, include_zip)
         
         return jsonify({
             'success': True,
