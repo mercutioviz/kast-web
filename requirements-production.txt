@@ -22,7 +22,8 @@ gunicorn==21.2.0
 # PyMySQL==1.1.0
 
 # Performance and monitoring
-gevent==24.2.1
+# Note: Using latest gevent for Python 3.13 compatibility
+gevent==24.11.1
 eventlet==0.36.1
 
 # Security
