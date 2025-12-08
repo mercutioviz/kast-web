@@ -22,8 +22,8 @@ gunicorn==21.2.0
 # PyMySQL==1.1.0
 
 # Performance and monitoring
-gevent==23.9.1
-eventlet==0.33.3
+gevent==24.2.1
+eventlet==0.36.1
 
 # Security
 cryptography==41.0.7

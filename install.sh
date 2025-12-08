@@ -575,13 +575,31 @@ setup_application() {
     print_info "Installing Python dependencies (this may take a few minutes)..."
     source "$VENV_DIR/bin/activate"
     
-    pip install --upgrade pip >> "$LOG_FILE" 2>&1
+    if ! pip install --upgrade pip >> "$LOG_FILE" 2>&1; then
+        error_exit "Failed to upgrade pip. Check $LOG_FILE for details."
+    fi
     
     if [[ -f "$INSTALL_DIR/requirements-production.txt" ]]; then
-        pip install -r "$INSTALL_DIR/requirements-production.txt" >> "$LOG_FILE" 2>&1
+        if ! pip install -r "$INSTALL_DIR/requirements-production.txt" >> "$LOG_FILE" 2>&1; then
+            print_error "Failed to install Python dependencies"
+            echo ""
+            echo "Last 50 lines of error log:"
+            tail -50 "$LOG_FILE"
+            echo ""
+            error_exit "Python dependency installation failed. See above for details."
+        fi
     elif [[ -f "$INSTALL_DIR/requirements.txt" ]]; then
-        pip install -r "$INSTALL_DIR/requirements.txt" >> "$LOG_FILE" 2>&1
-        pip install gunicorn >> "$LOG_FILE" 2>&1
+        if ! pip install -r "$INSTALL_DIR/requirements.txt" >> "$LOG_FILE" 2>&1; then
+            print_error "Failed to install Python dependencies"
+            echo ""
+            echo "Last 50 lines of error log:"
+            tail -50 "$LOG_FILE"
+            echo ""
+            error_exit "Python dependency installation failed. See above for details."
+        fi
+        if ! pip install gunicorn >> "$LOG_FILE" 2>&1; then
+            error_exit "Failed to install gunicorn. Check $LOG_FILE for details."
+        fi
     else
         error_exit "No requirements file found"
     fi
