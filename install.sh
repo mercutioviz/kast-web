@@ -629,8 +629,8 @@ EOF
 initialize_database() {
     print_header "Database Initialization"
     
-    cd "$INSTALL_DIR"
-    source "$VENV_DIR/bin/activate"
+    cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
+    source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
     # Run database migrations if they exist
     if [[ -d "$INSTALL_DIR/utils" ]]; then
@@ -638,6 +638,7 @@ initialize_database() {
         
         for migration in "$INSTALL_DIR"/utils/migrate*.py; do
             if [[ -f "$migration" ]]; then
+                print_info "Running migration: $(basename "$migration")"
                 python3 "$migration" >> "$LOG_FILE" 2>&1 || true
             fi
         done
@@ -645,22 +646,25 @@ initialize_database() {
     
     # Initialize database tables
     print_info "Initializing database tables..."
-    python3 << 'EOF' >> "$LOG_FILE" 2>&1
+    if python3 << 'EOF' >> "$LOG_FILE" 2>&1
 from app import create_app, db
 app = create_app()
 with app.app_context():
     db.create_all()
     print("Database tables created successfully")
 EOF
-    
-    print_success "Database initialized"
+    then
+        print_success "Database initialized"
+    else
+        error_exit "Database initialization failed. Check $LOG_FILE for details."
+    fi
 }
 
 create_admin_user() {
     print_header "Admin User Creation"
     
-    cd "$INSTALL_DIR"
-    source "$VENV_DIR/bin/activate"
+    cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
+    source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
     # Prompt for admin credentials if not provided
     if [[ "$NON_INTERACTIVE" == "no" ]]; then
@@ -1278,11 +1282,27 @@ generate_report() {
     echo -e "${NC}"
     
     echo -e "\n${CYAN}${BOLD}Installation Details:${NC}"
-    echo "  Installation Directory: $INSTALL_DIR"
+    echo "  Installation Directory: ${GREEN}$INSTALL_DIR${NC}"
     echo "  Database Type: $DATABASE_TYPE"
+    if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
+        echo "  Database Location: $DB_DIR/kast.db"
+    else
+        echo "  Database Name: $DB_NAME"
+    fi
     echo "  Web Server: $WEB_SERVER"
     echo "  Domain: $DOMAIN_NAME"
     echo "  SSL Enabled: $INSTALL_SSL"
+    
+    echo -e "\n${CYAN}${BOLD}Port Configuration:${NC}"
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+        echo "  Nginx (Public):       Port 80 (HTTP)"
+        [[ "$INSTALL_SSL" == "yes" ]] && echo "  Nginx (Public):       Port 443 (HTTPS)"
+    elif [[ "$WEB_SERVER" == "apache" ]]; then
+        echo "  Apache (Public):      Port 80 (HTTP)"
+        [[ "$INSTALL_SSL" == "yes" ]] && echo "  Apache (Public):      Port 443 (HTTPS)"
+    fi
+    echo "  Gunicorn (Internal):  Port 8000"
+    echo "  Redis (Internal):     Port 6379"
     
     echo -e "\n${CYAN}${BOLD}Access Information:${NC}"
     echo "  URL: ${GREEN}${ACCESS_URL}${NC}"
@@ -1311,17 +1331,33 @@ generate_report() {
         done
     fi
     
-    echo -e "\n${CYAN}${BOLD}Useful Commands:${NC}"
-    echo "  View logs:           sudo journalctl -u kast-web -f"
-    echo "  Restart services:    sudo systemctl restart kast-web kast-celery"
-    echo "  Check status:        sudo systemctl status kast-web"
-    echo "  Validate install:    sudo ./scripts/validate-install.sh"
+    echo -e "\n${CYAN}${BOLD}Getting Started:${NC}"
+    echo "  ${BOLD}Important:${NC} Celery worker must be running for scans to work!"
+    echo "  The Celery worker processes scan tasks asynchronously in the background."
+    echo ""
+    echo "  ${BOLD}Managing Services:${NC}"
+    echo "    • Check all services:    sudo systemctl status kast-web kast-celery redis-server"
+    echo "    • Restart web app:       sudo systemctl restart kast-web"
+    echo "    • Restart Celery:        sudo systemctl restart kast-celery"
+    echo "    • View web app logs:     sudo journalctl -u kast-web -f"
+    echo "    • View Celery logs:      sudo journalctl -u kast-celery -f"
+    echo "    • View all logs:         sudo tail -f /var/log/kast-web/*.log"
+    echo ""
+    echo "  ${BOLD}Troubleshooting:${NC}"
+    echo "    • If scans fail:         Check Celery service is running"
+    echo "    • If pages don't load:   Check Nginx/Apache and Gunicorn services"
+    echo "    • For detailed errors:   Check $LOG_FILE"
+    echo ""
+    echo "  ${BOLD}Configuration Files:${NC}"
+    echo "    • Application:           $INSTALL_DIR/.env"
+    echo "    • Web server:            /etc/$WEB_SERVER/sites-available/kast-web"
+    echo "    • Systemd services:      /etc/systemd/system/kast-*.service"
     
     echo -e "\n${CYAN}${BOLD}Next Steps:${NC}"
     echo "  1. Visit ${GREEN}${ACCESS_URL}${NC} in your browser"
     echo "  2. Log in with your admin credentials"
     echo "  3. Configure any additional settings in the admin panel"
-    echo "  4. Run your first scan!"
+    echo "  4. Start a scan - Celery will process it automatically!"
     
     if [[ ${#FIREWALL_WARNINGS[@]} -gt 0 ]]; then
         echo -e "\n  ${YELLOW}⚠ Don't forget to configure your firewall!${NC}"
