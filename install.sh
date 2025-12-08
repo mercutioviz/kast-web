@@ -550,6 +550,18 @@ setup_application() {
     
     print_success "Directories created"
     
+    # Determine source directory (where install.sh is located)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Copy application files to installation directory
+    print_info "Copying application files from $SCRIPT_DIR to $INSTALL_DIR..."
+    rsync -av --exclude='venv' --exclude='*.pyc' --exclude='__pycache__' \
+        --exclude='.git' --exclude='*.log' --exclude='instance' \
+        --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' \
+        "$SCRIPT_DIR/" "$INSTALL_DIR/" >> "$LOG_FILE" 2>&1
+    
+    print_success "Application files copied"
+    
     # Create virtual environment
     if [[ ! -d "$VENV_DIR" ]]; then
         print_info "Creating Python virtual environment..."
