@@ -239,8 +239,8 @@ check_kast_cli() {
     
     # Test KAST CLI
     show_progress "Testing KAST CLI"
-    if $KAST_CLI_PATH --list-plugins &>/dev/null; then
-        PLUGIN_COUNT=$($KAST_CLI_PATH --list-plugins 2>/dev/null | wc -l)
+    if $KAST_CLI_PATH -ls &>/dev/null; then
+        PLUGIN_COUNT=$($KAST_CLI_PATH -ls 2>/dev/null | grep -c "(priority:")
         print_success "KAST CLI is functional ($PLUGIN_COUNT plugins detected)"
     else
         error_exit "KAST CLI test failed. Cannot execute: $KAST_CLI_PATH --list-plugins"
