@@ -650,6 +650,9 @@ initialize_database() {
     cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
     source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
+    # Set PYTHONPATH so migrations can import app module
+    export PYTHONPATH="$INSTALL_DIR"
+    
     # Run database migrations if they exist
     if [[ -d "$INSTALL_DIR/utils" ]]; then
         print_info "Running database migrations..."

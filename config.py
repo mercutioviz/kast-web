@@ -11,15 +11,26 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
     # Database configuration
-    DB_DIR = Path.home() / 'kast-web' / 'db'
-    DB_DIR.mkdir(parents=True, exist_ok=True)
+    # Use environment variable if set, otherwise use default path
+    _db_dir = Path.home() / 'kast-web' / 'db'
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        f'sqlite:///{DB_DIR / "kast.db"}'
+        f'sqlite:///{_db_dir / "kast.db"}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # KAST CLI configuration
     KAST_CLI_PATH = os.environ.get('KAST_CLI_PATH') or '/usr/local/bin/kast'
     KAST_RESULTS_DIR = Path.home() / 'kast_results'
+    
+    @classmethod
+    def init_app(cls, app):
+        """Initialize application-specific configuration"""
+        # Create database directory only if using SQLite and path is not set via env
+        if not os.environ.get('DATABASE_URL'):
+            db_dir = cls._db_dir
+            try:
+                db_dir.mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                app.logger.warning(f"Could not create database directory {db_dir}: {e}")
     
     # Celery configuration
     CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL') or 'redis://localhost:6379/0'

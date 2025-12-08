@@ -9,6 +9,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/kast-web
 Environment="PATH=/opt/kast-web/venv/bin"
+Environment="PYTHONPATH=/opt/kast-web"
 Environment="FLASK_ENV=production"
 EnvironmentFile=/opt/kast-web/.env
 
