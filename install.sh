@@ -441,9 +441,13 @@ configure_database() {
 
 configure_sqlite() {
     print_success "SQLite selected - no additional setup required"
-    DB_DIR="$HOME/kast-web/db"
+    # Use system location accessible by www-data
+    DB_DIR="/var/lib/kast-web"
     mkdir -p "$DB_DIR"
+    chown $SERVICE_USER:$SERVICE_USER "$DB_DIR"
+    chmod 755 "$DB_DIR"
     DATABASE_URL="sqlite:///$DB_DIR/kast.db"
+    print_info "Database will be stored at: $DB_DIR/kast.db"
 }
 
 configure_postgresql() {
@@ -542,11 +546,12 @@ setup_application() {
     mkdir -p "$INSTALL_DIR"
     mkdir -p /var/log/kast-web
     mkdir -p /var/run/kast-web
-    mkdir -p "$HOME/kast_results"
+    mkdir -p /var/lib/kast-web/results
     
     # Set ownership
     chown -R $SERVICE_USER:$SERVICE_USER /var/log/kast-web
     chown -R $SERVICE_USER:$SERVICE_USER /var/run/kast-web
+    chown -R $SERVICE_USER:$SERVICE_USER /var/lib/kast-web
     
     print_success "Directories created"
     
@@ -637,7 +642,7 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 # KAST CLI Configuration
 KAST_CLI_PATH=$KAST_CLI_PATH
-KAST_RESULTS_DIR=$HOME/kast_results
+KAST_RESULTS_DIR=/var/lib/kast-web/results
 EOF
     
     chmod 600 "$INSTALL_DIR/.env"
@@ -1304,15 +1309,35 @@ generate_report() {
     
     echo -e "\n${CYAN}${BOLD}Installation Details:${NC}"
     echo -e "  Installation Directory: ${GREEN}$INSTALL_DIR${NC}"
-    echo -e "  Database Type: $DATABASE_TYPE"
+    echo -e "  Database Type: ${GREEN}$DATABASE_TYPE${NC}"
     if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
-        echo -e "  Database Location: $DB_DIR/kast.db"
+        echo -e "  Database Location: ${GREEN}/var/lib/kast-web/kast.db${NC}"
     else
-        echo -e "  Database Name: $DB_NAME"
+        echo -e "  Database Name: ${GREEN}$DB_NAME${NC}"
     fi
-    echo -e "  Web Server: $WEB_SERVER"
-    echo -e "  Domain: $DOMAIN_NAME"
-    echo -e "  SSL Enabled: $INSTALL_SSL"
+    echo -e "  Web Server: ${GREEN}$WEB_SERVER${NC}"
+    echo -e "  Domain: ${GREEN}$DOMAIN_NAME${NC}"
+    echo -e "  SSL Enabled: ${GREEN}$INSTALL_SSL${NC}"
+    
+    echo -e "\n${CYAN}${BOLD}File Locations:${NC}"
+    echo -e "  ${BOLD}Application Files:${NC}"
+    echo -e "    Installation:        ${GREEN}$INSTALL_DIR${NC}"
+    echo -e "    Virtual Environment: ${GREEN}$INSTALL_DIR/venv${NC}"
+    echo -e "    Configuration:       ${GREEN}$INSTALL_DIR/.env${NC}"
+    echo -e "    Static Files:        ${GREEN}$INSTALL_DIR/app/static${NC}"
+    echo -e ""
+    echo -e "  ${BOLD}Data Files:${NC}"
+    if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
+        echo -e "    Database:            ${GREEN}/var/lib/kast-web/kast.db${NC}"
+    fi
+    echo -e "    Scan Results:        ${GREEN}/var/lib/kast-web/results${NC}"
+    echo -e ""
+    echo -e "  ${BOLD}Log Files:${NC}"
+    echo -e "    Application Logs:    ${GREEN}/var/log/kast-web/${NC}"
+    echo -e "      - access.log       (Web access logs)"
+    echo -e "      - error.log        (Application errors)"
+    echo -e "      - celery.log       (Background task processing)"
+    echo -e "    PID Files:           ${GREEN}/var/run/kast-web/${NC}"
     
     echo -e "\n${CYAN}${BOLD}Port Configuration:${NC}"
     if [[ "$WEB_SERVER" == "nginx" ]]; then
