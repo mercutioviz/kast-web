@@ -201,6 +201,226 @@ EOF
 }
 
 ################################################################################
+# User Input Collection (Interactive Mode Only)
+################################################################################
+
+collect_user_inputs() {
+    if [[ "$NON_INTERACTIVE" == "yes" ]]; then
+        return 0
+    fi
+    
+    print_header "Installation Configuration"
+    
+    echo -e "${CYAN}This installer will now collect all necessary information upfront.${NC}"
+    echo -e "${CYAN}After providing your inputs, the installation will run unattended.${NC}\n"
+    
+    # 1. Check for existing installation first
+    if [[ -d "$INSTALL_DIR" ]]; then
+        print_warning "Existing installation detected at $INSTALL_DIR"
+        echo ""
+        echo "Choose an action:"
+        echo "  [1] Backup and upgrade existing installation"
+        echo "  [2] Fresh install (remove existing installation)"
+        echo "  [3] Abort installation"
+        echo ""
+        read -p "Enter choice [1-3]: " -r EXISTING_INSTALL_CHOICE
+        
+        case $EXISTING_INSTALL_CHOICE in
+            1|2|3)
+                # Valid choice
+                ;;
+            *)
+                error_exit "Invalid choice"
+                ;;
+        esac
+        
+        if [[ "$EXISTING_INSTALL_CHOICE" == "3" ]]; then
+            print_info "Installation aborted by user"
+            exit 0
+        fi
+        echo ""
+    fi
+    
+    # 2. Detect web servers for intelligent prompting
+    APACHE_DETECTED="no"
+    NGINX_DETECTED="no"
+    
+    if command -v apache2 &>/dev/null || command -v httpd &>/dev/null; then
+        APACHE_DETECTED="yes"
+    fi
+    
+    if command -v nginx &>/dev/null; then
+        NGINX_DETECTED="yes"
+    fi
+    
+    # 3. Database type selection
+    if [[ -z "$DATABASE_TYPE" ]]; then
+        echo -e "${BOLD}Database Configuration:${NC}"
+        echo "Select database type:"
+        echo "  [1] SQLite (default - no additional setup required)"
+        echo "  [2] PostgreSQL (recommended for production)"
+        echo "  [3] MySQL"
+        echo "  [4] MariaDB"
+        echo ""
+        read -p "Enter choice [1-4] (default: 1): " -r db_choice
+        db_choice=${db_choice:-1}
+        
+        case $db_choice in
+            1) DATABASE_TYPE="sqlite" ;;
+            2) DATABASE_TYPE="postgresql" ;;
+            3) DATABASE_TYPE="mysql" ;;
+            4) DATABASE_TYPE="mariadb" ;;
+            *) DATABASE_TYPE="sqlite" ;;
+        esac
+        echo ""
+    fi
+    
+    # 4. Web server selection
+    if [[ -z "$WEB_SERVER" ]]; then
+        echo -e "${BOLD}Web Server Configuration:${NC}"
+        
+        if [[ "$APACHE_DETECTED" == "yes" && "$NGINX_DETECTED" == "yes" ]]; then
+            echo "Both Apache and Nginx are installed. Which would you like to use?"
+            echo "  [1] Nginx (recommended)"
+            echo "  [2] Apache"
+            read -p "Enter choice [1-2]: " -r ws_choice
+            
+            case $ws_choice in
+                1) WEB_SERVER="nginx" ;;
+                2) WEB_SERVER="apache" ;;
+                *) WEB_SERVER="nginx" ;;
+            esac
+        elif [[ "$APACHE_DETECTED" == "yes" ]]; then
+            WEB_SERVER="apache"
+            print_info "Apache detected - will use Apache"
+        elif [[ "$NGINX_DETECTED" == "yes" ]]; then
+            WEB_SERVER="nginx"
+            print_info "Nginx detected - will use Nginx"
+        else
+            WEB_SERVER="nginx"
+            print_info "No web server detected - will install Nginx"
+        fi
+        echo ""
+    fi
+    
+    # 5. Domain name
+    if [[ -z "$DOMAIN_NAME" ]]; then
+        echo -e "${BOLD}Domain Configuration:${NC}"
+        read -p "Enter domain name (or press Enter for 'localhost'): " DOMAIN_NAME
+        DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+        echo ""
+    fi
+    
+    # 6. SSL configuration
+    if [[ "$SSL_EXPLICITLY_SET" == "no" ]]; then
+        echo -e "${BOLD}SSL Configuration:${NC}"
+        
+        if [[ "$DOMAIN_NAME" == "localhost" || "$DOMAIN_NAME" == "127.0.0.1" ]]; then
+            print_info "SSL not available for localhost - will skip SSL configuration"
+            INSTALL_SSL="no"
+        else
+            read -p "Install Let's Encrypt SSL certificate? (y/N): " -r ssl_choice
+            if [[ "$ssl_choice" =~ ^[Yy]$ ]]; then
+                INSTALL_SSL="yes"
+            else
+                INSTALL_SSL="no"
+            fi
+        fi
+        echo ""
+    fi
+    
+    # 7. Admin user credentials
+    echo -e "${BOLD}Admin User Configuration:${NC}"
+    
+    if [[ -z "$ADMIN_USERNAME" ]]; then
+        read -p "Admin username (3-80 characters): " ADMIN_USERNAME
+        while [[ ${#ADMIN_USERNAME} -lt 3 ]]; do
+            print_error "Username must be at least 3 characters"
+            read -p "Admin username (3-80 characters): " ADMIN_USERNAME
+        done
+    fi
+    
+    if [[ -z "$ADMIN_EMAIL" ]]; then
+        read -p "Admin email: " ADMIN_EMAIL
+        while [[ ! "$ADMIN_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; do
+            print_error "Please enter a valid email address"
+            read -p "Admin email: " ADMIN_EMAIL
+        done
+    fi
+    
+    if [[ -z "$ADMIN_FIRST_NAME" ]]; then
+        read -p "Admin first name (optional, press Enter to skip): " ADMIN_FIRST_NAME
+    fi
+    
+    if [[ -z "$ADMIN_LAST_NAME" ]]; then
+        read -p "Admin last name (optional, press Enter to skip): " ADMIN_LAST_NAME
+    fi
+    
+    if [[ -z "$ADMIN_PASSWORD" ]]; then
+        while true; do
+            read -s -p "Admin password (min 8 characters): " ADMIN_PASSWORD
+            echo ""
+            
+            if [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
+                print_error "Password must be at least 8 characters"
+                continue
+            fi
+            
+            read -s -p "Confirm password: " ADMIN_PASSWORD_CONFIRM
+            echo ""
+            
+            if [[ "$ADMIN_PASSWORD" != "$ADMIN_PASSWORD_CONFIRM" ]]; then
+                print_error "Passwords do not match"
+                ADMIN_PASSWORD=""
+                continue
+            fi
+            
+            break
+        done
+    fi
+    
+    echo ""
+    
+    # 8. Display summary and confirm
+    print_header "Installation Summary"
+    
+    echo -e "${CYAN}${BOLD}Please review your configuration:${NC}\n"
+    
+    if [[ -n "$EXISTING_INSTALL_CHOICE" ]]; then
+        case $EXISTING_INSTALL_CHOICE in
+            1) echo -e "  Existing Installation: ${GREEN}Backup and upgrade${NC}" ;;
+            2) echo -e "  Existing Installation: ${YELLOW}Fresh install (will remove existing)${NC}" ;;
+        esac
+    fi
+    
+    echo -e "  Database Type:         ${GREEN}$DATABASE_TYPE${NC}"
+    echo -e "  Web Server:            ${GREEN}$WEB_SERVER${NC}"
+    echo -e "  Domain Name:           ${GREEN}$DOMAIN_NAME${NC}"
+    echo -e "  SSL Certificate:       ${GREEN}$INSTALL_SSL${NC}"
+    echo -e "  Admin Username:        ${GREEN}$ADMIN_USERNAME${NC}"
+    echo -e "  Admin Email:           ${GREEN}$ADMIN_EMAIL${NC}"
+    
+    if [[ -n "$ADMIN_FIRST_NAME" ]]; then
+        echo -e "  Admin First Name:      ${GREEN}$ADMIN_FIRST_NAME${NC}"
+    fi
+    
+    if [[ -n "$ADMIN_LAST_NAME" ]]; then
+        echo -e "  Admin Last Name:       ${GREEN}$ADMIN_LAST_NAME${NC}"
+    fi
+    
+    echo ""
+    read -p "Proceed with installation? (Y/n): " -r proceed_choice
+    
+    if [[ "$proceed_choice" =~ ^[Nn]$ ]]; then
+        print_info "Installation cancelled by user"
+        exit 0
+    fi
+    
+    print_success "Configuration confirmed - starting installation..."
+    echo ""
+}
+
+################################################################################
 # Pre-Installation Checks
 ################################################################################
 
@@ -338,34 +558,24 @@ check_existing_installation() {
             error_exit "Non-interactive mode cannot handle existing installations. Please remove manually."
         fi
         
-        echo ""
-        echo "Choose an action:"
-        echo "  [1] Backup and upgrade existing installation"
-        echo "  [2] Fresh install (remove existing installation)"
-        echo "  [3] Abort installation"
-        echo ""
-        read -p "Enter choice [1-3]: " -r choice
-        
-        case $choice in
-            1)
-                backup_existing_installation
-                UPGRADE_MODE="yes"
-                ;;
-            2)
-                print_warning "Removing existing installation..."
-                systemctl stop kast-web kast-celery 2>/dev/null || true
-                rm -rf "$INSTALL_DIR"
-                print_success "Existing installation removed"
-                UPGRADE_MODE="no"
-                ;;
-            3)
-                print_info "Installation aborted by user"
-                exit 0
-                ;;
-            *)
-                error_exit "Invalid choice"
-                ;;
-        esac
+        # Use pre-collected choice from collect_user_inputs()
+        if [[ -n "$EXISTING_INSTALL_CHOICE" ]]; then
+            case $EXISTING_INSTALL_CHOICE in
+                1)
+                    backup_existing_installation
+                    UPGRADE_MODE="yes"
+                    ;;
+                2)
+                    print_warning "Removing existing installation..."
+                    systemctl stop kast-web kast-celery 2>/dev/null || true
+                    rm -rf "$INSTALL_DIR"
+                    print_success "Existing installation removed"
+                    UPGRADE_MODE="no"
+                    ;;
+            esac
+        else
+            error_exit "Installation choice not collected"
+        fi
     else
         print_success "No existing installation found"
         UPGRADE_MODE="no"
@@ -467,23 +677,9 @@ install_system_dependencies() {
 configure_database() {
     print_header "Database Configuration"
     
-    if [[ "$NON_INTERACTIVE" == "no" && -z "$DATABASE_TYPE" ]]; then
-        echo "Select database type:"
-        echo "  [1] SQLite (default - no additional setup required)"
-        echo "  [2] PostgreSQL (recommended for production)"
-        echo "  [3] MySQL"
-        echo "  [4] MariaDB"
-        echo ""
-        read -p "Enter choice [1-4] (default: 1): " -r db_choice
-        db_choice=${db_choice:-1}
-        
-        case $db_choice in
-            1) DATABASE_TYPE="sqlite" ;;
-            2) DATABASE_TYPE="postgresql" ;;
-            3) DATABASE_TYPE="mysql" ;;
-            4) DATABASE_TYPE="mariadb" ;;
-            *) DATABASE_TYPE="sqlite" ;;
-        esac
+    # Database type should already be set by collect_user_inputs() or command-line args
+    if [[ -z "$DATABASE_TYPE" ]]; then
+        DATABASE_TYPE="sqlite"
     fi
     
     print_info "Selected database: $DATABASE_TYPE"
@@ -770,36 +966,7 @@ create_admin_user() {
     cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
     source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
-    # Prompt for admin credentials if not provided
-    if [[ "$NON_INTERACTIVE" == "no" ]]; then
-        if [[ -z "$ADMIN_USERNAME" ]]; then
-            read -p "Admin username (3-80 characters): " ADMIN_USERNAME
-        fi
-        
-        if [[ -z "$ADMIN_EMAIL" ]]; then
-            read -p "Admin email: " ADMIN_EMAIL
-        fi
-        
-        if [[ -z "$ADMIN_FIRST_NAME" ]]; then
-            read -p "Admin first name (optional): " ADMIN_FIRST_NAME
-        fi
-        
-        if [[ -z "$ADMIN_LAST_NAME" ]]; then
-            read -p "Admin last name (optional): " ADMIN_LAST_NAME
-        fi
-        
-        if [[ -z "$ADMIN_PASSWORD" ]]; then
-            read -s -p "Admin password (min 8 characters): " ADMIN_PASSWORD
-            echo ""
-            read -s -p "Confirm password: " ADMIN_PASSWORD_CONFIRM
-            echo ""
-            
-            if [[ "$ADMIN_PASSWORD" != "$ADMIN_PASSWORD_CONFIRM" ]]; then
-                error_exit "Passwords do not match"
-            fi
-        fi
-    fi
-    
+    # Admin credentials should already be set by collect_user_inputs() or command-line args
     # Validate inputs
     if [[ -z "$ADMIN_USERNAME" ]] || [[ -z "$ADMIN_EMAIL" ]] || [[ -z "$ADMIN_PASSWORD" ]]; then
         error_exit "Admin username, email, and password are required"
@@ -883,46 +1050,9 @@ EOF
 detect_web_server() {
     print_header "Web Server Detection"
     
-    if [[ -n "$WEB_SERVER" ]]; then
-        print_info "Web server specified: $WEB_SERVER"
-        return
-    fi
-    
-    # Check for Apache
-    if command -v apache2 &>/dev/null || command -v httpd &>/dev/null; then
-        print_success "Apache detected"
-        APACHE_INSTALLED="yes"
-    fi
-    
-    # Check for Nginx
-    if command -v nginx &>/dev/null; then
-        print_success "Nginx detected"
-        NGINX_INSTALLED="yes"
-    fi
-    
-    # Prompt user if both or neither are installed
-    if [[ "$APACHE_INSTALLED" == "yes" && "$NGINX_INSTALLED" == "yes" ]]; then
-        if [[ "$NON_INTERACTIVE" == "no" ]]; then
-            echo ""
-            echo "Both Apache and Nginx are installed. Which would you like to use?"
-            echo "  [1] Nginx (recommended)"
-            echo "  [2] Apache"
-            read -p "Enter choice [1-2]: " -r ws_choice
-            
-            case $ws_choice in
-                1) WEB_SERVER="nginx" ;;
-                2) WEB_SERVER="apache" ;;
-                *) WEB_SERVER="nginx" ;;
-            esac
-        else
-            WEB_SERVER="nginx"
-        fi
-    elif [[ "$APACHE_INSTALLED" == "yes" ]]; then
-        WEB_SERVER="apache"
-    elif [[ "$NGINX_INSTALLED" == "yes" ]]; then
-        WEB_SERVER="nginx"
-    else
-        print_info "No web server detected. Installing Nginx..."
+    # Web server should already be set by collect_user_inputs() or command-line args
+    if [[ -z "$WEB_SERVER" ]]; then
+        # Fallback for non-interactive mode
         WEB_SERVER="nginx"
     fi
     
@@ -939,11 +1069,7 @@ configure_nginx() {
         print_success "Nginx installed"
     fi
     
-    # Get domain name
-    if [[ -z "$DOMAIN_NAME" && "$NON_INTERACTIVE" == "no" ]]; then
-        read -p "Enter domain name (or press Enter for localhost): " DOMAIN_NAME
-        DOMAIN_NAME=${DOMAIN_NAME:-localhost}
-    fi
+    # Domain name should already be set by collect_user_inputs() or command-line args
     DOMAIN_NAME=${DOMAIN_NAME:-localhost}
     
     # Create Nginx configuration
@@ -1033,11 +1159,7 @@ configure_apache() {
         mkdir -p "$APACHE_SITES" "$APACHE_ENABLED"
     fi
     
-    # Get domain name
-    if [[ -z "$DOMAIN_NAME" && "$NON_INTERACTIVE" == "no" ]]; then
-        read -p "Enter domain name (or press Enter for localhost): " DOMAIN_NAME
-        DOMAIN_NAME=${DOMAIN_NAME:-localhost}
-    fi
+    # Domain name should already be set by collect_user_inputs() or command-line args
     DOMAIN_NAME=${DOMAIN_NAME:-localhost}
     
     # Enable required modules
@@ -1097,14 +1219,7 @@ APACHEEOF
 configure_ssl() {
     print_header "SSL Configuration"
     
-    # Only prompt if SSL was not explicitly set via command-line flags
-    if [[ "$SSL_EXPLICITLY_SET" == "no" && "$NON_INTERACTIVE" == "no" ]]; then
-        read -p "Install Let's Encrypt SSL certificate? (y/N): " -r ssl_choice
-        if [[ "$ssl_choice" =~ ^[Yy]$ ]]; then
-            INSTALL_SSL="yes"
-        fi
-    fi
-    
+    # SSL preference should already be set by collect_user_inputs() or command-line flags
     if [[ "$INSTALL_SSL" == "yes" ]]; then
         if [[ "$DOMAIN_NAME" == "localhost" || "$DOMAIN_NAME" == "127.0.0.1" ]]; then
             print_warning "Cannot install SSL for localhost. Skipping SSL configuration."
@@ -1678,6 +1793,11 @@ main() {
     check_disk_space
     check_kast_cli
     configure_kast_permissions
+    
+    # Collect all user inputs upfront (interactive mode only)
+    collect_user_inputs
+    
+    # Check for existing installation (now uses pre-collected choice)
     check_existing_installation
     
     # System dependencies
