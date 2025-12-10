@@ -25,6 +25,7 @@ SERVICE_USER="www-data"
 DATABASE_TYPE="sqlite"
 WEB_SERVER=""
 INSTALL_SSL="no"
+SSL_EXPLICITLY_SET="no"
 DOMAIN_NAME=""
 NON_INTERACTIVE="no"
 ADMIN_USERNAME=""
@@ -115,10 +116,12 @@ parse_arguments() {
                 ;;
             --ssl)
                 INSTALL_SSL="yes"
+                SSL_EXPLICITLY_SET="yes"
                 shift
                 ;;
             --no-ssl)
                 INSTALL_SSL="no"
+                SSL_EXPLICITLY_SET="yes"
                 shift
                 ;;
             --domain=*)
@@ -1029,7 +1032,8 @@ APACHEEOF
 configure_ssl() {
     print_header "SSL Configuration"
     
-    if [[ "$INSTALL_SSL" == "no" && "$NON_INTERACTIVE" == "no" ]]; then
+    # Only prompt if SSL was not explicitly set via command-line flags
+    if [[ "$SSL_EXPLICITLY_SET" == "no" && "$NON_INTERACTIVE" == "no" ]]; then
         read -p "Install Let's Encrypt SSL certificate? (y/N): " -r ssl_choice
         if [[ "$ssl_choice" =~ ^[Yy]$ ]]; then
             INSTALL_SSL="yes"
