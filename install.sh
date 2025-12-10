@@ -651,6 +651,7 @@ install_system_dependencies() {
         python3-dev \
         build-essential \
         redis-server \
+        sqlite3 \
         curl \
         wget \
         git \
