@@ -239,8 +239,8 @@ check_kast_cli() {
     
     # Test KAST CLI
     show_progress "Testing KAST CLI"
-    if $KAST_CLI_PATH --list-plugins &>/dev/null; then
-        PLUGIN_COUNT=$($KAST_CLI_PATH --list-plugins 2>/dev/null | wc -l)
+    if $KAST_CLI_PATH -ls &>/dev/null; then
+        PLUGIN_COUNT=$($KAST_CLI_PATH -ls 2>/dev/null | grep -c "(priority:")
         print_success "KAST CLI is functional ($PLUGIN_COUNT plugins detected)"
     else
         error_exit "KAST CLI test failed. Cannot execute: $KAST_CLI_PATH --list-plugins"
@@ -441,10 +441,10 @@ configure_database() {
 
 configure_sqlite() {
     print_success "SQLite selected - no additional setup required"
-    DB_DIR="/var/lib/kast-web"
+    DB_DIR="$HOME/kast-web/db"
     mkdir -p "$DB_DIR"
-    chown -R $SERVICE_USER:$SERVICE_USER "$DB_DIR"
     DATABASE_URL="sqlite:///$DB_DIR/kast.db"
+    print_info "Database will be stored at: $DB_DIR/kast.db"
 }
 
 configure_postgresql() {
@@ -543,13 +543,26 @@ setup_application() {
     mkdir -p "$INSTALL_DIR"
     mkdir -p /var/log/kast-web
     mkdir -p /var/run/kast-web
-    mkdir -p "$HOME/kast_results"
+    mkdir -p /var/lib/kast-web/results
     
     # Set ownership
     chown -R $SERVICE_USER:$SERVICE_USER /var/log/kast-web
     chown -R $SERVICE_USER:$SERVICE_USER /var/run/kast-web
+    chown -R $SERVICE_USER:$SERVICE_USER /var/lib/kast-web
     
     print_success "Directories created"
+    
+    # Determine source directory (where install.sh is located)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Copy application files to installation directory
+    print_info "Copying application files from $SCRIPT_DIR to $INSTALL_DIR..."
+    rsync -av --exclude='venv' --exclude='*.pyc' --exclude='__pycache__' \
+        --exclude='.git' --exclude='*.log' --exclude='instance' \
+        --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite3' \
+        "$SCRIPT_DIR/" "$INSTALL_DIR/" >> "$LOG_FILE" 2>&1
+    
+    print_success "Application files copied"
     
     # Create virtual environment
     if [[ ! -d "$VENV_DIR" ]]; then
@@ -564,13 +577,31 @@ setup_application() {
     print_info "Installing Python dependencies (this may take a few minutes)..."
     source "$VENV_DIR/bin/activate"
     
-    pip install --upgrade pip >> "$LOG_FILE" 2>&1
+    if ! pip install --upgrade pip >> "$LOG_FILE" 2>&1; then
+        error_exit "Failed to upgrade pip. Check $LOG_FILE for details."
+    fi
     
     if [[ -f "$INSTALL_DIR/requirements-production.txt" ]]; then
-        pip install -r "$INSTALL_DIR/requirements-production.txt" >> "$LOG_FILE" 2>&1
+        if ! pip install -r "$INSTALL_DIR/requirements-production.txt" >> "$LOG_FILE" 2>&1; then
+            print_error "Failed to install Python dependencies"
+            echo ""
+            echo "Last 50 lines of error log:"
+            tail -50 "$LOG_FILE"
+            echo ""
+            error_exit "Python dependency installation failed. See above for details."
+        fi
     elif [[ -f "$INSTALL_DIR/requirements.txt" ]]; then
-        pip install -r "$INSTALL_DIR/requirements.txt" >> "$LOG_FILE" 2>&1
-        pip install gunicorn >> "$LOG_FILE" 2>&1
+        if ! pip install -r "$INSTALL_DIR/requirements.txt" >> "$LOG_FILE" 2>&1; then
+            print_error "Failed to install Python dependencies"
+            echo ""
+            echo "Last 50 lines of error log:"
+            tail -50 "$LOG_FILE"
+            echo ""
+            error_exit "Python dependency installation failed. See above for details."
+        fi
+        if ! pip install gunicorn >> "$LOG_FILE" 2>&1; then
+            error_exit "Failed to install gunicorn. Check $LOG_FILE for details."
+        fi
     else
         error_exit "No requirements file found"
     fi
@@ -608,7 +639,7 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 # KAST CLI Configuration
 KAST_CLI_PATH=$KAST_CLI_PATH
-KAST_RESULTS_DIR=$HOME/kast_results
+KAST_RESULTS_DIR=/var/lib/kast-web/results
 EOF
     
     chmod 600 "$INSTALL_DIR/.env"
@@ -618,8 +649,11 @@ EOF
 initialize_database() {
     print_header "Database Initialization"
     
-    cd "$INSTALL_DIR"
-    source "$VENV_DIR/bin/activate"
+    cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
+    source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
+    
+    # Set PYTHONPATH so migrations can import app module
+    export PYTHONPATH="$INSTALL_DIR"
     
     # Run database migrations if they exist
     if [[ -d "$INSTALL_DIR/utils" ]]; then
@@ -627,6 +661,7 @@ initialize_database() {
         
         for migration in "$INSTALL_DIR"/utils/migrate*.py; do
             if [[ -f "$migration" ]]; then
+                print_info "Running migration: $(basename "$migration")"
                 python3 "$migration" >> "$LOG_FILE" 2>&1 || true
             fi
         done
@@ -634,22 +669,25 @@ initialize_database() {
     
     # Initialize database tables
     print_info "Initializing database tables..."
-    python3 << 'EOF' >> "$LOG_FILE" 2>&1
+    if python3 << 'EOF' >> "$LOG_FILE" 2>&1
 from app import create_app, db
 app = create_app()
 with app.app_context():
     db.create_all()
     print("Database tables created successfully")
 EOF
-    
-    print_success "Database initialized"
+    then
+        print_success "Database initialized"
+    else
+        error_exit "Database initialization failed. Check $LOG_FILE for details."
+    fi
 }
 
 create_admin_user() {
     print_header "Admin User Creation"
     
-    cd "$INSTALL_DIR"
-    source "$VENV_DIR/bin/activate"
+    cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
+    source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
     # Prompt for admin credentials if not provided
     if [[ "$NON_INTERACTIVE" == "no" ]]; then
@@ -1292,16 +1330,52 @@ generate_report() {
     echo -e "${NC}"
     
     echo -e "\n${CYAN}${BOLD}Installation Details:${NC}"
-    echo "  Installation Directory: $INSTALL_DIR"
-    echo "  Database Type: $DATABASE_TYPE"
-    echo "  Web Server: $WEB_SERVER"
-    echo "  Domain: $DOMAIN_NAME"
-    echo "  SSL Enabled: $INSTALL_SSL"
+    echo -e "  Installation Directory: ${GREEN}$INSTALL_DIR${NC}"
+    echo -e "  Database Type: ${GREEN}$DATABASE_TYPE${NC}"
+    if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
+        echo -e "  Database Location: ${GREEN}/var/lib/kast-web/kast.db${NC}"
+    else
+        echo -e "  Database Name: ${GREEN}$DB_NAME${NC}"
+    fi
+    echo -e "  Web Server: ${GREEN}$WEB_SERVER${NC}"
+    echo -e "  Domain: ${GREEN}$DOMAIN_NAME${NC}"
+    echo -e "  SSL Enabled: ${GREEN}$INSTALL_SSL${NC}"
+    
+    echo -e "\n${CYAN}${BOLD}File Locations:${NC}"
+    echo -e "  ${BOLD}Application Files:${NC}"
+    echo -e "    Installation:        ${GREEN}$INSTALL_DIR${NC}"
+    echo -e "    Virtual Environment: ${GREEN}$INSTALL_DIR/venv${NC}"
+    echo -e "    Configuration:       ${GREEN}$INSTALL_DIR/.env${NC}"
+    echo -e "    Static Files:        ${GREEN}$INSTALL_DIR/app/static${NC}"
+    echo -e ""
+    echo -e "  ${BOLD}Data Files:${NC}"
+    if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
+        echo -e "    Database:            ${GREEN}/var/lib/kast-web/kast.db${NC}"
+    fi
+    echo -e "    Scan Results:        ${GREEN}/var/lib/kast-web/results${NC}"
+    echo -e ""
+    echo -e "  ${BOLD}Log Files:${NC}"
+    echo -e "    Application Logs:    ${GREEN}/var/log/kast-web/${NC}"
+    echo -e "      - access.log       (Web access logs)"
+    echo -e "      - error.log        (Application errors)"
+    echo -e "      - celery.log       (Background task processing)"
+    echo -e "    PID Files:           ${GREEN}/var/run/kast-web/${NC}"
+    
+    echo -e "\n${CYAN}${BOLD}Port Configuration:${NC}"
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+        echo -e "  Nginx (Public):       Port 80 (HTTP)"
+        [[ "$INSTALL_SSL" == "yes" ]] && echo -e "  Nginx (Public):       Port 443 (HTTPS)"
+    elif [[ "$WEB_SERVER" == "apache" ]]; then
+        echo -e "  Apache (Public):      Port 80 (HTTP)"
+        [[ "$INSTALL_SSL" == "yes" ]] && echo -e "  Apache (Public):      Port 443 (HTTPS)"
+    fi
+    echo -e "  Gunicorn (Internal):  Port 8000"
+    echo -e "  Redis (Internal):     Port 6379"
     
     echo -e "\n${CYAN}${BOLD}Access Information:${NC}"
-    echo "  URL: ${GREEN}${ACCESS_URL}${NC}"
-    echo "  Admin Username: ${GREEN}${ADMIN_USERNAME}${NC}"
-    echo "  Admin Email: ${GREEN}${ADMIN_EMAIL}${NC}"
+    echo -e "  URL: ${GREEN}${ACCESS_URL}${NC}"
+    echo -e "  Admin Username: ${GREEN}${ADMIN_USERNAME}${NC}"
+    echo -e "  Admin Email: ${GREEN}${ADMIN_EMAIL}${NC}"
     
     echo -e "\n${CYAN}${BOLD}Service Status:${NC}"
     systemctl is-active --quiet redis-server && echo -e "  Redis:        ${GREEN}RUNNING${NC}" || echo -e "  Redis:        ${RED}STOPPED${NC}"
@@ -1325,17 +1399,33 @@ generate_report() {
         done
     fi
     
-    echo -e "\n${CYAN}${BOLD}Useful Commands:${NC}"
-    echo "  View logs:           sudo journalctl -u kast-web -f"
-    echo "  Restart services:    sudo systemctl restart kast-web kast-celery"
-    echo "  Check status:        sudo systemctl status kast-web"
-    echo "  Validate install:    sudo ./scripts/validate-install.sh"
+    echo -e "\n${CYAN}${BOLD}Getting Started:${NC}"
+    echo -e "  ${BOLD}Important:${NC} Celery worker must be running for scans to work!"
+    echo -e "  The Celery worker processes scan tasks asynchronously in the background."
+    echo -e ""
+    echo -e "  ${BOLD}Managing Services:${NC}"
+    echo -e "    • Check all services:    sudo systemctl status kast-web kast-celery redis-server"
+    echo -e "    • Restart web app:       sudo systemctl restart kast-web"
+    echo -e "    • Restart Celery:        sudo systemctl restart kast-celery"
+    echo -e "    • View web app logs:     sudo journalctl -u kast-web -f"
+    echo -e "    • View Celery logs:      sudo journalctl -u kast-celery -f"
+    echo -e "    • View all logs:         sudo tail -f /var/log/kast-web/*.log"
+    echo -e ""
+    echo -e "  ${BOLD}Troubleshooting:${NC}"
+    echo -e "    • If scans fail:         Check Celery service is running"
+    echo -e "    • If pages don't load:   Check Nginx/Apache and Gunicorn services"
+    echo -e "    • For detailed errors:   Check $LOG_FILE"
+    echo -e ""
+    echo -e "  ${BOLD}Configuration Files:${NC}"
+    echo -e "    • Application:           $INSTALL_DIR/.env"
+    echo -e "    • Web server:            /etc/$WEB_SERVER/sites-available/kast-web"
+    echo -e "    • Systemd services:      /etc/systemd/system/kast-*.service"
     
     echo -e "\n${CYAN}${BOLD}Next Steps:${NC}"
-    echo "  1. Visit ${GREEN}${ACCESS_URL}${NC} in your browser"
-    echo "  2. Log in with your admin credentials"
-    echo "  3. Configure any additional settings in the admin panel"
-    echo "  4. Run your first scan!"
+    echo -e "  1. Visit ${GREEN}${ACCESS_URL}${NC} in your browser"
+    echo -e "  2. Log in with your admin credentials"
+    echo -e "  3. Configure any additional settings in the admin panel"
+    echo -e "  4. Start a scan - Celery will process it automatically!"
     
     if [[ ${#FIREWALL_WARNINGS[@]} -gt 0 ]]; then
         echo -e "\n  ${YELLOW}⚠ Don't forget to configure your firewall!${NC}"

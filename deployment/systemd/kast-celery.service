@@ -4,40 +4,23 @@ After=network.target redis.service
 Wants=redis.service
 
 [Service]
-Type=forking
+Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/kast-web
 Environment="PATH=/opt/kast-web/venv/bin"
+Environment="PYTHONPATH=/opt/kast-web"
 Environment="FLASK_ENV=production"
 EnvironmentFile=/opt/kast-web/.env
-
-# Create necessary directories
-ExecStartPre=/bin/mkdir -p /var/log/kast-web
-ExecStartPre=/bin/mkdir -p /var/run/kast-web
-ExecStartPre=/bin/chown www-data:www-data /var/log/kast-web
-ExecStartPre=/bin/chown www-data:www-data /var/run/kast-web
 
 # Start Celery worker
 ExecStart=/opt/kast-web/venv/bin/celery -A celery_worker.celery worker \
     --loglevel=info \
-    --logfile=/var/log/kast-web/celery.log \
-    --pidfile=/var/run/kast-web/celery.pid \
-    --detach
-
-# Stop Celery worker
-ExecStop=/bin/kill -TERM $MAINPID
+    --logfile=/var/log/kast-web/celery.log
 
 # Restart policy
 Restart=always
 RestartSec=10
-
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/kast-web /var/log/kast-web /var/run/kast-web /home/kali/kast-web /home/kali/kast_results
 
 # Resource limits
 LimitNOFILE=65536

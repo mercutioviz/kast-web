@@ -13,6 +13,9 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     app.config.from_object(config[config_name])
     
+    # Initialize config-specific setup (e.g., create directories)
+    config[config_name].init_app(app)
+    
     # Initialize extensions with app
     db.init_app(app)
     login_manager.init_app(app)
