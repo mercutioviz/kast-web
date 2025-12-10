@@ -11,44 +11,52 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
     # Database configuration
-    # Use environment variable if set, otherwise use system location for production
-    # or development location for dev mode
-    _is_production = os.environ.get('FLASK_ENV') == 'production'
-    _db_dir = Path('/var/lib/kast-web') if _is_production else Path.home() / 'kast-web' / 'db'
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        f'sqlite:///{_db_dir / "kast.db"}'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///kast.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # KAST CLI configuration
     KAST_CLI_PATH = os.environ.get('KAST_CLI_PATH') or '/usr/local/bin/kast'
-    # Use system location for production, user home for development
-    KAST_RESULTS_DIR = os.environ.get('KAST_RESULTS_DIR') or \
-        (Path('/var/lib/kast-web/results') if _is_production else Path.home() / 'kast_results')
+    KAST_RESULTS_DIR = os.environ.get('KAST_RESULTS_DIR') or './kast_results'
     
     @classmethod
     def init_app(cls, app):
         """Initialize application-specific configuration"""
-        # Create database directory only if using SQLite and path is not set via env
-        if not os.environ.get('DATABASE_URL'):
-            db_dir = cls._db_dir
-            try:
-                db_dir.mkdir(parents=True, exist_ok=True)
-                # Set proper permissions for production
-                if cls._is_production:
-                    import stat
-                    db_dir.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)  # 775
-            except (OSError, PermissionError) as e:
-                app.logger.warning(f"Could not create database directory {db_dir}: {e}")
+        # Only create directories if they're explicitly configured via environment variables
+        # This prevents unwanted directory creation during installation
         
-        # Create results directory if it doesn't exist
-        results_dir = Path(cls.KAST_RESULTS_DIR)
-        try:
-            results_dir.mkdir(parents=True, exist_ok=True)
-            if cls._is_production:
-                import stat
-                results_dir.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)  # 775
-        except (OSError, PermissionError) as e:
-            app.logger.warning(f"Could not create results directory {results_dir}: {e}")
+        # Create database directory for SQLite if DATABASE_URL is explicitly set
+        database_url = os.environ.get('DATABASE_URL', '')
+        if database_url.startswith('sqlite:///'):
+            # Extract the database file path
+            db_path = database_url.replace('sqlite:///', '')
+            db_dir = Path(db_path).parent
+            
+            # Only create directory if it's an absolute path (production setup)
+            if db_dir.is_absolute():
+                try:
+                    db_dir.mkdir(parents=True, exist_ok=True)
+                    # Set proper permissions if we're in a system directory
+                    if str(db_dir).startswith('/var/lib/') or str(db_dir).startswith('/opt/'):
+                        import stat
+                        db_dir.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)  # 775
+                except (OSError, PermissionError) as e:
+                    app.logger.warning(f"Could not create database directory {db_dir}: {e}")
+        
+        # Create results directory only if KAST_RESULTS_DIR is explicitly set
+        results_dir_env = os.environ.get('KAST_RESULTS_DIR')
+        if results_dir_env:
+            results_dir = Path(results_dir_env)
+            
+            # Only create if it's an absolute path (production setup)
+            if results_dir.is_absolute():
+                try:
+                    results_dir.mkdir(parents=True, exist_ok=True)
+                    # Set proper permissions if we're in a system directory
+                    if str(results_dir).startswith('/var/lib/') or str(results_dir).startswith('/opt/'):
+                        import stat
+                        results_dir.chmod(stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)  # 775
+                except (OSError, PermissionError) as e:
+                    app.logger.warning(f"Could not create results directory {results_dir}: {e}")
     
     # Celery configuration
     CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL') or 'redis://localhost:6379/0'

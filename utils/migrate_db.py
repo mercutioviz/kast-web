@@ -11,9 +11,16 @@ from pathlib import Path
 def migrate_database():
     """Add celery_task_id column to scans table if it doesn't exist"""
     
-    # Get database path from config
-    db_dir = Path.home() / 'kast-web' / 'db'
-    db_path = db_dir / 'kast.db'
+    # Get database path from environment variable or use current directory
+    database_url = os.environ.get('DATABASE_URL', 'sqlite:///kast.db')
+    
+    if not database_url.startswith('sqlite:///'):
+        print(f"This migration only supports SQLite databases")
+        print(f"Current DATABASE_URL: {database_url}")
+        return
+    
+    # Extract database file path from URL
+    db_path = Path(database_url.replace('sqlite:///', ''))
     
     if not db_path.exists():
         print(f"Database not found at {db_path}")
