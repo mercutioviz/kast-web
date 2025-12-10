@@ -441,8 +441,9 @@ configure_database() {
 
 configure_sqlite() {
     print_success "SQLite selected - no additional setup required"
-    DB_DIR="$HOME/kast-web/db"
+    DB_DIR="/var/lib/kast-web"
     mkdir -p "$DB_DIR"
+    chown -R $SERVICE_USER:$SERVICE_USER "$DB_DIR"
     DATABASE_URL="sqlite:///$DB_DIR/kast.db"
 }
 
@@ -695,32 +696,57 @@ create_admin_user() {
     
     # Create admin user
     print_info "Creating admin user..."
-    python3 << EOF >> "$LOG_FILE" 2>&1
+    
+    # Load .env file and export credentials as environment variables
+    source "$INSTALL_DIR/.env"
+    export ADMIN_USERNAME
+    export ADMIN_EMAIL
+    export ADMIN_PASSWORD
+    export ADMIN_FIRST_NAME
+    export ADMIN_LAST_NAME
+    export PYTHONPATH="$INSTALL_DIR"
+    
+    # Use single-quoted heredoc to prevent shell variable expansion
+    python3 << 'EOF' >> "$LOG_FILE" 2>&1
+import os
+import sys
 from app import create_app, db
 from app.models import User
+
+# Get credentials from environment variables
+username = os.environ.get('ADMIN_USERNAME')
+email = os.environ.get('ADMIN_EMAIL')
+password = os.environ.get('ADMIN_PASSWORD')
+first_name = os.environ.get('ADMIN_FIRST_NAME', '')
+last_name = os.environ.get('ADMIN_LAST_NAME', '')
 
 app = create_app()
 with app.app_context():
     # Check if user already exists
-    existing_user = User.query.filter_by(username='$ADMIN_USERNAME').first()
+    existing_user = User.query.filter_by(username=username).first()
     if existing_user:
         print("User already exists, skipping creation")
-    else:
-        admin_user = User(
-            username='$ADMIN_USERNAME',
-            email='$ADMIN_EMAIL',
-            first_name='$ADMIN_FIRST_NAME' if '$ADMIN_FIRST_NAME' else None,
-            last_name='$ADMIN_LAST_NAME' if '$ADMIN_LAST_NAME' else None,
-            role='admin',
-            is_active=True
-        )
-        admin_user.set_password('$ADMIN_PASSWORD')
-        db.session.add(admin_user)
-        db.session.commit()
-        print("Admin user created successfully")
+        sys.exit(0)
+    
+    admin_user = User(
+        username=username,
+        email=email,
+        first_name=first_name if first_name else None,
+        last_name=last_name if last_name else None,
+        role='admin',
+        is_active=True
+    )
+    admin_user.set_password(password)
+    db.session.add(admin_user)
+    db.session.commit()
+    print("Admin user created successfully")
 EOF
     
-    print_success "Admin user created: $ADMIN_USERNAME"
+    if [ $? -eq 0 ]; then
+        print_success "Admin user created: $ADMIN_USERNAME"
+    else
+        error_exit "Failed to create admin user"
+    fi
 }
 
 ################################################################################
