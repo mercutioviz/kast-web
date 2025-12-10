@@ -250,6 +250,71 @@ check_kast_cli() {
     fi
 }
 
+configure_kast_permissions() {
+    print_header "KAST Log Directory Permissions"
+    
+    # Check if /var/log/kast exists
+    if [[ ! -d /var/log/kast ]]; then
+        print_info "/var/log/kast does not exist yet - will be created by KAST CLI on first use"
+        print_info "Note: Run this script again after first KAST CLI usage to fix permissions"
+        return 0
+    fi
+    
+    print_info "Configuring /var/log/kast for shared access..."
+    
+    # Create kast group if it doesn't exist
+    if ! getent group kast > /dev/null 2>&1; then
+        groupadd kast >> "$LOG_FILE" 2>&1
+        print_success "Created 'kast' group for shared KAST operations"
+    else
+        print_success "'kast' group already exists"
+    fi
+    
+    # Add www-data to kast group
+    if id -nG www-data | grep -qw kast; then
+        print_success "www-data user already in 'kast' group"
+    else
+        usermod -aG kast www-data >> "$LOG_FILE" 2>&1
+        print_success "Added www-data user to 'kast' group"
+    fi
+    
+    # Get current owner of /var/log/kast
+    KAST_LOG_OWNER=$(stat -c '%U' /var/log/kast 2>/dev/null)
+    
+    if [[ -n "$KAST_LOG_OWNER" ]]; then
+        # Add the current owner to kast group as well
+        if id -nG "$KAST_LOG_OWNER" | grep -qw kast; then
+            print_success "Directory owner '$KAST_LOG_OWNER' already in 'kast' group"
+        else
+            usermod -aG kast "$KAST_LOG_OWNER" >> "$LOG_FILE" 2>&1 || true
+            print_success "Added directory owner '$KAST_LOG_OWNER' to 'kast' group"
+        fi
+        
+        # Set ownership to preserve original owner but use kast group
+        chown "$KAST_LOG_OWNER:kast" /var/log/kast >> "$LOG_FILE" 2>&1
+        print_success "Set ownership to $KAST_LOG_OWNER:kast"
+    else
+        # Fallback if we can't determine owner
+        chown root:kast /var/log/kast >> "$LOG_FILE" 2>&1
+        print_success "Set ownership to root:kast"
+    fi
+    
+    # Set permissions: 775 with setgid bit (2775)
+    # This ensures new files inherit the group
+    chmod 2775 /var/log/kast >> "$LOG_FILE" 2>&1
+    print_success "Set permissions to 2775 (rwxrwsr-x) with setgid bit"
+    
+    # Also fix existing log files
+    if [[ -n "$(ls -A /var/log/kast 2>/dev/null)" ]]; then
+        chown -R "$KAST_LOG_OWNER:kast" /var/log/kast/* >> "$LOG_FILE" 2>&1 || true
+        chmod -R 664 /var/log/kast/* >> "$LOG_FILE" 2>&1 || true
+        print_success "Updated permissions for existing log files"
+    fi
+    
+    print_success "KAST log directory configured for shared access"
+    log "KAST permissions: Owner=$KAST_LOG_OWNER, Group=kast, Mode=2775"
+}
+
 check_disk_space() {
     print_header "Disk Space Check"
     
@@ -1539,6 +1604,16 @@ generate_report() {
         done
     fi
     
+    echo -e "\n${CYAN}${BOLD}KAST CLI Integration:${NC}"
+    if [[ -d /var/log/kast ]]; then
+        echo -e "  ${BOLD}Log Directory Permissions:${NC}"
+        echo -e "    • Location:           ${GREEN}/var/log/kast${NC}"
+        echo -e "    • Group:              ${GREEN}kast${NC} (shared between users and www-data)"
+        echo -e "    • Permissions:        ${GREEN}2775${NC} (rwxrwsr-x with setgid bit)"
+        echo -e "    • Both the KAST user and www-data can write to KAST logs"
+        echo -e ""
+    fi
+    
     echo -e "\n${CYAN}${BOLD}Getting Started:${NC}"
     echo -e "  ${BOLD}Important:${NC} Celery worker must be running for scans to work!"
     echo -e "  The Celery worker processes scan tasks asynchronously in the background."
@@ -1601,6 +1676,7 @@ main() {
     check_os
     check_disk_space
     check_kast_cli
+    configure_kast_permissions
     check_existing_installation
     
     # System dependencies
