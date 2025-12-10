@@ -443,6 +443,8 @@ configure_sqlite() {
     print_success "SQLite selected - no additional setup required"
     DB_DIR="/var/lib/kast-web"
     mkdir -p "$DB_DIR"
+    # Ensure proper ownership for the database directory
+    chown -R $SERVICE_USER:$SERVICE_USER "$DB_DIR"
     DATABASE_URL="sqlite:///$DB_DIR/kast.db"
     print_info "Database will be stored at: $DB_DIR/kast.db"
 }
