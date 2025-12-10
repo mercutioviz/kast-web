@@ -1163,7 +1163,7 @@ User=www-data
 Group=www-data
 RuntimeDirectory=kast-web
 WorkingDirectory=/opt/kast-web
-Environment="PATH=/opt/kast-web/venv/bin"
+Environment="PATH=/opt/kast-web/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="FLASK_ENV=production"
 EnvironmentFile=/opt/kast-web/.env
 
@@ -1209,7 +1209,8 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/kast-web
-Environment="PATH=/opt/kast-web/venv/bin"
+Environment="PATH=/opt/kast-web/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/opt/kast-web"
 EnvironmentFile=/opt/kast-web/.env
 
 ExecStart=/opt/kast-web/venv/bin/celery -A celery_worker.celery worker \

@@ -8,23 +8,16 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/kast-web
-Environment="PATH=/opt/kast-web/venv/bin"
+Environment="PATH=/opt/kast-web/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=/opt/kast-web"
-Environment="FLASK_ENV=production"
 EnvironmentFile=/opt/kast-web/.env
 
-# Start Celery worker
 ExecStart=/opt/kast-web/venv/bin/celery -A celery_worker.celery worker \
     --loglevel=info \
     --logfile=/var/log/kast-web/celery.log
 
-# Restart policy
 Restart=always
 RestartSec=10
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
 
 [Install]
 WantedBy=multi-user.target
