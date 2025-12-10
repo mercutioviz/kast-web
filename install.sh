@@ -1244,6 +1244,113 @@ check_iptables_ports() {
 # Post-Installation Validation
 ################################################################################
 
+validate_database_sqlite() {
+    print_info "Validating SQLite database configuration..."
+    local validation_failed=0
+    
+    # Check database file location
+    local db_path="/var/lib/kast-web/kast.db"
+    if [[ -f "$db_path" ]]; then
+        print_success "Database file exists at correct location: $db_path"
+        
+        # Check ownership
+        local db_owner=$(stat -c '%U:%G' "$db_path" 2>/dev/null)
+        if [[ "$db_owner" == "$SERVICE_USER:$SERVICE_USER" ]]; then
+            print_success "Database ownership correct: $db_owner"
+        else
+            print_error "Database ownership incorrect: $db_owner (expected: $SERVICE_USER:$SERVICE_USER)"
+            validation_failed=1
+        fi
+        
+        # Check permissions (should be at least readable by owner)
+        local db_perms=$(stat -c '%a' "$db_path" 2>/dev/null)
+        if [[ "$db_perms" =~ ^[6-7][0-7][0-7]$ ]] || [[ "$db_perms" =~ ^[0-7][4-7][0-7]$ ]]; then
+            print_success "Database permissions OK: $db_perms"
+        else
+            print_warning "Database permissions may be too restrictive: $db_perms"
+        fi
+    else
+        print_error "Database file not found at $db_path"
+        validation_failed=1
+        return $validation_failed
+    fi
+    
+    # Warn about old database location
+    if [[ -f "/root/kast-web/db/kast.db" ]]; then
+        print_warning "Old database found at /root/kast-web/db/kast.db"
+        WARNINGS+=("Remove old database file: sudo rm -rf /root/kast-web")
+    fi
+    
+    # Validate admin user exists with proper configuration
+    if command -v sqlite3 &>/dev/null; then
+        print_info "Validating admin user in database..."
+        
+        # Check if users table exists
+        local table_count=$(sqlite3 "$db_path" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users';" 2>/dev/null)
+        if [[ "$table_count" == "1" ]]; then
+            print_success "Users table exists in database"
+            
+            # Check if admin user exists
+            local admin_count=$(sqlite3 "$db_path" "SELECT count(*) FROM users WHERE role='admin' AND is_active=1;" 2>/dev/null)
+            if [[ "$admin_count" -gt 0 ]]; then
+                print_success "Active admin user found in database"
+                
+                # Validate password hash
+                local hash_info=$(sqlite3 "$db_path" "SELECT username, length(password_hash), substr(password_hash, 1, 4) FROM users WHERE role='admin' AND is_active=1 LIMIT 1;" 2>/dev/null)
+                
+                if [[ -n "$hash_info" ]]; then
+                    local username=$(echo "$hash_info" | cut -d'|' -f1)
+                    local hash_length=$(echo "$hash_info" | cut -d'|' -f2)
+                    local hash_prefix=$(echo "$hash_info" | cut -d'|' -f3)
+                    
+                    print_success "Admin user: $username"
+                    
+                    # Bcrypt hashes are 60 characters and start with $2a$, $2b$, or $2y$
+                    if [[ "$hash_length" == "60" ]] && [[ "$hash_prefix" =~ ^\$2[aby]\$ ]]; then
+                        print_success "Password hash valid (length: $hash_length, format: bcrypt)"
+                    elif [[ "$hash_length" -gt 0 ]]; then
+                        print_warning "Password hash present but format may be non-standard (length: $hash_length)"
+                    else
+                        print_error "Password hash is empty or invalid"
+                        validation_failed=1
+                    fi
+                else
+                    print_error "Could not validate password hash"
+                    validation_failed=1
+                fi
+            else
+                print_error "No active admin user found in database"
+                validation_failed=1
+            fi
+        else
+            print_error "Users table not found in database"
+            validation_failed=1
+        fi
+        
+        # Validate other critical tables exist
+        local critical_tables=("scans" "scan_results" "audit_logs" "system_settings")
+        local missing_tables=()
+        
+        for table in "${critical_tables[@]}"; do
+            local exists=$(sqlite3 "$db_path" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$table';" 2>/dev/null)
+            if [[ "$exists" != "1" ]]; then
+                missing_tables+=("$table")
+            fi
+        done
+        
+        if [[ ${#missing_tables[@]} -eq 0 ]]; then
+            print_success "All critical database tables exist"
+        else
+            print_warning "Some database tables may be missing: ${missing_tables[*]}"
+        fi
+    else
+        print_warning "sqlite3 command not available, skipping detailed database validation"
+        WARNINGS+=("Install sqlite3 for detailed database validation: sudo apt-get install sqlite3")
+    fi
+    
+    return $validation_failed
+}
+
 validate_installation() {
     print_header "Installation Validation"
     
@@ -1304,6 +1411,14 @@ validate_installation() {
         print_success "KAST CLI is accessible"
     else
         print_warning "KAST CLI may not be accessible to the application"
+    fi
+    
+    # SQLite-specific database validation
+    if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
+        echo ""
+        if ! validate_database_sqlite; then
+            validation_failed=1
+        fi
     fi
     
     return $validation_failed
