@@ -4,6 +4,7 @@ Celery tasks for asynchronous scan execution
 
 import subprocess
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from celery_worker import celery
@@ -33,6 +34,9 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
     from app.utils import get_logo_for_scan
     
     try:
+        # Log PATH for debugging purposes
+        current_app.logger.info(f"PATH from Celery task: {os.environ.get('PATH')}")
+
         # Get scan from database
         scan = db.session.get(Scan, scan_id)
         if not scan:
