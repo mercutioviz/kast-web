@@ -654,6 +654,11 @@ initialize_database() {
     cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
     source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
+    # Load and export all .env variables to ensure Flask reads them
+    set -a
+    source "$INSTALL_DIR/.env"
+    set +a
+    
     # Set PYTHONPATH so migrations can import app module
     export PYTHONPATH="$INSTALL_DIR"
     
@@ -672,6 +677,12 @@ initialize_database() {
     # Initialize database tables
     print_info "Initializing database tables..."
     if python3 << 'EOF' >> "$LOG_FILE" 2>&1
+import os
+import sys
+
+# Set working directory explicitly to prevent creating files in /root
+os.chdir('/opt/kast-web')
+
 from app import create_app, db
 app = create_app()
 with app.app_context():
@@ -737,8 +748,12 @@ create_admin_user() {
     # Create admin user
     print_info "Creating admin user..."
     
-    # Load .env file and export credentials as environment variables
+    # Load and export all .env variables to ensure Flask reads them
+    set -a
     source "$INSTALL_DIR/.env"
+    set +a
+    
+    # Export admin credentials as environment variables
     export ADMIN_USERNAME
     export ADMIN_EMAIL
     export ADMIN_PASSWORD
@@ -750,6 +765,10 @@ create_admin_user() {
     python3 << 'EOF' >> "$LOG_FILE" 2>&1
 import os
 import sys
+
+# Set working directory explicitly to prevent creating files in /root
+os.chdir('/opt/kast-web')
+
 from app import create_app, db
 from app.models import User
 
