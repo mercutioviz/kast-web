@@ -956,6 +956,16 @@ with app.app_context():
 EOF
     then
         print_success "Database initialized"
+        
+        # Fix database file ownership for SQLite
+        if [[ "$DATABASE_TYPE" == "sqlite" ]]; then
+            DB_FILE="/var/lib/kast-web/kast.db"
+            if [[ -f "$DB_FILE" ]]; then
+                chown $SERVICE_USER:$SERVICE_USER "$DB_FILE"
+                chmod 664 "$DB_FILE"
+                print_success "Database file ownership set to $SERVICE_USER:$SERVICE_USER"
+            fi
+        fi
     else
         error_exit "Database initialization failed. Check $LOG_FILE for details."
     fi
