@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Execution Log - {{ scan.target }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-3">
+        <div class="col">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Home</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('scans.list') }}">Scan History</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('scans.detail', scan_id=scan.id) }}">Scan #{{ scan.id }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Execution Log</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col">
+            <div class="d-flex justify-content-between align-items-center">
+                <h2>
+                    <i class="bi bi-file-earmark-text"></i>
+                    Execution Log
+                </h2>
+                <div>
+                    <a href="{{ url_for('scans.download_execution_log', scan_id=scan.id) }}" class="btn btn-outline-primary">
+                        <i class="bi bi-download"></i> Download Log
+                    </a>
+                    <a href="{{ url_for('scans.detail', scan_id=scan.id) }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left"></i> Back to Scan
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Scan Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <strong>Target:</strong><br>
+                            <code>{{ scan.target }}</code>
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Scan ID:</strong><br>
+                            #{{ scan.id }}
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Status:</strong><br>
+                            {% if scan.status == 'completed' %}
+                                <span class="badge bg-success">Completed</span>
+                            {% elif scan.status == 'running' %}
+                                <span class="badge bg-primary">Running</span>
+                            {% elif scan.status == 'failed' %}
+                                <span class="badge bg-danger">Failed</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ scan.status }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Mode:</strong><br>
+                            <span class="badge {% if scan.scan_mode == 'active' %}bg-warning{% else %}bg-info{% endif %}">
+                                {{ scan.scan_mode|upper }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Full Execution Log</h5>
+                    <small class="text-muted">
+                        Complete KAST command output including all STDOUT and STDERR
+                    </small>
+                </div>
+                <div class="card-body p-0">
+                    <pre class="log-viewer mb-0"><code>{{ log_content }}</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col">
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i>
+                <strong>About Execution Logs:</strong>
+                This log contains the complete output from the KAST security scanner, including:
+                <ul class="mb-0 mt-2">
+                    <li>The exact command that was executed</li>
+                    <li>All standard output (STDOUT) from KAST</li>
+                    <li>All error output (STDERR) including plugin failures</li>
+                    <li>Return code and timing information</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.log-viewer {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    padding: 1.5rem;
+    border-radius: 0;
+    max-height: 70vh;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.log-viewer code {
+    color: #d4d4d4;
+}
+
+/* Scrollbar styling for log viewer */
+.log-viewer::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.log-viewer::-webkit-scrollbar-track {
+    background: #2d2d2d;
+}
+
+.log-viewer::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 6px;
+}
+
+.log-viewer::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+</style>
+{% endblock %}

@@ -86,6 +86,7 @@ class Scan(db.Model):
     started_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     completed_at = db.Column(db.DateTime)
     logo_id = db.Column(db.Integer, db.ForeignKey('report_logos.id'), nullable=True)  # NULL = use system default
+    execution_log_path = db.Column(db.String(500))  # Path to full KAST execution log
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')

@@ -893,3 +893,78 @@ def send_email(scan_id):
     
     except Exception as e:
         return jsonify({'success': False, 'error': f'Failed to queue email: {str(e)}'}), 500
+
+
+# ============================================================================
+# EXECUTION LOG VIEWING & DOWNLOADING
+# ============================================================================
+
+@bp.route('/<int:scan_id>/execution-log')
+@login_required
+def view_execution_log(scan_id):
+    """View the full KAST execution log"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    # Check access permission
+    if not check_scan_access_simple(scan):
+        flash('You do not have permission to view this scan\'s execution log', 'danger')
+        return redirect(url_for('scans.list'))
+    
+    if not scan.execution_log_path:
+        flash('No execution log available for this scan', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    log_path = Path(scan.execution_log_path)
+    
+    if not log_path.exists():
+        flash('Execution log file not found', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    # Read log file
+    try:
+        with open(log_path, 'r') as f:
+            log_content = f.read()
+    except Exception as e:
+        flash(f'Error reading log file: {str(e)}', 'danger')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    return render_template(
+        'scan_execution_log.html',
+        scan=scan,
+        log_content=log_content
+    )
+
+
+@bp.route('/<int:scan_id>/execution-log/download')
+@login_required
+def download_execution_log(scan_id):
+    """Download the full KAST execution log"""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        abort(404)
+    
+    # Check access permission
+    if not check_scan_access_simple(scan):
+        abort(403)
+    
+    if not scan.execution_log_path:
+        flash('No execution log available for this scan', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    log_path = Path(scan.execution_log_path)
+    
+    if not log_path.exists():
+        flash('Execution log file not found', 'warning')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+    
+    download_name = f'kast_execution_log_{scan.target}_{scan.id}.log'
+    
+    return send_file(
+        log_path,
+        as_attachment=True,
+        download_name=download_name,
+        mimetype='text/plain'
+    )

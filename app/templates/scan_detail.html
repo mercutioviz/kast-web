@@ -322,6 +322,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <small>{{ executed.strftime('%H:%M:%S') if executed else 'N/A' }}</small>
                                     </td>
                                 </tr>
+                                {% if status == 'fail' %}
+                                    {% set error_msg = result.error_message if result is mapping else result.get('error_message') %}
+                                    {% if error_msg %}
+                                    <tr class="table-danger">
+                                        <td colspan="4" class="px-4">
+                                            <small>
+                                                <i class="bi bi-exclamation-triangle text-danger"></i>
+                                                <strong>Error:</strong> {{ error_msg }}
+                                            </small>
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
@@ -393,6 +406,14 @@ document.addEventListener('DOMContentLoaded', function() {
                        target="_blank"
                        class="btn btn-outline-primary w-100 mb-2">
                         <i class="bi bi-folder2-open"></i> View Output Files
+                    </a>
+                {% endif %}
+                
+                {% if scan.execution_log_path %}
+                    <a href="{{ url_for('scans.view_execution_log', scan_id=scan.id) }}" 
+                       target="_blank"
+                       class="btn btn-outline-secondary w-100 mb-2">
+                        <i class="bi bi-file-earmark-text"></i> View Execution Log
                     </a>
                 {% endif %}
                 

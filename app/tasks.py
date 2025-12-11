@@ -46,9 +46,16 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         output_dir = Path(current_app.config['KAST_RESULTS_DIR']) / f"{target}-{timestamp}"
         
+        # Create output directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create execution log file
+        log_file_path = output_dir / 'kast_execution.log'
+        
         # Update scan status and output directory BEFORE starting the scan
         scan.status = 'running'
         scan.output_dir = str(output_dir)
+        scan.execution_log_path = str(log_file_path)
         db.session.commit()
         
         # Build command
@@ -78,7 +85,20 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         current_app.logger.info(f"Executing KAST command: {' '.join(cmd)}")
         
-        # Execute scan with real-time result parsing
+        # Write command to execution log
+        with open(log_file_path, 'w') as log_file:
+            log_file.write("="*80 + "\n")
+            log_file.write("KAST Web Execution Log\n")
+            log_file.write("="*80 + "\n\n")
+            log_file.write(f"Scan ID: {scan_id}\n")
+            log_file.write(f"Target: {target}\n")
+            log_file.write(f"Mode: {scan_mode}\n")
+            log_file.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            log_file.write("Command executed:\n")
+            log_file.write(f"  {' '.join(cmd)}\n\n")
+            log_file.write("="*80 + "\n\n")
+        
+        # Execute scan and capture output
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -92,6 +112,22 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         # Wait for process to complete
         stdout, stderr = process.communicate(timeout=3600)  # 1 hour timeout
         
+        # Append stdout and stderr to log file
+        with open(log_file_path, 'a') as log_file:
+            log_file.write("STDOUT:\n")
+            log_file.write("-"*80 + "\n")
+            log_file.write(stdout if stdout else "(no output)\n")
+            log_file.write("\n" + "="*80 + "\n\n")
+            
+            log_file.write("STDERR:\n")
+            log_file.write("-"*80 + "\n")
+            log_file.write(stderr if stderr else "(no errors)\n")
+            log_file.write("\n" + "="*80 + "\n\n")
+            
+            log_file.write(f"Return Code: {process.returncode}\n")
+            log_file.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            log_file.write("="*80 + "\n")
+        
         # Update scan with results
         scan.output_dir = str(output_dir)
         scan.completed_at = datetime.utcnow()
@@ -100,7 +136,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             scan.status = 'completed'
             db.session.commit()
             
-            # Parse results
+            # Parse results and extract plugin errors
             parse_scan_results(scan_id, output_dir)
             
             return {
@@ -113,6 +149,9 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             scan.status = 'failed'
             scan.error_message = stderr or 'Scan failed with no error message'
             db.session.commit()
+            
+            # Still parse results to capture any plugin-level errors
+            parse_scan_results(scan_id, output_dir)
             
             return {
                 'success': False,
@@ -159,6 +198,7 @@ def parse_scan_results(scan_id, output_dir):
                     data = json.load(f)
                 
                 plugin_name = data.get('plugin_name', json_file.stem.replace('_processed', ''))
+                disposition = data.get('disposition', 'unknown')
                 
                 # Count findings correctly - look at results array within findings
                 findings_data = data.get('findings', {})
@@ -168,6 +208,9 @@ def parse_scan_results(scan_id, output_dir):
                 else:
                     # fallback: findings is a list
                     findings_count = len(findings_data) if isinstance(findings_data, list) else 0
+                
+                # Extract error message if plugin failed
+                error_message = extract_plugin_error(data, disposition)
                 
                 # Get file modification time as executed_at
                 file_mtime = datetime.fromtimestamp(json_file.stat().st_mtime)
@@ -180,19 +223,21 @@ def parse_scan_results(scan_id, output_dir):
                 
                 if existing_result:
                     # Update existing result
-                    existing_result.status = data.get('disposition', 'unknown')
+                    existing_result.status = disposition
                     existing_result.findings_count = findings_count
                     existing_result.processed_output_path = str(json_file)
                     existing_result.executed_at = file_mtime
+                    existing_result.error_message = error_message
                 else:
                     # Create new scan result entry
                     result = ScanResult(
                         scan_id=scan_id,
                         plugin_name=plugin_name,
-                        status=data.get('disposition', 'unknown'),
+                        status=disposition,
                         findings_count=findings_count,
                         processed_output_path=str(json_file),
-                        executed_at=file_mtime
+                        executed_at=file_mtime,
+                        error_message=error_message
                     )
                     db.session.add(result)
             
@@ -203,6 +248,62 @@ def parse_scan_results(scan_id, output_dir):
     
     except Exception as e:
         current_app.logger.exception(f"Error parsing scan results: {str(e)}")
+
+
+def extract_plugin_error(plugin_data, disposition):
+    """
+    Extract error message from plugin JSON data
+    
+    Args:
+        plugin_data: Parsed plugin JSON data
+        disposition: Plugin disposition (success, fail, etc.)
+    
+    Returns:
+        str: Error message or None
+    """
+    # Only extract errors for failed plugins
+    if disposition != 'fail':
+        return None
+    
+    error_msg = None
+    
+    # Try multiple locations where error information might be stored
+    # Different plugins may store error info in different places
+    
+    # 1. Check for top-level 'error' field
+    if 'error' in plugin_data:
+        error_msg = str(plugin_data['error'])
+    
+    # 2. Check for 'message' field
+    elif 'message' in plugin_data:
+        error_msg = str(plugin_data['message'])
+    
+    # 3. Check for 'error_message' field
+    elif 'error_message' in plugin_data:
+        error_msg = str(plugin_data['error_message'])
+    
+    # 4. Check within findings dict
+    elif 'findings' in plugin_data:
+        findings = plugin_data['findings']
+        if isinstance(findings, dict):
+            if 'error' in findings:
+                error_msg = str(findings['error'])
+            elif 'message' in findings:
+                error_msg = str(findings['message'])
+    
+    # 5. Check for 'details' field
+    elif 'details' in plugin_data:
+        error_msg = str(plugin_data['details'])
+    
+    # 6. Check for 'reason' field
+    elif 'reason' in plugin_data:
+        error_msg = str(plugin_data['reason'])
+    
+    # Truncate if too long (database field limit)
+    if error_msg and len(error_msg) > 1000:
+        error_msg = error_msg[:997] + "..."
+    
+    return error_msg
 
 
 @celery.task
