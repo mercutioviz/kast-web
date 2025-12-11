@@ -322,7 +322,7 @@ def system_info():
     import platform
     import subprocess
     from flask import current_app
-    import pkg_resources
+    from importlib import metadata
     
     def mask_sensitive(value, show_chars=4):
         """Mask sensitive information, showing only last few characters"""
@@ -427,7 +427,7 @@ def system_info():
         'executable': sys.executable,
         'prefix': sys.prefix,
         'path': sys.path,
-        'packages': sorted([f"{pkg.key}=={pkg.version}" for pkg in pkg_resources.working_set])
+        'packages': sorted([f"{dist.name}=={dist.version}" for dist in metadata.distributions()])
     }
     
     # System Information
