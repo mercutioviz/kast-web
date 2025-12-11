@@ -15,6 +15,7 @@ from app.models import User, Scan, AuditLog, SystemSettings
 from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import json
+import psutil
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -442,9 +443,8 @@ def system_info():
         'python_implementation': platform.python_implementation()
     }
     
-    # Try to get CPU and memory info
+    # Get CPU and memory info
     try:
-        import psutil
         info['system']['cpu_count'] = psutil.cpu_count()
         info['system']['cpu_percent'] = psutil.cpu_percent(interval=1)
         
@@ -455,7 +455,8 @@ def system_info():
             'used': round(mem.used / (1024**3), 2),
             'percent': mem.percent
         }
-    except ImportError:
+    except Exception:
+        # psutil may fail on some systems
         pass
     
     # Environment Variables (filtered and masked)
