@@ -310,3 +310,29 @@ class TransferOwnershipForm(FlaskForm):
     )
     
     submit = SubmitField('Transfer Ownership', render_kw={'class': 'btn btn-warning'})
+
+
+class ImportScanForm(FlaskForm):
+    """Form for importing CLI scan results into KAST-Web"""
+    
+    scan_directory = StringField(
+        'Scan Results Directory',
+        validators=[
+            DataRequired(message='Directory path is required'),
+            Length(min=1, max=500, message='Path must not exceed 500 characters')
+        ],
+        render_kw={
+            'placeholder': '/home/user/kast_results/example.com-20250101-120000',
+            'class': 'form-control'
+        }
+    )
+    
+    assign_to_user = SelectField(
+        'Assign to User',
+        coerce=int,
+        choices=[],  # Will be populated dynamically
+        validators=[DataRequired(message='Please select a user')],
+        render_kw={'class': 'form-select'}
+    )
+    
+    submit = SubmitField('Import Scan', render_kw={'class': 'btn btn-success'})

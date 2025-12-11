@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Import Scan - KAST Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-cloud-upload"></i> Import CLI Scan Results</h2>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Dashboard
+    </a>
+</div>
+
+<!-- Info Alert -->
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    <strong>Import Feature:</strong> This tool allows you to import KAST scan results that were run from the command line into the KAST-Web interface.
+    The results will be made available in the GUI just like web-executed scans.
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-folder"></i> Import Configuration</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('admin.import_scan') }}">
+                    {{ form.hidden_tag() }}
+                    
+                    <!-- Directory Path -->
+                    <div class="mb-3">
+                        {{ form.scan_directory.label(class="form-label fw-bold") }}
+                        {{ form.scan_directory(class="form-control") }}
+                        {% if form.scan_directory.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.scan_directory.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Enter the full path to the directory containing KAST CLI scan results.<br>
+                            Example: <code>/home/user/kast_results/example.com-20250101-120000</code>
+                        </div>
+                    </div>
+                    
+                    <!-- Assign to User -->
+                    <div class="mb-3">
+                        {{ form.assign_to_user.label(class="form-label fw-bold") }}
+                        {{ form.assign_to_user(class="form-select") }}
+                        {% if form.assign_to_user.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.assign_to_user.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Select the user who will own this imported scan.
+                        </div>
+                    </div>
+                    
+                    <!-- Submit Button -->
+                    <div class="d-grid gap-2">
+                        {{ form.submit(class="btn btn-success btn-lg") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Help & Requirements -->
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Requirements</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-2"><strong>The directory must contain:</strong></p>
+                <ul class="mb-0">
+                    <li>KAST result files (*_processed.json)</li>
+                    <li>Readable by the web server</li>
+                    <li>Not already imported</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-check-circle"></i> What Gets Imported</h6>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li><strong>Target:</strong> Extracted from directory name</li>
+                    <li><strong>Scan Mode:</strong> Determined from plugins</li>
+                    <li><strong>Plugins:</strong> All plugins found</li>
+                    <li><strong>Results:</strong> All plugin findings</li>
+                    <li><strong>Reports:</strong> Existing HTML/JSON reports</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-file-earmark-text"></i> Expected Structure</h6>
+            </div>
+            <div class="card-body">
+                <pre class="mb-0" style="font-size: 0.85rem;"><code>target-YYYYMMDD-HHMMSS/
+├── plugin1_processed.json
+├── plugin2_processed.json
+├── report.html
+└── report.json</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Section -->
+{% if preview %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header {% if preview.valid %}bg-success{% else %}bg-danger{% endif %} text-white">
+                <h5 class="mb-0">
+                    {% if preview.valid %}
+                        <i class="bi bi-check-circle"></i> Import Preview
+                    {% else %}
+                        <i class="bi bi-x-circle"></i> Validation Failed
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if preview.valid %}
+                    <div class="alert alert-success mb-3">
+                        <i class="bi bi-check-circle"></i> Directory validated successfully! Ready to import.
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="fw-bold">Extracted Metadata:</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th>Target:</th>
+                                    <td>{{ preview.metadata.target }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Scan Mode:</th>
+                                    <td>
+                                        <span class="badge {% if preview.metadata.scan_mode == 'active' %}bg-warning text-dark{% else %}bg-info{% endif %}">
+                                            {{ preview.metadata.scan_mode|upper }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Started:</th>
+                                    <td>{{ preview.metadata.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Completed:</th>
+                                    <td>{{ preview.metadata.completed_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-bold">Plugins Found ({{ preview.file_count }}):</h6>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for plugin in preview.metadata.plugins.split(',') %}
+                                    <span class="badge bg-secondary">{{ plugin }}</span>
+                                {% endfor %}
+                            </div>
+                            
+                            <h6 class="fw-bold mt-3">Result Files:</h6>
+                            <ul class="list-unstyled small">
+                                {% for file in preview.files[:5] %}
+                                    <li><i class="bi bi-file-earmark-text"></i> {{ file }}</li>
+                                {% endfor %}
+                                {% if preview.files|length > 5 %}
+                                    <li class="text-muted">... and {{ preview.files|length - 5 }} more</li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="alert alert-danger">
+                        <i class="bi bi-x-circle"></i> <strong>Error:</strong> {{ preview.error }}
+                    </div>
+                    <p class="mb-0">Please check the directory path and ensure it contains valid KAST scan results.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Instructions Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-question-circle"></i> How to Import CLI Scans</h5>
+            </div>
+            <div class="card-body">
+                <ol class="mb-0">
+                    <li><strong>Run KAST from CLI:</strong> Execute your scan using the KAST command-line tool as usual.</li>
+                    <li><strong>Locate Results:</strong> Find the output directory (typically in <code>~/kast_results/</code>).</li>
+                    <li><strong>Enter Path:</strong> Copy the full path to the results directory and paste it into the form above.</li>
+                    <li><strong>Select User:</strong> Choose which user should own this imported scan.</li>
+                    <li><strong>Import:</strong> Click "Import Scan" and the results will be imported into KAST-Web.</li>
+                    <li><strong>View Results:</strong> After import, you'll be redirected to the scan detail page where you can view all results.</li>
+                </ol>
+                
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Note:</strong> Imported scans are marked with source="imported" to distinguish them from web-executed scans.
+                    They cannot be re-run from the web interface, but all viewing and sharing features work normally.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

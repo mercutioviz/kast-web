@@ -577,3 +577,52 @@ def export_system_info():
     # For now, redirect to the main page
     flash('Export functionality coming soon', 'info')
     return redirect(url_for('admin.system_info'))
+
+
+@bp.route('/import-scan', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def import_scan():
+    """Import CLI scan results into KAST-Web"""
+    from app.forms import ImportScanForm
+    from app.import_utils import import_cli_scan, get_import_preview
+    
+    form = ImportScanForm()
+    
+    # Populate user choices (current user first, then others alphabetically)
+    users = User.query.order_by(User.username).all()
+    form.assign_to_user.choices = [
+        (current_user.id, f'{current_user.username} (me)')
+    ] + [
+        (u.id, u.username) for u in users if u.id != current_user.id
+    ]
+    
+    preview_data = None
+    
+    if request.method == 'POST':
+        if form.validate_on_submit():
+            scan_dir = form.scan_directory.data.strip()
+            user_id = form.assign_to_user.data
+            
+            # Import the scan
+            success, scan_id, error = import_cli_scan(
+                scan_dir,
+                user_id,
+                current_user.id
+            )
+            
+            if success:
+                flash(f'Scan imported successfully! Scan ID: {scan_id}', 'success')
+                return redirect(url_for('scans.detail', scan_id=scan_id))
+            else:
+                flash(f'Import failed: {error}', 'danger')
+        else:
+            flash('Please correct the errors in the form', 'warning')
+    
+    # If GET request with directory parameter, show preview
+    preview_dir = request.args.get('preview')
+    if preview_dir:
+        preview_data = get_import_preview(preview_dir)
+        form.scan_directory.data = preview_dir
+    
+    return render_template('admin/import_scan.html', form=form, preview=preview_data)

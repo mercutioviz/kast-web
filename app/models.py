@@ -87,6 +87,7 @@ class Scan(db.Model):
     completed_at = db.Column(db.DateTime)
     logo_id = db.Column(db.Integer, db.ForeignKey('report_logos.id'), nullable=True)  # NULL = use system default
     execution_log_path = db.Column(db.String(500))  # Path to full KAST execution log
+    source = db.Column(db.String(20), default='web')  # 'web' = GUI-executed, 'imported' = CLI-imported
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
@@ -125,7 +126,8 @@ class Scan(db.Model):
             'celery_task_id': self.celery_task_id,
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'duration': self.duration
+            'duration': self.duration,
+            'source': self.source
         }
 
 class ScanResult(db.Model):
