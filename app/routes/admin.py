@@ -488,7 +488,7 @@ def system_info():
     }
     
     # Check path permissions
-    for name, path in info['paths'].items():
+    for name, path in list(info['paths'].items()):
         if name == 'database':
             continue  # Skip database URI
         try:
