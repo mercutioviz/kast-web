@@ -535,6 +535,66 @@ configure_kast_permissions() {
     log "KAST permissions: Owner=$KAST_LOG_OWNER, Group=kast, Mode=2775"
 }
 
+configure_security_tool_configs() {
+    print_header "Security Tool Configuration for www-data"
+    
+    print_info "Setting up configuration directories for security tools..."
+    
+    # Create config directory structure for www-data
+    mkdir -p /var/www/.config/katana >> "$LOG_FILE" 2>&1
+    mkdir -p /var/www/.config/subfinder >> "$LOG_FILE" 2>&1
+    
+    print_success "Created config directories in /var/www/.config/"
+    
+    # Check if user has existing configs and copy them
+    # Get the actual user who invoked sudo (not root)
+    ACTUAL_USER="${SUDO_USER:-$USER}"
+    ACTUAL_HOME=$(getent passwd "$ACTUAL_USER" | cut -d: -f6)
+    
+    # Copy katana config if it exists
+    if [[ -f "$ACTUAL_HOME/.config/katana/config.yaml" ]]; then
+        cp "$ACTUAL_HOME/.config/katana/config.yaml" /var/www/.config/katana/ >> "$LOG_FILE" 2>&1
+        print_success "Copied katana config from $ACTUAL_USER's home directory"
+    else
+        # Create minimal config file
+        touch /var/www/.config/katana/config.yaml
+        print_info "Created empty katana config (tool will use defaults)"
+    fi
+    
+    # Copy subfinder config if it exists
+    if [[ -f "$ACTUAL_HOME/.config/subfinder/config.yaml" ]]; then
+        cp "$ACTUAL_HOME/.config/subfinder/config.yaml" /var/www/.config/subfinder/ >> "$LOG_FILE" 2>&1
+        print_success "Copied subfinder config from $ACTUAL_USER's home directory"
+    else
+        # Create minimal config file
+        touch /var/www/.config/subfinder/config.yaml
+        print_info "Created empty subfinder config (tool will use defaults)"
+    fi
+    
+    # Set proper ownership
+    chown -R www-data:www-data /var/www/.config >> "$LOG_FILE" 2>&1
+    print_success "Set ownership to www-data:www-data"
+    
+    # Set proper permissions
+    chmod -R 755 /var/www/.config >> "$LOG_FILE" 2>&1
+    find /var/www/.config -type f -exec chmod 644 {} \; >> "$LOG_FILE" 2>&1
+    print_success "Set permissions (directories: 755, files: 644)"
+    
+    # Test katana if available
+    if command -v katana &>/dev/null; then
+        print_info "Testing katana configuration..."
+        if sudo -u www-data katana -version &>/dev/null; then
+            print_success "Katana can be executed by www-data"
+        else
+            print_warning "Katana test failed - may need manual configuration"
+            WARNINGS+=("Katana may require additional configuration for www-data user")
+        fi
+    fi
+    
+    print_success "Security tool configurations set up for www-data"
+    log "Config directories: /var/www/.config/katana, /var/www/.config/subfinder"
+}
+
 check_disk_space() {
     print_header "Disk Space Check"
     
@@ -1804,6 +1864,7 @@ main() {
     check_disk_space
     check_kast_cli
     configure_kast_permissions
+    configure_security_tool_configs
     
     # Collect all user inputs upfront (interactive mode only)
     collect_user_inputs
