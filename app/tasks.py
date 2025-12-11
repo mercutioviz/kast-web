@@ -136,6 +136,9 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             scan.status = 'completed'
             db.session.commit()
             
+            # Parse execution log to create per-plugin log files
+            parse_plugin_logs(log_file_path, output_dir)
+            
             # Parse results and extract plugin errors
             parse_scan_results(scan_id, output_dir)
             
@@ -149,6 +152,9 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             scan.status = 'failed'
             scan.error_message = stderr or 'Scan failed with no error message'
             db.session.commit()
+            
+            # Parse execution log to create per-plugin log files even on failure
+            parse_plugin_logs(log_file_path, output_dir)
             
             # Still parse results to capture any plugin-level errors
             parse_scan_results(scan_id, output_dir)
@@ -304,6 +310,84 @@ def extract_plugin_error(plugin_data, disposition):
         error_msg = error_msg[:997] + "..."
     
     return error_msg
+
+
+def parse_plugin_logs(execution_log_path, output_dir):
+    """
+    Parse the execution log and create individual log files for each plugin
+    
+    Args:
+        execution_log_path: Path to the main execution log
+        output_dir: Directory where plugin logs should be written
+    """
+    from flask import current_app
+    
+    try:
+        # Read the execution log
+        with open(execution_log_path, 'r') as f:
+            log_content = f.read()
+        
+        # Common patterns that indicate plugin execution in KAST output
+        # These patterns help identify where each plugin's output starts
+        plugin_patterns = [
+            r'\[[\+\-\*]\]\s*(?:Running|Executing)\s+plugin[:\s]+(\w+)',
+            r'\[[\+\-\*]\]\s*Plugin[:\s]+(\w+)',
+            r'^\s*(\w+)\s*plugin',
+            r'Starting\s+(\w+)',
+        ]
+        
+        import re
+        
+        # Split log into lines for processing
+        lines = log_content.split('\n')
+        
+        # Track current plugin and its output
+        current_plugin = None
+        plugin_logs = {}
+        
+        for line in lines:
+            # Check if this line indicates a new plugin starting
+            plugin_found = False
+            for pattern in plugin_patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    plugin_name = match.group(1).lower()
+                    current_plugin = plugin_name
+                    if current_plugin not in plugin_logs:
+                        plugin_logs[current_plugin] = []
+                    plugin_logs[current_plugin].append(line)
+                    plugin_found = True
+                    break
+            
+            # If no new plugin found, add line to current plugin's log
+            if not plugin_found and current_plugin:
+                plugin_logs[current_plugin].append(line)
+            
+            # Check for plugin completion/failure markers
+            if current_plugin and any(marker in line.lower() for marker in 
+                ['completed', 'failed', 'finished', 'done', 'error']):
+                # This might be the end of this plugin's output
+                # Continue collecting until we see a new plugin start
+                pass
+        
+        # Write individual plugin log files
+        output_path = Path(output_dir)
+        for plugin_name, log_lines in plugin_logs.items():
+            if log_lines:  # Only write if there's content
+                plugin_log_file = output_path / f"{plugin_name}_plugin.log"
+                with open(plugin_log_file, 'w') as f:
+                    f.write("="*80 + "\n")
+                    f.write(f"Plugin: {plugin_name}\n")
+                    f.write("="*80 + "\n\n")
+                    f.write('\n'.join(log_lines))
+                    f.write("\n\n" + "="*80 + "\n")
+                
+                current_app.logger.info(f"Created plugin log: {plugin_log_file}")
+        
+        current_app.logger.info(f"Parsed {len(plugin_logs)} plugin logs from execution log")
+        
+    except Exception as e:
+        current_app.logger.error(f"Error parsing plugin logs: {str(e)}")
 
 
 @celery.task
