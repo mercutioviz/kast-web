@@ -12,7 +12,7 @@ from flask_login import login_required, current_user
 from functools import wraps
 from app import db
 from app.models import User, Scan, AuditLog, SystemSettings
-from sqlalchemy import func
+from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import json
 
@@ -380,7 +380,7 @@ def system_info():
     def test_database_connection():
         """Test database connection"""
         try:
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))
             return True, None
         except Exception as e:
             return False, str(e)
