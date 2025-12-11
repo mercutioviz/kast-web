@@ -34,13 +34,32 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
     from app.utils import get_logo_for_scan
     
     try:
-        # Log PATH for debugging purposes
-        current_app.logger.info(f"PATH from Celery task: {os.environ.get('PATH')}")
-
         # Get scan from database
         scan = db.session.get(Scan, scan_id)
         if not scan:
             return {'success': False, 'error': 'Scan not found'}
+        
+        # ============================================================
+        # DEBUGGING: Log comprehensive pre-execution environment
+        # ============================================================
+        current_app.logger.info("="*80)
+        current_app.logger.info(f"=== PRE-EXECUTION ENVIRONMENT DEBUG (Scan ID: {scan_id}) ===")
+        current_app.logger.info("="*80)
+        
+        # Working directory and user context
+        current_app.logger.info(f"Current Working Directory: {os.getcwd()}")
+        current_app.logger.info(f"Process UID: {os.getuid()}, GID: {os.getgid()}")
+        
+        # Key environment variables
+        current_app.logger.info(f"HOME: {os.environ.get('HOME', 'NOT SET')}")
+        current_app.logger.info(f"USER: {os.environ.get('USER', 'NOT SET')}")
+        current_app.logger.info(f"PATH: {os.environ.get('PATH', 'NOT SET')}")
+        current_app.logger.info(f"TMPDIR: {os.environ.get('TMPDIR', 'NOT SET')}")
+        current_app.logger.info(f"PWD: {os.environ.get('PWD', 'NOT SET')}")
+        
+        # Python environment
+        current_app.logger.info(f"Python executable: {os.sys.executable}")
+        current_app.logger.info(f"Python version: {os.sys.version}")
         
         # Generate output directory name
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -48,6 +67,12 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Log output directory details
+        current_app.logger.info(f"Output directory: {output_dir}")
+        current_app.logger.info(f"Output directory exists: {output_dir.exists()}")
+        current_app.logger.info(f"Output directory is writable: {os.access(output_dir, os.W_OK)}")
+        current_app.logger.info(f"Output directory permissions: {oct(output_dir.stat().st_mode)[-3:]}")
         
         # Create execution log file
         log_file_path = output_dir / 'kast_execution.log'
@@ -83,7 +108,20 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         cmd.extend(['-o', str(output_dir)])
         
-        current_app.logger.info(f"Executing KAST command: {' '.join(cmd)}")
+        current_app.logger.info(f"Full command to execute: {' '.join(cmd)}")
+        current_app.logger.info(f"Command list: {cmd}")
+        
+        # ============================================================
+        # DEBUGGING: Capture file system state BEFORE execution
+        # ============================================================
+        current_app.logger.info("="*80)
+        current_app.logger.info("=== BEFORE EXECUTION: File System State ===")
+        try:
+            files_before = set(output_dir.iterdir())
+            current_app.logger.info(f"Files in output dir BEFORE scan: {[f.name for f in files_before]}")
+        except Exception as e:
+            current_app.logger.warning(f"Could not list files before scan: {e}")
+            files_before = set()
         
         # Write command to execution log
         with open(log_file_path, 'w') as log_file:
@@ -99,18 +137,65 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             log_file.write("="*80 + "\n\n")
         
         # Execute scan and capture output
+        current_app.logger.info(f"Starting subprocess with Popen...")
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            cwd=str(output_dir)  # Set working directory to output dir
         )
+        
+        current_app.logger.info(f"Subprocess PID: {process.pid}")
+        current_app.logger.info(f"Subprocess started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Update task state to show progress
         self.update_state(state='PROGRESS', meta={'status': 'running', 'scan_id': scan_id})
         
         # Wait for process to complete
+        current_app.logger.info(f"Waiting for subprocess to complete (timeout: 3600s)...")
         stdout, stderr = process.communicate(timeout=3600)  # 1 hour timeout
+        
+        current_app.logger.info(f"Subprocess completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        current_app.logger.info(f"Subprocess return code: {process.returncode}")
+        
+        # ============================================================
+        # DEBUGGING: Check file system state AFTER execution
+        # ============================================================
+        current_app.logger.info("="*80)
+        current_app.logger.info("=== AFTER EXECUTION: File System State ===")
+        
+        try:
+            files_after = set(output_dir.iterdir())
+            new_files = files_after - files_before
+            current_app.logger.info(f"Files in output dir AFTER scan: {[f.name for f in files_after]}")
+            current_app.logger.info(f"NEW files created during scan: {[f.name for f in new_files]}")
+            
+            # Specifically check for katana.txt
+            katana_file = output_dir / "katana.txt"
+            current_app.logger.info(f"katana.txt exists in output dir: {katana_file.exists()}")
+            
+            if not katana_file.exists():
+                # Check if it was created in the working directory instead
+                cwd_katana = Path(os.getcwd()) / "katana.txt"
+                current_app.logger.info(f"katana.txt exists in CWD ({os.getcwd()}): {cwd_katana.exists()}")
+                
+                # Check in /tmp
+                tmp_katana = Path("/tmp") / "katana.txt"
+                current_app.logger.info(f"katana.txt exists in /tmp: {tmp_katana.exists()}")
+                
+                # Search for any files with 'katana' in the name
+                current_app.logger.info("Searching for any files with 'katana' in name...")
+                for file in output_dir.rglob("*katana*"):
+                    current_app.logger.info(f"  Found: {file}")
+            else:
+                # If it exists, log details
+                stat_info = katana_file.stat()
+                current_app.logger.info(f"katana.txt size: {stat_info.st_size} bytes")
+                current_app.logger.info(f"katana.txt mtime: {datetime.fromtimestamp(stat_info.st_mtime)}")
+                
+        except Exception as e:
+            current_app.logger.error(f"Error checking files after scan: {e}")
         
         # Append stdout and stderr to log file
         with open(log_file_path, 'a') as log_file:
@@ -127,6 +212,39 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             log_file.write(f"Return Code: {process.returncode}\n")
             log_file.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             log_file.write("="*80 + "\n")
+        
+        # ============================================================
+        # DEBUGGING: Log stdout/stderr for analysis
+        # ============================================================
+        current_app.logger.info("="*80)
+        current_app.logger.info("=== SUBPROCESS OUTPUT ===")
+        current_app.logger.info(f"STDOUT length: {len(stdout) if stdout else 0} characters")
+        current_app.logger.info(f"STDERR length: {len(stderr) if stderr else 0} characters")
+        
+        # Log first 500 chars of stdout (to see plugin execution)
+        if stdout:
+            current_app.logger.info("STDOUT (first 500 chars):")
+            current_app.logger.info(stdout[:500])
+        
+        # Log all of stderr if present
+        if stderr:
+            current_app.logger.info("STDERR (full):")
+            current_app.logger.info(stderr)
+        
+        # Search for katana-specific messages in output
+        if stdout and 'katana' in stdout.lower():
+            current_app.logger.info("Katana mentioned in STDOUT - extracting relevant lines:")
+            for line in stdout.split('\n'):
+                if 'katana' in line.lower():
+                    current_app.logger.info(f"  {line}")
+        
+        if stderr and 'katana' in stderr.lower():
+            current_app.logger.info("Katana mentioned in STDERR - extracting relevant lines:")
+            for line in stderr.split('\n'):
+                if 'katana' in line.lower():
+                    current_app.logger.info(f"  {line}")
+        
+        current_app.logger.info("="*80)
         
         # Update scan with results
         scan.output_dir = str(output_dir)
