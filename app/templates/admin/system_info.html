@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block title %}System Information - KAST Web{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-info-circle"></i> System Information</h2>
+    <div>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-shield-lock"></i> <strong>Security Notice:</strong> Sensitive information is masked. This page logs access for audit purposes.
+</div>
+
+<!-- Service Status Overview -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-activity"></i> Service Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for service, status in info.services.items() %}
+                    <div class="col-md-3 mb-2">
+                        <strong>{{ service }}:</strong>
+                        {% if status == True %}
+                            <span class="badge bg-success">Running</span>
+                        {% elif status == False %}
+                            <span class="badge bg-danger">Stopped</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Unknown</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <hr>
+                
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <strong>Redis Connection:</strong>
+                        {% if info.connections.redis.status %}
+                            <span class="badge bg-success">Connected</span>
+                        {% else %}
+                            <span class="badge bg-danger">Failed</span>
+                            {% if info.connections.redis.error %}
+                                <small class="text-muted d-block">{{ info.connections.redis.error }}</small>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Database Connection:</strong>
+                        {% if info.connections.database.status %}
+                            <span class="badge bg-success">Connected</span>
+                        {% else %}
+                            <span class="badge bg-danger">Failed</span>
+                            {% if info.connections.database.error %}
+                                <small class="text-muted d-block">{{ info.connections.database.error }}</small>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Accordion for detailed information -->
+<div class="accordion" id="systemInfoAccordion">
+    
+    <!-- Python Environment -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#pythonInfo">
+                <i class="bi bi-code-square me-2"></i> Python Environment
+            </button>
+        </h2>
+        <div id="pythonInfo" class="accordion-collapse collapse show" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>Version:</strong>
+                        <pre class="bg-light p-2 rounded">{{ info.python.version }}</pre>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Executable:</strong>
+                        <pre class="bg-light p-2 rounded">{{ info.python.executable }}</pre>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <strong>Python Path (sys.path):</strong>
+                    <pre class="bg-light p-2 rounded" style="max-height: 200px; overflow-y: auto;">{% for path in info.python.path %}{{ path }}
+{% endfor %}</pre>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#installedPackages">
+                        <i class="bi bi-box"></i> Show Installed Packages ({{ info.python.packages|length }})
+                    </button>
+                    <div class="collapse mt-2" id="installedPackages">
+                        <pre class="bg-light p-2 rounded" style="max-height: 300px; overflow-y: auto;">{% for pkg in info.python.packages %}{{ pkg }}
+{% endfor %}</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Information -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#systemInfo">
+                <i class="bi bi-cpu me-2"></i> System Information
+            </button>
+        </h2>
+        <div id="systemInfo" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <tr>
+                                <th>Platform:</th>
+                                <td>{{ info.system.platform }}</td>
+                            </tr>
+                            <tr>
+                                <th>System:</th>
+                                <td>{{ info.system.system }}</td>
+                            </tr>
+                            <tr>
+                                <th>Release:</th>
+                                <td>{{ info.system.release }}</td>
+                            </tr>
+                            <tr>
+                                <th>Machine:</th>
+                                <td>{{ info.system.machine }}</td>
+                            </tr>
+                            <tr>
+                                <th>Hostname:</th>
+                                <td>{{ info.system.hostname }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        {% if info.system.cpu_count %}
+                        <table class="table table-sm">
+                            <tr>
+                                <th>CPU Count:</th>
+                                <td>{{ info.system.cpu_count }}</td>
+                            </tr>
+                            <tr>
+                                <th>CPU Usage:</th>
+                                <td>{{ info.system.cpu_percent }}%</td>
+                            </tr>
+                            {% if info.system.memory %}
+                            <tr>
+                                <th>Total Memory:</th>
+                                <td>{{ info.system.memory.total }} GB</td>
+                            </tr>
+                            <tr>
+                                <th>Used Memory:</th>
+                                <td>{{ info.system.memory.used }} GB ({{ info.system.memory.percent }}%)</td>
+                            </tr>
+                            <tr>
+                                <th>Available Memory:</th>
+                                <td>{{ info.system.memory.available }} GB</td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Environment Variables -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#envVars">
+                <i class="bi bi-gear me-2"></i> Environment Variables
+            </button>
+        </h2>
+        <div id="envVars" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                {% if info.environment.PATH %}
+                <div class="mb-3">
+                    <strong>PATH:</strong>
+                    <pre class="bg-light p-2 rounded" style="max-height: 200px; overflow-y: auto;">{% for path in info.environment.PATH %}{{ path }}
+{% endfor %}</pre>
+                </div>
+                {% endif %}
+                
+                {% if info.environment.PYTHONPATH %}
+                <div class="mb-3">
+                    <strong>PYTHONPATH:</strong>
+                    <pre class="bg-light p-2 rounded">{% for path in info.environment.PYTHONPATH %}{{ path }}
+{% endfor %}</pre>
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <strong>Application Variables:</strong>
+                    <table class="table table-sm table-striped">
+                        {% for key, value in info.environment.items() %}
+                        {% if key not in ['PATH', 'PYTHONPATH', 'LD_LIBRARY_PATH'] %}
+                        <tr>
+                            <td><code>{{ key }}</code></td>
+                            <td>
+                                {% if value is string %}
+                                    {{ value }}
+                                {% else %}
+                                    <pre class="mb-0">{% for v in value %}{{ v }}
+{% endfor %}</pre>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flask Configuration -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#flaskConfig">
+                <i class="bi bi-flask me-2"></i> Flask Configuration
+            </button>
+        </h2>
+        <div id="flaskConfig" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                <table class="table table-sm table-striped">
+                    {% for key, value in info.flask_config.items() | sort %}
+                    <tr>
+                        <td><code>{{ key }}</code></td>
+                        <td>
+                            {% if value is boolean %}
+                                {% if value %}
+                                    <span class="badge bg-success">True</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">False</span>
+                                {% endif %}
+                            {% elif value is none %}
+                                <span class="text-muted">None</span>
+                            {% else %}
+                                <code>{{ value }}</code>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Paths & Permissions -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#filePaths">
+                <i class="bi bi-folder me-2"></i> File Paths & Permissions
+            </button>
+        </h2>
+        <div id="filePaths" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th>Path</th>
+                            <th>Exists</th>
+                            <th>Writable</th>
+                            <th>Permissions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Installation</strong></td>
+                            <td><code>{{ info.paths.installation }}</code></td>
+                            <td>
+                                {% if info.paths.installation_exists %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if info.paths.installation_writable %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-warning">No</span>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ info.paths.installation_mode if info.paths.installation_mode else 'N/A' }}</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Logs</strong></td>
+                            <td><code>{{ info.paths.logs }}</code></td>
+                            <td>
+                                {% if info.paths.logs_exists %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if info.paths.logs_writable %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-warning">No</span>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ info.paths.logs_mode if info.paths.logs_mode else 'N/A' }}</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Results</strong></td>
+                            <td><code>{{ info.paths.results }}</code></td>
+                            <td>
+                                {% if info.paths.results_exists %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if info.paths.results_writable %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-warning">No</span>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ info.paths.results_mode if info.paths.results_mode else 'N/A' }}</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Uploads</strong></td>
+                            <td><code>{{ info.paths.uploads }}</code></td>
+                            <td>
+                                {% if info.paths.uploads_exists %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if info.paths.uploads_writable %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-warning">No</span>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ info.paths.uploads_mode if info.paths.uploads_mode else 'N/A' }}</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disk Usage -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#diskUsage">
+                <i class="bi bi-hdd me-2"></i> Disk Usage
+            </button>
+        </h2>
+        <div id="diskUsage" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                <div class="row">
+                    {% for mount, usage in info.disk_usage.items() %}
+                    {% if usage %}
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ mount }}</h6>
+                                <div class="progress mb-2" style="height: 25px;">
+                                    <div class="progress-bar {% if usage.percent > 90 %}bg-danger{% elif usage.percent > 75 %}bg-warning{% else %}bg-success{% endif %}" 
+                                         role="progressbar" 
+                                         style="width: {{ usage.percent }}%"
+                                         aria-valuenow="{{ usage.percent }}" 
+                                         aria-valuemin="0" 
+                                         aria-valuemax="100">
+                                        {{ usage.percent }}%
+                                    </div>
+                                </div>
+                                <small>
+                                    <strong>Used:</strong> {{ usage.used }} GB / {{ usage.total }} GB
+                                    <strong class="ms-3">Free:</strong> {{ usage.free }} GB
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Information -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#databaseInfo">
+                <i class="bi bi-database me-2"></i> Database Information
+            </button>
+        </h2>
+        <div id="databaseInfo" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                {% if info.database %}
+                <table class="table table-sm">
+                    <tr>
+                        <th>Type:</th>
+                        <td>{{ info.database.type }}</td>
+                    </tr>
+                    {% if info.database.path %}
+                    <tr>
+                        <th>Path:</th>
+                        <td><code>{{ info.database.path }}</code></td>
+                    </tr>
+                    {% endif %}
+                    {% if info.database.url %}
+                    <tr>
+                        <th>URL:</th>
+                        <td><code>{{ info.database.url }}</code></td>
+                    </tr>
+                    {% endif %}
+                </table>
+                {% else %}
+                <p class="text-muted">No database configuration found</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- KAST CLI Information -->
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#kastInfo">
+                <i class="bi bi-shield-check me-2"></i> KAST CLI Information
+            </button>
+        </h2>
+        <div id="kastInfo" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                {% if info.kast_cli.error %}
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> {{ info.kast_cli.error }}
+                    </div>
+                {% elif info.kast_cli.exists %}
+                    <table class="table table-sm">
+                        <tr>
+                            <th>Path:</th>
+                            <td><code>{{ info.kast_cli.path }}</code></td>
+                        </tr>
+                        <tr>
+                            <th>Version:</th>
+                            <td><code>{{ info.kast_cli.version }}</code></td>
+                        </tr>
+                        <tr>
+                            <th>Plugin Count:</th>
+                            <td><span class="badge bg-info">{{ info.kast_cli.plugin_count }}</span></td>
+                        </tr>
+                    </table>
+                {% else %}
+                    <div class="alert alert-warning">
+                        <strong>KAST CLI not found</strong> at <code>{{ info.kast_cli.path }}</code>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

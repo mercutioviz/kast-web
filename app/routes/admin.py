@@ -310,3 +310,269 @@ def test_smtp():
         return jsonify({'success': True, 'message': 'SMTP connection successful!'})
     else:
         return jsonify({'success': False, 'message': error}), 400
+
+
+@bp.route('/system-info')
+@login_required
+@admin_required
+def system_info():
+    """Display comprehensive system information for troubleshooting"""
+    import sys
+    import os
+    import platform
+    import subprocess
+    from flask import current_app
+    import pkg_resources
+    
+    def mask_sensitive(value, show_chars=4):
+        """Mask sensitive information, showing only last few characters"""
+        if not value or len(value) <= show_chars:
+            return '***'
+        return '*' * (len(value) - show_chars) + value[-show_chars:]
+    
+    def check_service_status(service_name):
+        """Check if a systemd service is running"""
+        try:
+            result = subprocess.run(
+                ['systemctl', 'is-active', service_name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.stdout.strip() == 'active'
+        except:
+            return None
+    
+    def get_disk_usage(path):
+        """Get disk usage for a path"""
+        try:
+            import shutil
+            usage = shutil.disk_usage(path)
+            return {
+                'total': usage.total // (1024**3),  # GB
+                'used': usage.used // (1024**3),
+                'free': usage.free // (1024**3),
+                'percent': round((usage.used / usage.total) * 100, 1)
+            }
+        except:
+            return None
+    
+    def test_redis_connection():
+        """Test Redis connection"""
+        try:
+            from redis import Redis
+            redis_url = current_app.config.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+            # Parse URL to get host and port
+            if '://' in redis_url:
+                parts = redis_url.split('://')[1].split('/')
+                host_port = parts[0].split(':')
+                host = host_port[0] if len(host_port) > 0 else 'localhost'
+                port = int(host_port[1]) if len(host_port) > 1 else 6379
+            else:
+                host, port = 'localhost', 6379
+            
+            r = Redis(host=host, port=port, socket_connect_timeout=2)
+            r.ping()
+            return True, None
+        except Exception as e:
+            return False, str(e)
+    
+    def test_database_connection():
+        """Test database connection"""
+        try:
+            db.session.execute('SELECT 1')
+            return True, None
+        except Exception as e:
+            return False, str(e)
+    
+    def get_kast_cli_info():
+        """Get KAST CLI version and info"""
+        try:
+            kast_path = os.environ.get('KAST_CLI_PATH', '/usr/local/bin/kast')
+            if os.path.exists(kast_path):
+                result = subprocess.run(
+                    [kast_path, '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                version = result.stdout.strip() if result.returncode == 0 else 'Unknown'
+                
+                # Get plugin count
+                result = subprocess.run(
+                    [kast_path, '-ls'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                plugin_count = result.stdout.count('(priority:') if result.returncode == 0 else 0
+                
+                return {
+                    'path': kast_path,
+                    'exists': True,
+                    'version': version,
+                    'plugin_count': plugin_count
+                }
+            else:
+                return {'path': kast_path, 'exists': False}
+        except Exception as e:
+            return {'error': str(e)}
+    
+    # Collect system information
+    info = {}
+    
+    # Python Environment
+    info['python'] = {
+        'version': sys.version,
+        'executable': sys.executable,
+        'prefix': sys.prefix,
+        'path': sys.path,
+        'packages': sorted([f"{pkg.key}=={pkg.version}" for pkg in pkg_resources.working_set])
+    }
+    
+    # System Information
+    info['system'] = {
+        'platform': platform.platform(),
+        'system': platform.system(),
+        'release': platform.release(),
+        'version': platform.version(),
+        'machine': platform.machine(),
+        'processor': platform.processor(),
+        'hostname': platform.node(),
+        'python_implementation': platform.python_implementation()
+    }
+    
+    # Try to get CPU and memory info
+    try:
+        import psutil
+        info['system']['cpu_count'] = psutil.cpu_count()
+        info['system']['cpu_percent'] = psutil.cpu_percent(interval=1)
+        
+        mem = psutil.virtual_memory()
+        info['system']['memory'] = {
+            'total': round(mem.total / (1024**3), 2),  # GB
+            'available': round(mem.available / (1024**3), 2),
+            'used': round(mem.used / (1024**3), 2),
+            'percent': mem.percent
+        }
+    except ImportError:
+        pass
+    
+    # Environment Variables (filtered and masked)
+    sensitive_vars = ['SECRET_KEY', 'PASSWORD', 'PASS', 'TOKEN', 'KEY', 'DATABASE_URL']
+    info['environment'] = {}
+    for key, value in os.environ.items():
+        if any(sens in key.upper() for sens in sensitive_vars):
+            info['environment'][key] = mask_sensitive(value)
+        elif key in ['PATH', 'PYTHONPATH', 'LD_LIBRARY_PATH']:
+            # Split path-like variables for readability
+            info['environment'][key] = value.split(':') if value else []
+        elif key.startswith('FLASK_') or key.startswith('CELERY_') or key.startswith('KAST_'):
+            info['environment'][key] = value
+    
+    # Flask Configuration (masked)
+    info['flask_config'] = {}
+    for key, value in current_app.config.items():
+        if any(sens in key.upper() for sens in sensitive_vars):
+            info['flask_config'][key] = mask_sensitive(str(value))
+        else:
+            info['flask_config'][key] = value
+    
+    # File Paths and Permissions
+    info['paths'] = {
+        'installation': os.getcwd(),
+        'logs': '/var/log/kast-web',
+        'results': os.environ.get('KAST_RESULTS_DIR', '/var/lib/kast-web/results'),
+        'uploads': os.path.join(current_app.root_path, 'static', 'uploads'),
+        'database': current_app.config.get('SQLALCHEMY_DATABASE_URI', 'N/A')
+    }
+    
+    # Check path permissions
+    for name, path in info['paths'].items():
+        if name == 'database':
+            continue  # Skip database URI
+        try:
+            if os.path.exists(path):
+                stat_info = os.stat(path)
+                info['paths'][f'{name}_exists'] = True
+                info['paths'][f'{name}_writable'] = os.access(path, os.W_OK)
+                info['paths'][f'{name}_mode'] = oct(stat_info.st_mode)[-3:]
+            else:
+                info['paths'][f'{name}_exists'] = False
+        except:
+            pass
+    
+    # Disk Usage
+    info['disk_usage'] = {
+        'root': get_disk_usage('/'),
+        'opt': get_disk_usage('/opt'),
+        'var': get_disk_usage('/var'),
+        'tmp': get_disk_usage('/tmp')
+    }
+    
+    # Service Status
+    info['services'] = {
+        'redis': check_service_status('redis-server'),
+        'kast_web': check_service_status('kast-web'),
+        'kast_celery': check_service_status('kast-celery'),
+        'nginx': check_service_status('nginx'),
+        'apache2': check_service_status('apache2')
+    }
+    
+    # Connection Tests
+    redis_ok, redis_error = test_redis_connection()
+    db_ok, db_error = test_database_connection()
+    
+    info['connections'] = {
+        'redis': {
+            'status': redis_ok,
+            'error': redis_error
+        },
+        'database': {
+            'status': db_ok,
+            'error': db_error
+        }
+    }
+    
+    # KAST CLI Information
+    info['kast_cli'] = get_kast_cli_info()
+    
+    # Database Information (masked)
+    db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if db_url:
+        if db_url.startswith('sqlite'):
+            info['database'] = {
+                'type': 'SQLite',
+                'path': db_url.replace('sqlite:///', '')
+            }
+        elif db_url.startswith('postgresql'):
+            info['database'] = {
+                'type': 'PostgreSQL',
+                'url': mask_sensitive(db_url, 10)
+            }
+        elif db_url.startswith('mysql'):
+            info['database'] = {
+                'type': 'MySQL/MariaDB',
+                'url': mask_sensitive(db_url, 10)
+            }
+    
+    # Log this action
+    AuditLog.log(
+        user_id=current_user.id,
+        action='system_info_viewed',
+        resource_type='system',
+        details=f'System information viewed by {current_user.username}'
+    )
+    
+    return render_template('admin/system_info.html', info=info)
+
+
+@bp.route('/system-info/export')
+@login_required
+@admin_required
+def export_system_info():
+    """Export system information as JSON"""
+    # This would call the same collection logic but return JSON
+    # For now, redirect to the main page
+    flash('Export functionality coming soon', 'info')
+    return redirect(url_for('admin.system_info'))
