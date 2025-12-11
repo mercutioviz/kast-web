@@ -142,8 +142,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            cwd=str(output_dir)  # Set working directory to output dir
+            text=True
         )
         
         current_app.logger.info(f"Subprocess PID: {process.pid}")
