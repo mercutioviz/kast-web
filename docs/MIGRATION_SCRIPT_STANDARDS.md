@@ -17,13 +17,16 @@ Interactive prompts (like `input()`) will cause migration scripts to hang when r
 
 ### The Solution
 
-Use Python's `sys.stdin.isatty()` to detect if the script is running in an interactive terminal:
+Use Python's `sys.stdin.isatty()` **AND** `sys.stdout.isatty()` to detect if the script is running in an interactive terminal. Checking both ensures proper detection even when output is redirected during installation:
 
 ```python
 import sys
 
-# Check if running in an interactive terminal
-if not sys.stdin.isatty():
+# Check if running in an interactive environment
+# Check both stdin and stdout to handle redirected output during installation
+is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
+
+if not is_interactive:
     # Non-interactive mode: skip prompts, use safe defaults
     print("  Running in non-interactive mode - skipping re-migration")
     return
@@ -34,6 +37,14 @@ else:
         print("Migration cancelled.")
         return
 ```
+
+**Why check both stdin AND stdout?**
+During installation, the install.sh script redirects output like this:
+```bash
+python3 "$migration" >> "$LOG_FILE" 2>&1
+```
+
+This redirects stdout and stderr to a log file, but stdin might still be attached to a TTY. By checking both `stdin.isatty()` and `stdout.isatty()`, we ensure proper non-interactive detection regardless of how the script is invoked.
 
 ## Standard Migration Script Template
 

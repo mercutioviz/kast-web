@@ -45,8 +45,11 @@ def migrate():
                 print("✓ Column 'source' already exists in scans table")
                 print("  Migration may have already been run.")
                 
-                # Check if running in an interactive terminal
-                if not sys.stdin.isatty():
+                # Check if running in an interactive environment
+                # Check both stdin and stdout to handle redirected output during installation
+                is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
+                
+                if not is_interactive:
                     print("  Running in non-interactive mode - skipping re-migration")
                     print()
                     print("="*80)
