@@ -11,6 +11,10 @@ Usage:
 Changes:
     - Adds 'source' column to scans table (default: 'web')
     - Sets all existing scans to source='web'
+
+Non-Interactive Mode:
+    When run in an automated context (e.g., during installation), the script
+    automatically detects non-interactive environments and skips prompts.
 """
 
 import sys
@@ -40,6 +44,16 @@ def migrate():
             if 'source' in columns:
                 print("✓ Column 'source' already exists in scans table")
                 print("  Migration may have already been run.")
+                
+                # Check if running in an interactive terminal
+                if not sys.stdin.isatty():
+                    print("  Running in non-interactive mode - skipping re-migration")
+                    print()
+                    print("="*80)
+                    print("Migration skipped (column already exists)")
+                    print("="*80)
+                    return
+                
                 print()
                 response = input("Do you want to continue anyway? (y/N): ")
                 if response.lower() != 'y':
