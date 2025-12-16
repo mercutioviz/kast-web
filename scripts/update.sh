@@ -183,12 +183,12 @@ validate_environment() {
     print_success "Virtual environment found"
     
     # Check services exist
-    if ! systemctl list-unit-files | grep -q "kast-web.service"; then
-        error_exit "kast-web service not found"
+    if [[ ! -f /etc/systemd/system/kast-web.service ]]; then
+        error_exit "kast-web service not found at /etc/systemd/system/kast-web.service"
     fi
     
-    if ! systemctl list-unit-files | grep -q "kast-celery.service"; then
-        error_exit "kast-celery service not found"
+    if [[ ! -f /etc/systemd/system/kast-celery.service ]]; then
+        error_exit "kast-celery service not found at /etc/systemd/system/kast-celery.service"
     fi
     
     print_success "Systemd services verified"
