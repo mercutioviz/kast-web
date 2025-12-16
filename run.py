@@ -6,7 +6,11 @@ Run this file to start the Flask development server
 
 import os
 import logging
+from dotenv import load_dotenv
 from app import create_app
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging for debugging
 logging.basicConfig(

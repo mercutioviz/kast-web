@@ -5,7 +5,11 @@ Run with: celery -A celery_worker.celery worker --loglevel=info
 """
 
 import os
+from dotenv import load_dotenv
 from celery import Celery
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize Celery with config
 celery = Celery(
