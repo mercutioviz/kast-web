@@ -2,8 +2,9 @@
 
 ################################################################################
 # KAST-Web Update Script
-# Version: 1.0.0
-# Description: Smart update script for production KAST-Web deployments
+# Version: 2.0.0
+# Description: Update script for production KAST-Web deployments
+#              Supports two-directory model: source → installation
 # Usage: sudo ./scripts/update.sh [options]
 ################################################################################
 
@@ -14,13 +15,16 @@ set -o pipefail  # Catch errors in pipes
 # Configuration Variables
 ################################################################################
 
-# Detect installation directory from script location
+# Detect source directory (where this script is run from)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_DIR="$(dirname "$SCRIPT_DIR")"  # Parent of scripts/ directory
-BACKUP_BASE_DIR="${INSTALL_DIR}-backup"
+SOURCE_DIR="$(dirname "$SCRIPT_DIR")"  # Parent of scripts/ directory
+
+# Installation directory (where the app runs)
+INSTALL_DIR="/opt/kast-web"  # Default, can be overridden with --install-dir
+
+# Other paths (relative to installation)
+BACKUP_BASE_DIR=""  # Will be set based on INSTALL_DIR
 LOG_FILE="/var/log/kast-web/update.log"
-SERVICE_USER="www-data"
-VENV_DIR="$INSTALL_DIR/venv"
 
 # Update modes
 UPDATE_MODE="quick"  # quick or full
@@ -51,19 +55,19 @@ log() {
 
 # Print colored output
 print_success() {
-    echo -e "${GREEN}✓ $1${NC}" | tee -a "$LOG_FILE"
+    echo -e "${GREEN}✓ $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}✗ $1${NC}" | tee -a "$LOG_FILE"
+    echo -e "${RED}✗ $1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠ $1${NC}" | tee -a "$LOG_FILE"
+    echo -e "${YELLOW}⚠ $1${NC}"
 }
 
 print_info() {
-    echo -e "${BLUE}ℹ $1${NC}" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}ℹ $1${NC}"
 }
 
 print_header() {
@@ -75,6 +79,7 @@ print_header() {
 # Error handler
 error_exit() {
     print_error "$1"
+    log "ERROR: $1"
     if [[ "$ROLLBACK_ON_FAILURE" == "yes" && -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]]; then
         print_warning "Attempting automatic rollback..."
         perform_rollback
@@ -96,15 +101,19 @@ check_root() {
 
 show_help() {
     cat << EOF
-KAST-Web Update Script
+KAST-Web Update Script v2.0
 
 Usage: sudo ./scripts/update.sh [options]
 
+This script updates a KAST-Web installation from a source directory.
+Run this script from your source directory (e.g., ~/kast-web).
+
 Update Modes:
-  (default)          Quick update - pull code and restart services (10-15s downtime)
-  --full             Full update - includes dependency updates and migrations (30-60s downtime)
+  (default)          Quick update - copy files and restart services (10-15s downtime)
+  --full             Full update - includes dependencies and migrations (30-60s downtime)
 
 Options:
+  --install-dir PATH Specify installation directory (default: /opt/kast-web)
   --dry-run          Show what would be done without making changes
   --force            Skip safety checks and force update
   --skip-backup      Skip backup creation (NOT RECOMMENDED)
@@ -112,17 +121,22 @@ Options:
   --help, -h         Show this help message
 
 Examples:
-  # Quick update (CSS, templates, code changes)
+  # Quick update to default location
+  cd ~/kast-web
   sudo ./scripts/update.sh
 
-  # Full update (new dependencies, database migrations)
-  sudo ./scripts/update.sh --full
+  # Full update with custom installation directory
+  cd ~/kast-web
+  sudo ./scripts/update.sh --full --install-dir /opt/kast-web
 
-  # Preview changes without applying
+  # Preview changes
   sudo ./scripts/update.sh --dry-run
 
-  # Force update even with uncommitted changes
-  sudo ./scripts/update.sh --force
+Workflow:
+  1. Pull/download updates to source directory (~/kast-web)
+  2. Run this script from source directory
+  3. Script copies updates to installation directory (/opt/kast-web)
+  4. Services restarted, migrations run (if --full)
 
 EOF
 }
@@ -130,6 +144,10 @@ EOF
 parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
+            --install-dir)
+                INSTALL_DIR="$2"
+                shift 2
+                ;;
             --full)
                 UPDATE_MODE="full"
                 shift
@@ -161,25 +179,73 @@ parse_arguments() {
                 ;;
         esac
     done
+    
+    # Set backup directory based on installation directory
+    BACKUP_BASE_DIR="${INSTALL_DIR}-backup"
 }
 
 ################################################################################
-# Pre-Update Validation
+# Directory Detection & Validation
 ################################################################################
 
-validate_environment() {
-    print_header "Environment Validation"
+detect_installation_dir() {
+    print_header "Directory Detection"
     
-    # Check we're in the correct directory
-    if [[ ! -f "$INSTALL_DIR/config.py" ]]; then
-        error_exit "Not in KAST-Web installation directory. Expected: $INSTALL_DIR"
+    print_info "Source directory: $SOURCE_DIR"
+    
+    # Check if installation directory exists
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        print_error "Installation directory not found: $INSTALL_DIR"
+        echo ""
+        read -p "Enter installation directory path: " -r user_install_dir
+        
+        if [[ -d "$user_install_dir" ]]; then
+            INSTALL_DIR="$user_install_dir"
+            BACKUP_BASE_DIR="${INSTALL_DIR}-backup"
+            print_success "Using installation directory: $INSTALL_DIR"
+        else
+            error_exit "Invalid installation directory: $user_install_dir"
+        fi
+    else
+        print_success "Installation directory: $INSTALL_DIR"
+    fi
+}
+
+validate_source_directory() {
+    print_header "Source Directory Validation"
+    
+    # Check we're in a valid KAST-Web source directory
+    if [[ ! -f "$SOURCE_DIR/config.py" ]]; then
+        error_exit "Not a valid KAST-Web source directory (config.py not found)"
     fi
     
-    print_success "Installation directory verified"
+    print_success "Valid KAST-Web source directory"
+    
+    # Check for scripts directory
+    if [[ ! -d "$SOURCE_DIR/scripts" ]]; then
+        error_exit "Scripts directory not found in source"
+    fi
+    
+    print_success "Scripts directory found"
+    
+    # Get source version
+    SOURCE_VERSION=$(grep "^VERSION = " "$SOURCE_DIR/config.py" | cut -d"'" -f2 || echo "unknown")
+    print_info "Source version: $SOURCE_VERSION"
+}
+
+validate_installation_directory() {
+    print_header "Installation Directory Validation"
+    
+    # Check installation has required structure
+    if [[ ! -f "$INSTALL_DIR/config.py" ]]; then
+        error_exit "Installation directory invalid (config.py not found)"
+    fi
+    
+    print_success "Valid KAST-Web installation directory"
     
     # Check virtual environment exists
-    if [[ ! -d "$VENV_DIR" ]]; then
-        error_exit "Virtual environment not found at $VENV_DIR"
+    if [[ ! -d "$INSTALL_DIR/venv" ]]; then
+        error_exit "Virtual environment not found at $INSTALL_DIR/venv"
     fi
     
     print_success "Virtual environment found"
@@ -195,101 +261,40 @@ validate_environment() {
     
     print_success "Systemd services verified"
     
+    # Get current version
+    CURRENT_VERSION=$(grep "^VERSION = " "$INSTALL_DIR/config.py" | cut -d"'" -f2 || echo "unknown")
+    print_info "Current installation version: $CURRENT_VERSION"
+    
     # Check disk space (need at least 1GB free)
-    AVAILABLE_SPACE=$(df /opt | tail -1 | awk '{print $4}')
+    AVAILABLE_SPACE=$(df "$INSTALL_DIR" | tail -1 | awk '{print $4}')
     REQUIRED_SPACE=1048576  # 1GB in KB
     
     if [[ $AVAILABLE_SPACE -lt $REQUIRED_SPACE ]]; then
         error_exit "Insufficient disk space. Required: 1GB, Available: $((AVAILABLE_SPACE/1024))MB"
     fi
     
-    print_success "Sufficient disk space available: $((AVAILABLE_SPACE/1024/1024))GB"
+    print_success "Sufficient disk space: $((AVAILABLE_SPACE/1024/1024))GB available"
 }
 
-check_git_status() {
-    print_header "Git Repository Status"
+check_version_difference() {
+    print_header "Version Check"
     
-    # Check if we're in a git repository
-    if ! git rev-parse --git-dir > /dev/null 2>&1; then
-        error_exit "Not a git repository. This update script requires git."
-    fi
+    print_info "Source version:      $SOURCE_VERSION"
+    print_info "Installation version: $CURRENT_VERSION"
     
-    print_success "Git repository detected"
-    
-    # Get current branch
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    print_info "Current branch: $CURRENT_BRANCH"
-    
-    # Get current commit
-    CURRENT_COMMIT=$(git rev-parse HEAD)
-    CURRENT_COMMIT_SHORT=$(git rev-parse --short HEAD)
-    print_info "Current commit: $CURRENT_COMMIT_SHORT"
-    
-    # Check for uncommitted changes
-    if [[ -n $(git status --porcelain) ]]; then
-        print_warning "Uncommitted changes detected:"
-        git status --short | while read line; do
-            echo "    $line"
-        done
-        
+    if [[ "$SOURCE_VERSION" == "$CURRENT_VERSION" ]]; then
+        print_warning "Source and installation are same version"
         if [[ "$FORCE_UPDATE" != "yes" && "$DRY_RUN" != "yes" ]]; then
             echo ""
-            read -p "Continue with update despite uncommitted changes? (y/N): " -r response
+            read -p "Continue with update anyway? (y/N): " -r response
             if [[ ! "$response" =~ ^[Yy]$ ]]; then
                 print_info "Update cancelled"
                 exit 0
             fi
         fi
     else
-        print_success "Working directory clean"
+        print_success "Version difference detected - update available"
     fi
-    
-    # Check for updates
-    print_info "Fetching updates from remote..."
-    git fetch origin 2>&1 | tee -a "$LOG_FILE"
-    
-    LOCAL=$(git rev-parse @)
-    REMOTE=$(git rev-parse @{u} 2>/dev/null || echo "")
-    
-    if [[ -z "$REMOTE" ]]; then
-        print_warning "No upstream branch configured"
-    elif [[ "$LOCAL" == "$REMOTE" ]]; then
-        print_info "Already up to date with remote"
-        if [[ "$FORCE_UPDATE" != "yes" && "$DRY_RUN" != "yes" ]]; then
-            echo ""
-            read -p "No updates available. Continue anyway? (y/N): " -r response
-            if [[ ! "$response" =~ ^[Yy]$ ]]; then
-                print_info "Update cancelled"
-                exit 0
-            fi
-        fi
-    else
-        AHEAD=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "0")
-        BEHIND=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo "0")
-        
-        if [[ "$BEHIND" -gt 0 ]]; then
-            print_success "Updates available: $BEHIND commit(s) behind remote"
-        fi
-        
-        if [[ "$AHEAD" -gt 0 ]]; then
-            print_warning "Local repository is $AHEAD commit(s) ahead of remote"
-        fi
-    fi
-}
-
-get_version_info() {
-    # Extract current version from config.py
-    if [[ -f "$INSTALL_DIR/config.py" ]]; then
-        CURRENT_VERSION=$(grep "^VERSION = " "$INSTALL_DIR/config.py" | cut -d"'" -f2)
-    else
-        CURRENT_VERSION="unknown"
-    fi
-    
-    # Get incoming version (after fetch)
-    INCOMING_VERSION=$(git show origin/$(git rev-parse --abbrev-ref HEAD):config.py 2>/dev/null | grep "^VERSION = " | cut -d"'" -f2 || echo "unknown")
-    
-    print_info "Current version: $CURRENT_VERSION"
-    print_info "Incoming version: $INCOMING_VERSION"
 }
 
 check_service_status() {
@@ -336,38 +341,40 @@ create_backup() {
     cat > "$BACKUP_DIR/backup-info.txt" << EOF
 Backup created: $(date)
 Update type: $UPDATE_MODE
-Current version: $CURRENT_VERSION
-Current commit: $CURRENT_COMMIT
+Source directory: $SOURCE_DIR
 Installation directory: $INSTALL_DIR
+Current version: $CURRENT_VERSION
+Source version: $SOURCE_VERSION
 EOF
+    
+    # Backup key files from installation
+    print_info "Backing up configuration and data..."
+    
+    # Backup .env
+    if [[ -f "$INSTALL_DIR/.env" ]]; then
+        cp "$INSTALL_DIR/.env" "$BACKUP_DIR/" 2>/dev/null || true
+        print_success "Configuration backed up"
+    fi
     
     # Backup database
     if [[ -f "$INSTALL_DIR/.env" ]]; then
         source "$INSTALL_DIR/.env"
         
-        if [[ "$DATABASE_URL" =~ ^sqlite:/// ]]; then
-            DB_PATH="${DATABASE_URL#sqlite:///}"
-            if [[ -f "$DB_PATH" ]]; then
-                cp "$DB_PATH" "$BACKUP_DIR/" 2>/dev/null || true
-                print_success "SQLite database backed up"
+        if [[ -n "$DATABASE_URL" ]]; then
+            if [[ "$DATABASE_URL" =~ ^sqlite:/// ]]; then
+                DB_PATH="${DATABASE_URL#sqlite:///}"
+                # Handle both absolute and relative paths
+                if [[ "$DB_PATH" != /* ]]; then
+                    DB_PATH="$INSTALL_DIR/$DB_PATH"
+                fi
+                
+                if [[ -f "$DB_PATH" ]]; then
+                    mkdir -p "$BACKUP_DIR/$(dirname "$DB_PATH")"
+                    cp "$DB_PATH" "$BACKUP_DIR/$(basename "$DB_PATH")" 2>/dev/null || true
+                    print_success "SQLite database backed up"
+                fi
             fi
-        elif [[ "$DATABASE_URL" =~ ^postgresql:// ]]; then
-            DB_NAME=$(echo "$DATABASE_URL" | sed -n 's/.*\/\([^?]*\).*/\1/p')
-            sudo -u postgres pg_dump "$DB_NAME" > "$BACKUP_DIR/database.sql" 2>/dev/null || true
-            print_success "PostgreSQL database dumped"
-        elif [[ "$DATABASE_URL" =~ ^mysql:// ]]; then
-            DB_NAME=$(echo "$DATABASE_URL" | sed -n 's/.*\/\([^?]*\).*/\1/p')
-            DB_USER=$(echo "$DATABASE_URL" | sed -n 's/.*:\/\/\([^:]*\):.*/\1/p')
-            DB_PASS=$(echo "$DATABASE_URL" | sed -n 's/.*:\/\/[^:]*:\([^@]*\)@.*/\1/p')
-            mysqldump -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" > "$BACKUP_DIR/database.sql" 2>/dev/null || true
-            print_success "MySQL database dumped"
         fi
-    fi
-    
-    # Backup configuration
-    if [[ -f "$INSTALL_DIR/.env" ]]; then
-        cp "$INSTALL_DIR/.env" "$BACKUP_DIR/" 2>/dev/null || true
-        print_success "Configuration backed up"
     fi
     
     # Backup uploads
@@ -376,8 +383,11 @@ EOF
         print_success "Upload files backed up"
     fi
     
-    # Save git commit hash
-    echo "$CURRENT_COMMIT" > "$BACKUP_DIR/git-commit.txt"
+    # Backup instance directory if exists
+    if [[ -d "$INSTALL_DIR/instance" ]]; then
+        cp -r "$INSTALL_DIR/instance" "$BACKUP_DIR/" 2>/dev/null || true
+        print_success "Instance directory backed up"
+    fi
     
     print_success "Backup completed: $BACKUP_DIR"
     log "Backup created at $BACKUP_DIR"
@@ -402,36 +412,52 @@ cleanup_old_backups() {
 }
 
 ################################################################################
-# Update Execution
+# File Copying
 ################################################################################
 
-perform_git_pull() {
-    print_header "Pulling Updates from Git"
+copy_files() {
+    print_header "Copying Files from Source to Installation"
     
     if [[ "$DRY_RUN" == "yes" ]]; then
-        print_info "[DRY RUN] Would execute: git pull origin $CURRENT_BRANCH"
-        print_info "[DRY RUN] Changes that would be pulled:"
-        git log --oneline HEAD..@{u} 2>/dev/null | head -10
+        print_info "[DRY RUN] Would copy updated files to installation"
         return 0
     fi
     
-    print_info "Executing: git pull origin $CURRENT_BRANCH"
+    # Stop services before copying
+    print_info "Stopping services..."
+    systemctl stop kast-web kast-celery 2>/dev/null || true
     
-    if git pull origin "$CURRENT_BRANCH" >> "$LOG_FILE" 2>&1; then
-        NEW_COMMIT=$(git rev-parse --short HEAD)
-        print_success "Git pull completed. New commit: $NEW_COMMIT"
-        
-        # Show what changed
-        if [[ "$CURRENT_COMMIT_SHORT" != "$NEW_COMMIT" ]]; then
-            print_info "Changes pulled:"
-            git log --oneline "$CURRENT_COMMIT_SHORT..$NEW_COMMIT" | while read line; do
-                echo "    $line"
-            done
-        fi
-    else
-        error_exit "Git pull failed. Check $LOG_FILE for details."
-    fi
+    # Copy application files (exclude certain directories)
+    print_info "Copying application files..."
+    
+    rsync -av --delete \
+        --exclude='.git' \
+        --exclude='.gitignore' \
+        --exclude='venv/' \
+        --exclude='.env' \
+        --exclude='instance/' \
+        --exclude='app/static/uploads/' \
+        --exclude='*.pyc' \
+        --exclude='__pycache__' \
+        --exclude='.pytest_cache' \
+        --exclude='*.log' \
+        "$SOURCE_DIR/" "$INSTALL_DIR/" >> "$LOG_FILE" 2>&1 || error_exit "Failed to copy files"
+    
+    print_success "Files copied successfully"
+    
+    # Ensure correct ownership
+    print_info "Setting file ownership..."
+    chown -R www-data:www-data "$INSTALL_DIR" 2>/dev/null || true
+    
+    # Ensure scripts are executable
+    chmod +x "$INSTALL_DIR/scripts"/*.sh 2>/dev/null || true
+    
+    print_success "File permissions updated"
 }
+
+################################################################################
+# Dependencies & Migrations
+################################################################################
 
 update_dependencies() {
     if [[ "$UPDATE_MODE" != "full" ]]; then
@@ -442,34 +468,36 @@ update_dependencies() {
     print_header "Updating Python Dependencies"
     
     cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
-    source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
     if [[ "$DRY_RUN" == "yes" ]]; then
         print_info "[DRY RUN] Would update pip and install requirements"
         return 0
     fi
     
+    # Activate installation venv
+    source "$INSTALL_DIR/venv/bin/activate" || error_exit "Failed to activate virtual environment"
+    
     print_info "Upgrading pip..."
-    if ! pip install --upgrade pip >> "$LOG_FILE" 2>&1; then
-        print_warning "Failed to upgrade pip (continuing anyway)"
-    fi
+    pip install --upgrade pip >> "$LOG_FILE" 2>&1 || print_warning "Failed to upgrade pip (continuing)"
     
     print_info "Installing/updating dependencies..."
     if [[ -f "$INSTALL_DIR/requirements-production.txt" ]]; then
         if pip install -r "$INSTALL_DIR/requirements-production.txt" >> "$LOG_FILE" 2>&1; then
             print_success "Dependencies updated successfully"
         else
-            error_exit "Failed to update dependencies. Check $LOG_FILE for details."
+            error_exit "Failed to update dependencies. Check $LOG_FILE"
         fi
     elif [[ -f "$INSTALL_DIR/requirements.txt" ]]; then
         if pip install -r "$INSTALL_DIR/requirements.txt" >> "$LOG_FILE" 2>&1; then
             print_success "Dependencies updated successfully"
         else
-            error_exit "Failed to update dependencies. Check $LOG_FILE for details."
+            error_exit "Failed to update dependencies. Check $LOG_FILE"
         fi
     else
         print_warning "No requirements file found"
     fi
+    
+    deactivate 2>/dev/null || true
 }
 
 run_migrations() {
@@ -481,7 +509,6 @@ run_migrations() {
     print_header "Running Database Migrations"
     
     cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
-    source "$VENV_DIR/bin/activate" || error_exit "Failed to activate virtual environment"
     
     if [[ "$DRY_RUN" == "yes" ]]; then
         print_info "[DRY RUN] Would run migration scripts from utils/"
@@ -492,6 +519,9 @@ run_migrations() {
         fi
         return 0
     fi
+    
+    # Activate installation venv
+    source "$INSTALL_DIR/venv/bin/activate" || error_exit "Failed to activate virtual environment"
     
     # Load environment variables
     set -a
@@ -523,7 +553,13 @@ run_migrations() {
     else
         print_info "No migrations directory found"
     fi
+    
+    deactivate 2>/dev/null || true
 }
+
+################################################################################
+# Service Management
+################################################################################
 
 restart_services() {
     print_header "Restarting Services"
@@ -600,8 +636,6 @@ validate_update() {
     fi
     
     # Check new version
-    cd "$INSTALL_DIR"
-    source "$VENV_DIR/bin/activate"
     NEW_VERSION=$(grep "^VERSION = " "$INSTALL_DIR/config.py" | cut -d"'" -f2)
     print_info "Updated to version: $NEW_VERSION"
     
@@ -629,30 +663,42 @@ perform_rollback() {
     # Stop services
     systemctl stop kast-web kast-celery 2>/dev/null || true
     
-    # Restore git commit
-    if [[ -f "$BACKUP_DIR/git-commit.txt" ]]; then
-        RESTORE_COMMIT=$(cat "$BACKUP_DIR/git-commit.txt")
-        print_info "Restoring git commit: $RESTORE_COMMIT"
-        git reset --hard "$RESTORE_COMMIT" >> "$LOG_FILE" 2>&1 || print_warning "Git reset failed"
+    # Restore .env
+    if [[ -f "$BACKUP_DIR/.env" ]]; then
+        cp "$BACKUP_DIR/.env" "$INSTALL_DIR/" 2>/dev/null || true
+        print_success "Configuration restored"
     fi
     
     # Restore database
     if [[ -f "$INSTALL_DIR/.env" ]]; then
         source "$INSTALL_DIR/.env"
         
-        if [[ "$DATABASE_URL" =~ ^sqlite:/// ]]; then
+        if [[ -n "$DATABASE_URL" && "$DATABASE_URL" =~ ^sqlite:/// ]]; then
             DB_PATH="${DATABASE_URL#sqlite:///}"
-            if [[ -f "$BACKUP_DIR/$(basename $DB_PATH)" ]]; then
-                cp "$BACKUP_DIR/$(basename $DB_PATH)" "$DB_PATH" 2>/dev/null || true
-                print_success "SQLite database restored"
+            if [[ "$DB_PATH" != /* ]]; then
+                DB_PATH="$INSTALL_DIR/$DB_PATH"
+            fi
+            
+            DB_BACKUP=$(find "$BACKUP_DIR" -name "*.db" -type f | head -1)
+            if [[ -n "$DB_BACKUP" && -f "$DB_BACKUP" ]]; then
+                cp "$DB_BACKUP" "$DB_PATH" 2>/dev/null || true
+                print_success "Database restored"
             fi
         fi
     fi
     
-    # Restore configuration
-    if [[ -f "$BACKUP_DIR/.env" ]]; then
-        cp "$BACKUP_DIR/.env" "$INSTALL_DIR/" 2>/dev/null || true
-        print_success "Configuration restored"
+    # Restore uploads
+    if [[ -d "$BACKUP_DIR/uploads" ]]; then
+        rm -rf "$INSTALL_DIR/app/static/uploads" 2>/dev/null || true
+        cp -r "$BACKUP_DIR/uploads" "$INSTALL_DIR/app/static/uploads" 2>/dev/null || true
+        print_success "Uploads restored"
+    fi
+    
+    # Restore instance
+    if [[ -d "$BACKUP_DIR/instance" ]]; then
+        rm -rf "$INSTALL_DIR/instance" 2>/dev/null || true
+        cp -r "$BACKUP_DIR/instance" "$INSTALL_DIR/instance" 2>/dev/null || true
+        print_success "Instance directory restored"
     fi
     
     # Restart services
@@ -686,7 +732,7 @@ main() {
     echo -e "${CYAN}${BOLD}"
     echo "╔═══════════════════════════════════════════════════════╗"
     echo "║                                                       ║"
-    echo "║          KAST-Web Update Script v1.0                  ║"
+    echo "║          KAST-Web Update Script v2.0                  ║"
     echo "║                                                       ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo -e "${NC}\n"
@@ -698,37 +744,39 @@ main() {
     # Initialize log file
     mkdir -p "$(dirname "$LOG_FILE")"
     touch "$LOG_FILE"
-    log "KAST-Web Update Started"
+    log "KAST-Web Update Started (v2.0)"
     log "Update mode: $UPDATE_MODE"
+    log "Source directory: $SOURCE_DIR"
+    log "Installation directory: $INSTALL_DIR"
     log "Command: $0 $*"
     
     # Pre-update checks
     check_root
-    
-    cd "$INSTALL_DIR" || error_exit "Failed to change to installation directory"
-    
-    validate_environment
-    check_git_status
-    get_version_info
+    detect_installation_dir
+    validate_source_directory
+    validate_installation_directory
+    check_version_difference
     check_service_status
     
     # Show update summary
     print_header "Update Summary"
     echo -e "${CYAN}${BOLD}Update Configuration:${NC}"
-    echo -e "  Update Mode: ${GREEN}$UPDATE_MODE${NC}"
-    echo -e "  Current Version: ${GREEN}$CURRENT_VERSION${NC}"
-    echo -e "  Target Version: ${GREEN}$INCOMING_VERSION${NC}"
-    echo -e "  Create Backup: ${GREEN}$([ "$SKIP_BACKUP" == "yes" ] && echo "no" || echo "yes")${NC}"
-    echo -e "  Auto Rollback: ${GREEN}$([ "$ROLLBACK_ON_FAILURE" == "yes" ] && echo "yes" || echo "no")${NC}"
+    echo -e "  Update Mode:          ${GREEN}$UPDATE_MODE${NC}"
+    echo -e "  Source Directory:     ${GREEN}$SOURCE_DIR${NC}"
+    echo -e "  Installation Directory: ${GREEN}$INSTALL_DIR${NC}"
+    echo -e "  Source Version:       ${GREEN}$SOURCE_VERSION${NC}"
+    echo -e "  Current Version:      ${GREEN}$CURRENT_VERSION${NC}"
+    echo -e "  Create Backup:        ${GREEN}$([ "$SKIP_BACKUP" == "yes" ] && echo "no" || echo "yes")${NC}"
+    echo -e "  Auto Rollback:        ${GREEN}$([ "$ROLLBACK_ON_FAILURE" == "yes" ] && echo "yes" || echo "no")${NC}"
     echo ""
     
     if [[ "$UPDATE_MODE" == "quick" ]]; then
         echo -e "${CYAN}Quick Update will:${NC}"
-        echo "  • Pull latest code from git"
+        echo "  • Copy updated files to installation"
         echo "  • Restart services (~10-15 seconds downtime)"
     else
         echo -e "${CYAN}Full Update will:${NC}"
-        echo "  • Pull latest code from git"
+        echo "  • Copy updated files to installation"
         echo "  • Update Python dependencies"
         echo "  • Run database migrations"
         echo "  • Restart services (~30-60 seconds downtime)"
@@ -746,7 +794,7 @@ main() {
     
     # Execute update
     create_backup
-    perform_git_pull
+    copy_files
     update_dependencies
     run_migrations
     restart_services
@@ -764,13 +812,13 @@ main() {
     echo -e "${NC}"
     
     echo -e "\n${CYAN}${BOLD}Update Summary:${NC}"
-    echo -e "  Previous Version: ${GREEN}$CURRENT_VERSION${NC}"
-    
-    NEW_VERSION=$(grep "^VERSION = " "$INSTALL_DIR/config.py" | cut -d"'" -f2)
-    echo -e "  Current Version:  ${GREEN}$NEW_VERSION${NC}"
+    echo -e "  Previous Version:     ${GREEN}$CURRENT_VERSION${NC}"
+    echo -e "  Current Version:      ${GREEN}$NEW_VERSION${NC}"
+    echo -e "  Source Directory:     ${GREEN}$SOURCE_DIR${NC}"
+    echo -e "  Installation Directory: ${GREEN}$INSTALL_DIR${NC}"
     
     if [[ "$SKIP_BACKUP" != "yes" ]]; then
-        echo -e "  Backup Location:  ${GREEN}$BACKUP_DIR${NC}"
+        echo -e "  Backup Location:      ${GREEN}$BACKUP_DIR${NC}"
     fi
     
     echo -e "\n${CYAN}${BOLD}Service Status:${NC}"
@@ -783,12 +831,13 @@ main() {
     echo "  • Monitor for any issues"
     
     if [[ "$SKIP_BACKUP" != "yes" ]]; then
-        echo "  • Rollback if needed: sudo ./scripts/rollback.sh"
+        echo "  • Rollback if needed: sudo $INSTALL_DIR/scripts/rollback.sh"
     fi
     
     echo -e "\n${GREEN}Update log saved to: $LOG_FILE${NC}\n"
     
     log "KAST-Web Update Completed Successfully"
+    log "Updated from $CURRENT_VERSION to $NEW_VERSION"
 }
 
 # Run main function
