@@ -736,6 +736,260 @@ if scan.user_id != current_user.id and not current_user.is_admin:
 - Session timeout configurable
 - Failed login tracking and account lockout
 
+## Production Updates & Maintenance
+
+### Update Strategy
+
+KAST-Web uses automated update scripts for safe, reliable production updates. The update system provides:
+- Automatic backups before each update
+- Version tracking and validation
+- Dependency management
+- Database migration handling
+- Service restart with validation
+- Automatic rollback on failure
+- Detailed logging
+
+### Update Scripts
+
+Two scripts handle production updates:
+
+**`scripts/update.sh`** - Main update script
+- **Quick update (default):** Code changes only (CSS, templates, bug fixes)
+- **Full update (--full):** Includes dependencies and database migrations
+- **Dry-run mode (--dry-run):** Preview changes without applying them
+- **Force mode (--force):** Skip safety checks
+- **Auto-rollback:** Reverts changes if update fails
+
+**`scripts/rollback.sh`** - Quick rollback utility
+- Interactive backup selection
+- Restores git state, database, configuration, and uploads
+- Validates restoration
+- Can specify backup directory directly
+
+### Update Types
+
+**Quick Update** - Use for:
+- CSS/styling changes
+- Template modifications
+- Code-only changes
+- Bug fixes without dependencies
+
+```bash
+cd /opt/kast-web
+sudo ./scripts/update.sh
+```
+
+**Full Update** - Use for:
+- New feature additions
+- Dependency changes
+- Database schema changes
+- Major version updates
+
+```bash
+cd /opt/kast-web
+sudo ./scripts/update.sh --full
+```
+
+### Update Process
+
+The update script follows this workflow:
+
+1. **Pre-Update Validation**
+   - Check running as root/sudo
+   - Verify installation directory
+   - Check virtual environment
+   - Validate systemd services
+   - Check disk space (minimum 1GB)
+   - Verify git repository status
+   - Check for uncommitted changes
+
+2. **Version Check**
+   - Fetch latest changes
+   - Display current and target versions
+   - Show commits to be applied
+   - Request user confirmation
+
+3. **Backup Creation**
+   - Stop services
+   - Create timestamped backup directory
+   - Save git commit hash
+   - Backup database
+   - Backup .env configuration
+   - Backup uploaded files (logos)
+   - Save backup metadata
+
+4. **Update Execution**
+   - Pull latest code from git
+   - Update dependencies (if --full)
+   - Run database migrations (if --full)
+   - Restart services
+   - Validate services started successfully
+
+5. **Post-Update Validation**
+   - Check service status
+   - Test application response
+   - Verify version updated
+   - Generate success report
+
+6. **Auto-Rollback** (if update fails)
+   - Detect failure in any step
+   - Automatically restore from backup
+   - Log rollback details
+
+### Backup Management
+
+Backups stored in: `/opt/kast-web-backup-YYYYMMDD-HHMMSS/`
+
+**Backup Contents:**
+```
+/opt/kast-web-backup-20241216-210500/
+├── backup-info.txt        # Metadata (version, date, type)
+├── git-commit.txt         # Git commit hash
+├── .env                   # Configuration
+├── kast.db                # Database (SQLite)
+└── uploads/               # Uploaded files (logos)
+```
+
+**Automatic Cleanup:**
+- Keeps last 5 backups
+- Removes older backups automatically
+- Manual cleanup: `sudo rm -rf /opt/kast-web-backup-<timestamp>`
+
+### Rollback Procedure
+
+**Interactive Rollback:**
+```bash
+cd /opt/kast-web
+sudo ./scripts/rollback.sh
+# Select backup from list
+```
+
+**Direct Rollback:**
+```bash
+sudo ./scripts/rollback.sh /opt/kast-web-backup-20241216-210500
+```
+
+**What Gets Restored:**
+1. Git state (code reverted to backup commit)
+2. Database (full restore from backup)
+3. Configuration (.env file)
+4. Uploads (logos and other user files)
+
+### Version Tracking
+
+**Check Current Version:**
+```bash
+grep "VERSION = " /opt/kast-web/config.py
+```
+
+**View Update History:**
+```bash
+sudo tail -100 /var/log/kast-web/update.log
+sudo tail -100 /var/log/kast-web/rollback.log
+```
+
+### Maintenance Mode
+
+Enable before major updates to prevent user access:
+
+**Enable Maintenance Mode:**
+```bash
+cd /opt/kast-web
+source venv/bin/activate
+python3 << EOF
+from app import create_app, db
+from app.models import SystemSettings
+app = create_app()
+with app.app_context():
+    SystemSettings.set_setting('maintenance_mode', 'true', 'bool', 1)
+EOF
+```
+
+**Perform Update:**
+```bash
+sudo ./scripts/update.sh --full
+```
+
+**Disable Maintenance Mode:**
+```bash
+cd /opt/kast-web
+source venv/bin/activate
+python3 << EOF
+from app import create_app, db
+from app.models import SystemSettings
+app = create_app()
+with app.app_context():
+    SystemSettings.set_setting('maintenance_mode', 'false', 'bool', 1)
+EOF
+```
+
+### Update Troubleshooting
+
+**Scans stuck after update:**
+- Restart Celery: `sudo systemctl restart kast-celery`
+- Check logs: `sudo journalctl -u kast-celery -n 50`
+
+**Services won't start:**
+- Check dependencies: `source venv/bin/activate && pip install -r requirements-production.txt`
+- Check database: Verify migrations ran successfully
+- View logs: `sudo journalctl -u kast-web -xe`
+
+**Database errors:**
+- Run migrations manually: `cd /opt/kast-web && source venv/bin/activate && python3 utils/migrate_*.py`
+- Check schema: Compare with expected schema in models.py
+- Consider rollback if persists
+
+**Permission errors:**
+- Fix ownership: `sudo chown -R www-data:www-data /opt/kast-web`
+- Fix database: `sudo chown www-data:www-data /var/lib/kast-web/kast.db`
+
+### Best Practices for Updates
+
+1. **Schedule During Low-Traffic Periods**
+   - Minimize user impact
+   - Allow time for troubleshooting
+
+2. **Review Changes Before Updating**
+   ```bash
+   cd /opt/kast-web
+   git fetch origin
+   git log HEAD..origin/main --oneline
+   git diff HEAD..origin/main
+   ```
+
+3. **Use Dry-Run Mode**
+   ```bash
+   sudo ./scripts/update.sh --dry-run
+   ```
+
+4. **Test on Staging First** (if available)
+   - Clone production environment
+   - Test full update process
+   - Verify all functionality
+
+5. **Communicate Downtime**
+   - Notify users in advance
+   - Use maintenance mode
+   - Provide estimated duration
+
+6. **Verify After Update**
+   - Check service status
+   - Test key functionality
+   - Review logs for errors
+   - Verify version updated
+
+7. **Keep Backups**
+   - Don't delete recent backups
+   - Consider offsite backup storage
+   - Test backup restoration periodically
+
+### Documentation Reference
+
+For complete update documentation, see:
+- **[UPDATE_GUIDE.md](docs/UPDATE_GUIDE.md)** - Comprehensive update guide with troubleshooting
+- **[PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)** - Initial production setup
+- **[README.md](README.md)** - Quick update commands
+
 ## Development Workflow
 
 ### Starting the Application (Development)

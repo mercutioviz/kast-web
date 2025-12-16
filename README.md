@@ -138,6 +138,40 @@ sudo ln -s /etc/nginx/sites-available/kast-web.conf /etc/nginx/sites-enabled/
 sudo systemctl enable --now redis-server kast-web kast-celery nginx
 ```
 
+### Updating Production Installations
+
+For production environments, use the automated update scripts for safe, reliable updates:
+
+**Quick Update** (CSS, templates, code changes):
+```bash
+cd /opt/kast-web
+sudo ./scripts/update.sh
+```
+
+**Full Update** (new features, dependencies, migrations):
+```bash
+cd /opt/kast-web
+sudo ./scripts/update.sh --full
+```
+
+**Rollback** (if update fails):
+```bash
+cd /opt/kast-web
+sudo ./scripts/rollback.sh
+```
+
+The update system includes:
+- ✓ Automatic backups before each update
+- ✓ Version tracking and validation
+- ✓ Dependency management
+- ✓ Database migration handling
+- ✓ Service restart with validation
+- ✓ Automatic rollback on failure
+- ✓ Detailed logging
+
+**For complete update documentation, see:**
+- **[UPDATE_GUIDE.md](docs/UPDATE_GUIDE.md)** - Comprehensive update guide with troubleshooting
+
 ## Configuration
 
 Configuration is managed through `config.py` and environment variables:
