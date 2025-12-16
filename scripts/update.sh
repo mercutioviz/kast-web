@@ -14,8 +14,10 @@ set -o pipefail  # Catch errors in pipes
 # Configuration Variables
 ################################################################################
 
-INSTALL_DIR="/opt/kast-web"
-BACKUP_BASE_DIR="/opt/kast-web-backup"
+# Detect installation directory from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$(dirname "$SCRIPT_DIR")"  # Parent of scripts/ directory
+BACKUP_BASE_DIR="${INSTALL_DIR}-backup"
 LOG_FILE="/var/log/kast-web/update.log"
 SERVICE_USER="www-data"
 VENV_DIR="$INSTALL_DIR/venv"
