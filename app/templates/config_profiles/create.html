@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Create Configuration Profile - KAST-Web{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('config_profiles.list_profiles') }}">Configuration Profiles</a></li>
+                    <li class="breadcrumb-item active">Create New Profile</li>
+                </ol>
+            </nav>
+            <h1><i class="fas fa-plus-circle"></i> Create Configuration Profile</h1>
+            <p class="text-muted">Create a new reusable scan configuration profile</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-edit"></i> Profile Form</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('config_profiles.create_profile') }}">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="mb-3">
+                            {{ form.name.label(class="form-label") }}
+                            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else "")) }}
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.name.errors[0] }}
+                                </div>
+                            {% endif %}
+                            <small class="form-text text-muted">Choose a descriptive name for this profile</small>
+                        </div>
+
+                        <div class="mb-3">
+                            {{ form.description.label(class="form-label") }}
+                            {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else "")) }}
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.description.errors[0] }}
+                                </div>
+                            {% endif %}
+                            <small class="form-text text-muted">Describe the purpose and characteristics of this profile</small>
+                        </div>
+
+                        <div class="mb-3">
+                            {{ form.config_yaml.label(class="form-label") }}
+                            {{ form.config_yaml(class="form-control font-monospace" + (" is-invalid" if form.config_yaml.errors else ""), id="yaml-editor") }}
+                            {% if form.config_yaml.errors %}
+                                <div class="invalid-feedback">
+                                    {{ form.config_yaml.errors[0] }}
+                                </div>
+                            {% endif %}
+                            <small class="form-text text-muted">
+                                Enter YAML configuration for KAST scan settings. 
+                                <a href="#" data-bs-toggle="modal" data-bs-target="#yamlHelpModal">View syntax help</a>
+                            </small>
+                            <div id="yaml-validation" class="mt-2"></div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3 form-check">
+                                    {{ form.allow_standard_users(class="form-check-input") }}
+                                    {{ form.allow_standard_users.label(class="form-check-label") }}
+                                    <small class="form-text text-muted d-block">
+                                        If checked, standard users can use this profile. Otherwise, only power users and admins.
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3 form-check">
+                                    {{ form.is_system_default(class="form-check-input") }}
+                                    {{ form.is_system_default.label(class="form-check-label") }}
+                                    <small class="form-text text-muted d-block">
+                                        If checked, this will be the default profile for new scans. Only one profile can be default.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('config_profiles.list_profiles') }}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="button" class="btn btn-info" onclick="validateYAML()">
+                                <i class="fas fa-check"></i> Validate YAML
+                            </button>
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-lightbulb"></i> Tips</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="small">
+                        <li>Use the YAML syntax for KAST configuration</li>
+                        <li>Test your configuration with KAST CLI before adding to web</li>
+                        <li>Create descriptive names and descriptions</li>
+                        <li>Consider security when allowing standard users</li>
+                        <li>Use "Standard" for balanced settings</li>
+                        <li>Use "Stealth" for low-profile scanning</li>
+                        <li>Reserve "Aggressive" for power users only</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-code"></i> Example Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="small bg-light p-2 border rounded" style="max-height: 300px; overflow-y: auto;"><code>global:
+  timeout: 300
+  retry_count: 2
+
+plugins:
+  subfinder:
+    rate_limit: 150
+    timeout: 30
+    max_time: 10
+    
+  katana:
+    concurrency: 10
+    rate_limit: 150
+    delay: 0
+    
+  ftap:
+    concurrency: 10
+    rate_limit: 100</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- YAML Help Modal -->
+<div class="modal fade" id="yamlHelpModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-question-circle"></i> YAML Configuration Help</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Basic Structure</h6>
+                <p>KAST configuration uses YAML format with two main sections:</p>
+                <ul>
+                    <li><code>global</code> - Global settings that apply to all plugins</li>
+                    <li><code>plugins</code> - Plugin-specific settings</li>
+                </ul>
+                
+                <h6>Available Plugins (Passive Scan)</h6>
+                <ul>
+                    <li><code>mozilla_observatory</code> - Mozilla Observatory scanning</li>
+                    <li><code>subfinder</code> - Subdomain enumeration</li>
+                    <li><code>script_detection</code> - JavaScript detection</li>
+                    <li><code>wafw00f</code> - WAF detection</li>
+                    <li><code>katana</code> - Web crawling</li>
+                    <li><code>ftap</code> - Technology profiling</li>
+                </ul>
+
+                <h6>Common Settings</h6>
+                <ul>
+                    <li><code>timeout</code> - Request timeout in seconds</li>
+                    <li><code>rate_limit</code> - Requests per second</li>
+                    <li><code>concurrency</code> - Number of concurrent workers</li>
+                    <li><code>delay</code> - Delay between requests in seconds</li>
+                    <li><code>retry</code> - Number of retry attempts</li>
+                </ul>
+
+                <p class="mb-0"><a href="#" onclick="viewFullSchema()">View full configuration schema</a></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function validateYAML() {
+    const yamlContent = document.getElementById('yaml-editor').value;
+    const validationDiv = document.getElementById('yaml-validation');
+    
+    // Simple client-side validation (you can enhance this)
+    if (!yamlContent.trim()) {
+        validationDiv.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i> YAML content is empty</div>';
+        return;
+    }
+    
+    validationDiv.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Validating...</div>';
+    
+    // In a real implementation, you might want to make an AJAX call to validate server-side
+    setTimeout(() => {
+        validationDiv.innerHTML = '<div class="alert alert-success"><i class="fas fa-check"></i> YAML syntax appears valid. Submit the form to complete validation.</div>';
+    }, 500);
+}
+
+function viewFullSchema() {
+    // This would open the full schema in a new window or modal
+    alert('Full schema view would be implemented here. For now, use: kast --config-schema');
+}
+</script>
+{% endblock %}

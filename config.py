@@ -4,14 +4,16 @@ from pathlib import Path
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 # Application version
-VERSION = '1.3.3'
+VERSION = '1.3.4'
 
 class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///kast.db'
+    # Use absolute path to ensure consistent database location
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        f'sqlite:///{os.path.join(basedir, "instance", "kast-web.db")}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # KAST CLI configuration

@@ -336,3 +336,66 @@ class ImportScanForm(FlaskForm):
     )
     
     submit = SubmitField('Import Scan', render_kw={'class': 'btn btn-success'})
+
+
+class ScanConfigProfileForm(FlaskForm):
+    """Form for creating/editing scan configuration profiles"""
+    from wtforms import TextAreaField
+    
+    name = StringField(
+        'Profile Name',
+        validators=[
+            DataRequired(message='Profile name is required'),
+            Length(min=3, max=100, message='Name must be between 3 and 100 characters'),
+            Regexp(r'^[a-zA-Z0-9\s\-_()]+$', message='Name can only contain letters, numbers, spaces, hyphens, underscores, and parentheses')
+        ],
+        render_kw={'placeholder': 'e.g., Standard, Stealth, Aggressive', 'class': 'form-control'}
+    )
+    
+    description = TextAreaField(
+        'Description',
+        validators=[
+            Length(max=1000, message='Description must not exceed 1000 characters')
+        ],
+        render_kw={
+            'placeholder': 'Describe the purpose and characteristics of this configuration profile...',
+            'class': 'form-control',
+            'rows': 3
+        }
+    )
+    
+    config_yaml = TextAreaField(
+        'Configuration (YAML)',
+        validators=[
+            DataRequired(message='Configuration YAML is required')
+        ],
+        render_kw={
+            'placeholder': 'Enter YAML configuration here...',
+            'class': 'form-control font-monospace',
+            'rows': 20,
+            'spellcheck': 'false'
+        }
+    )
+    
+    allow_standard_users = BooleanField(
+        'Allow Standard Users',
+        default=False,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    is_system_default = BooleanField(
+        'Set as System Default',
+        default=False,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    submit = SubmitField('Save Profile', render_kw={'class': 'btn btn-primary'})
+    
+    def validate_name(self, name):
+        """Check if profile name already exists (for new profiles)"""
+        from app.models import ScanConfigProfile
+        # Only check for new profiles or if name changed
+        if not hasattr(self, 'obj') or (self.obj and self.obj.name != name.data):
+            profile = ScanConfigProfile.query.filter_by(name=name.data).first()
+            if profile:
+                raise ValidationError('A profile with this name already exists. Please choose a different name.')

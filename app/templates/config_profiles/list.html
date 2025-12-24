@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration Profiles - KAST-Web{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1><i class="fas fa-sliders-h"></i> Scan Configuration Profiles</h1>
+            <p class="text-muted">Manage reusable scan configuration profiles for KAST scans</p>
+        </div>
+        {% if current_user.is_power_user or current_user.is_admin %}
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('config_profiles.create_profile') }}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Create New Profile
+            </a>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if profiles %}
+    <div class="row">
+        {% for profile in profiles %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 {% if profile.is_system_default %}border-primary{% endif %}">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        {{ profile.name }}
+                        {% if profile.is_system_default %}
+                        <span class="badge bg-primary">Default</span>
+                        {% endif %}
+                    </h5>
+                    {% if profile.allow_standard_users %}
+                    <span class="badge bg-success">Standard Users</span>
+                    {% else %}
+                    <span class="badge bg-warning text-dark">Power Users Only</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <p class="card-text">
+                        {{ profile.description[:150] }}{% if profile.description|length > 150 %}...{% endif %}
+                    </p>
+                    <p class="text-muted small mb-0">
+                        <i class="fas fa-user"></i> Created by {{ profile.creator.username }}<br>
+                        <i class="fas fa-calendar"></i> {{ profile.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    </p>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <div class="btn-group w-100" role="group">
+                        <a href="{{ url_for('config_profiles.view_profile', profile_id=profile.id) }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-eye"></i> View
+                        </a>
+                        {% if current_user.is_power_user or current_user.is_admin %}
+                        <a href="{{ url_for('config_profiles.edit_profile', profile_id=profile.id) }}" 
+                           class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-edit"></i> Edit
+                        </a>
+                        <form method="POST" action="{{ url_for('config_profiles.duplicate_profile', profile_id=profile.id) }}" 
+                              class="d-inline" onsubmit="return confirm('Create a duplicate of this profile?');">
+                            <button type="submit" class="btn btn-sm btn-outline-info">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i> No configuration profiles found.
+        {% if current_user.is_power_user or current_user.is_admin %}
+        <a href="{{ url_for('config_profiles.create_profile') }}">Create your first profile</a> to get started.
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-info-circle"></i> About Configuration Profiles</h5>
+        </div>
+        <div class="card-body">
+            <p>Configuration profiles allow you to create reusable KAST scan configurations with custom settings for different scenarios:</p>
+            <ul>
+                <li><strong>Standard:</strong> Balanced settings for general-purpose scanning</li>
+                <li><strong>Stealth:</strong> Low-profile scanning with reduced request rates</li>
+                <li><strong>Aggressive:</strong> High-speed scanning for internal testing (power users only)</li>
+            </ul>
+            <p class="mb-0">
+                <i class="fas fa-shield-alt"></i> 
+                {% if current_user.is_admin %}
+                As an <strong>admin</strong>, you can use any profile and create new ones.
+                {% elif current_user.is_power_user %}
+                As a <strong>power user</strong>, you can use any profile and create new ones.
+                {% else %}
+                As a <strong>standard user</strong>, you can only use profiles marked as "Standard Users".
+                {% endif %}
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

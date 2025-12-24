@@ -45,6 +45,13 @@
                             <i class="bi bi-list-ul"></i> My Scans
                         </a>
                     </li>
+                    {% if current_user.is_power_user or current_user.is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('config_profiles.list_profiles') }}">
+                            <i class="fas fa-sliders-h"></i> Config Profiles
+                        </a>
+                    </li>
+                    {% endif %}
                     {% if current_user.is_admin %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="adminDropdown" role="button" data-bs-toggle="dropdown">

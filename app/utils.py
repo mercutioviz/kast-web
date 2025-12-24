@@ -3,7 +3,9 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
-from flask import current_app
+from functools import wraps
+from flask import current_app, flash, redirect, url_for
+from flask_login import current_user
 
 def get_available_plugins():
     """
@@ -464,3 +466,43 @@ def get_scan_logo_usage_count(logo_id):
     """
     from app.models import Scan
     return Scan.query.filter_by(logo_id=logo_id).count()
+
+
+# ============================================================================
+# AUTHORIZATION DECORATORS
+# ============================================================================
+
+def admin_required(f):
+    """
+    Decorator to require admin role for a route
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            flash('Please log in to access this page.', 'warning')
+            return redirect(url_for('auth.login'))
+        
+        if not current_user.is_admin:
+            flash('You do not have permission to access this page. Admin role required.', 'danger')
+            return redirect(url_for('main.index'))
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def power_user_required(f):
+    """
+    Decorator to require power_user or admin role for a route
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            flash('Please log in to access this page.', 'warning')
+            return redirect(url_for('auth.login'))
+        
+        if not (current_user.is_power_user or current_user.is_admin):
+            flash('You do not have permission to access this page. Power user or admin role required.', 'danger')
+            return redirect(url_for('main.index'))
+        
+        return f(*args, **kwargs)
+    return decorated_function

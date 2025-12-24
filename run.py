@@ -29,11 +29,18 @@ app = create_app(os.getenv('FLASK_ENV', 'development'))
 # Ensure app logger is at DEBUG level
 app.logger.setLevel(logging.DEBUG)
 
+# ANSI color codes
+GREEN = '\033[92m'
+CYAN = '\033[96m'
+RESET = '\033[0m'
+
 if __name__ == '__main__':
     print("=" * 60)
     print("KAST Web - Development Server")
     print("Logging configured at DEBUG level")
     print("Status endpoint debugging is ENABLED")
+    print("=" * 60)
+    print(f"{GREEN}Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}{RESET}")
     print("=" * 60)
     
     # Run development server

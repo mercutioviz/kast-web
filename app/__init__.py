@@ -65,13 +65,14 @@ def create_app(config_name='default'):
         return {'app_version': VERSION}
     
     # Register blueprints
-    from app.routes import main, scans, api, auth, admin, logos
+    from app.routes import main, scans, api, auth, admin, logos, config_profiles
     app.register_blueprint(main.bp)
     app.register_blueprint(scans.bp)
     app.register_blueprint(api.bp)
     app.register_blueprint(auth.bp)
     app.register_blueprint(admin.bp)
     app.register_blueprint(logos.bp)
+    app.register_blueprint(config_profiles.bp)
     
     # Initialize Flask-Admin for database explorer
     from app.admin_db import init_admin

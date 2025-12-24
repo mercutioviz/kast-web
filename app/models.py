@@ -88,9 +88,12 @@ class Scan(db.Model):
     logo_id = db.Column(db.Integer, db.ForeignKey('report_logos.id'), nullable=True)  # NULL = use system default
     execution_log_path = db.Column(db.String(500))  # Path to full KAST execution log
     source = db.Column(db.String(20), default='web')  # 'web' = GUI-executed, 'imported' = CLI-imported
+    config_profile_id = db.Column(db.Integer, db.ForeignKey('scan_config_profiles.id'), nullable=True)  # NULL = use system default
+    config_overrides = db.Column(db.Text)  # JSON dict of --set overrides (admin/power_user only)
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
+    config_profile = db.relationship('ScanConfigProfile', backref='scans')
     
     def __repr__(self):
         return f'<Scan {self.id}: {self.target} ({self.status})>'
@@ -304,6 +307,63 @@ class ReportLogo(db.Model):
             'uploaded_by': self.uploaded_by,
             'uploader_username': self.uploader.username if self.uploader else None,
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None
+        }
+
+
+class ScanConfigProfile(db.Model):
+    """Model for storing reusable scan configuration profiles"""
+    __tablename__ = 'scan_config_profiles'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+    config_yaml = db.Column(db.Text, nullable=False)
+    
+    # Access Control
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    allow_standard_users = db.Column(db.Boolean, default=False)
+    is_system_default = db.Column(db.Boolean, default=False)
+    
+    # Metadata
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    
+    # Relationships
+    creator = db.relationship('User', backref='created_configs')
+    
+    def __repr__(self):
+        return f'<ScanConfigProfile {self.id}: {self.name}>'
+    
+    def can_be_used_by(self, user):
+        """Check if a user can use this config profile"""
+        # Admins can use anything
+        if user.is_admin:
+            return True
+        
+        # Power users can use anything
+        if user.is_power_user:
+            return True
+        
+        # Standard users can only use profiles marked as allowed
+        if user.role == 'user':
+            return self.allow_standard_users
+        
+        # Viewers can't create scans anyway
+        return False
+    
+    def to_dict(self):
+        """Convert config profile to dictionary"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'config_yaml': self.config_yaml,
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None,
+            'allow_standard_users': self.allow_standard_users,
+            'is_system_default': self.is_system_default,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
 
