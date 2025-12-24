@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-lg-8">
+    <div class="col-lg-10">
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
                 <h3 class="mb-0">
@@ -15,83 +15,226 @@
             <div class="card-body">
                 <h4>What is KAST Web?</h4>
                 <p>
-                    KAST Web is a web-based interface for the <strong>Kali Automated Scan Tool (KAST)</strong>, 
-                    providing an intuitive way to configure, execute, and manage security scans through your browser.
+                    KAST Web is a comprehensive web-based interface for the <strong>Kali Automated Scan Tool (KAST)</strong>, 
+                    providing an intuitive way to configure, execute, and manage security scans through your browser. 
+                    Built for security professionals and teams, it features asynchronous scan execution, user authentication 
+                    with role-based access control, email notifications, scan sharing, and extensive administrative controls.
                 </p>
 
-                <h4 class="mt-4">Features</h4>
-                <ul>
-                    <li><strong>Easy Scan Configuration:</strong> Web form interface for setting up scans</li>
-                    <li><strong>Plugin Selection:</strong> Choose which security tools to run</li>
-                    <li><strong>Scan History:</strong> Track all your scans with filtering and search</li>
-                    <li><strong>Report Viewing:</strong> View and download HTML reports directly in the browser</li>
-                    <li><strong>Scan Management:</strong> Re-run or delete scans with ease</li>
-                    <li><strong>RESTful API:</strong> Programmatic access to scan data</li>
-                </ul>
+                <h4 class="mt-4">Key Features</h4>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="bi bi-shield-check"></i> Security & Authentication</h6>
+                        <ul>
+                            <li>Multi-user support with secure authentication</li>
+                            <li>Four role types: Admin, Power User, User, Viewer</li>
+                            <li>Role-based access control and permissions</li>
+                            <li>Comprehensive audit logging</li>
+                            <li>Password security with bcrypt hashing</li>
+                        </ul>
+
+                        <h6 class="mt-3"><i class="bi bi-lightning-charge"></i> Scanning Capabilities</h6>
+                        <ul>
+                            <li>Asynchronous scan execution with Celery</li>
+                            <li>Real-time progress tracking</li>
+                            <li>Passive and active scan modes</li>
+                            <li>Plugin selection and configuration</li>
+                            <li>Parallel plugin execution support</li>
+                        </ul>
+
+                        <h6 class="mt-3"><i class="bi bi-share"></i> Collaboration</h6>
+                        <ul>
+                            <li>User-to-user scan sharing</li>
+                            <li>Public share links with expiration</li>
+                            <li>Permission levels (view/edit)</li>
+                            <li>Email report delivery</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="bi bi-gear"></i> Management & Administration</h6>
+                        <ul>
+                            <li>Comprehensive admin panel</li>
+                            <li>User management and role assignment</li>
+                            <li>System settings configuration</li>
+                            <li>SMTP email configuration</li>
+                            <li>Database explorer (admin only)</li>
+                            <li>Maintenance mode control</li>
+                        </ul>
+
+                        <h6 class="mt-3"><i class="bi bi-file-earmark-text"></i> Reports & Output</h6>
+                        <ul>
+                            <li>Interactive HTML report viewer</li>
+                            <li>Logo white-labeling for reports</li>
+                            <li>Download output files</li>
+                            <li>Per-plugin result parsing</li>
+                            <li>Scan history with filtering</li>
+                        </ul>
+
+                        <h6 class="mt-3"><i class="bi bi-code-square"></i> API Access</h6>
+                        <ul>
+                            <li>RESTful API for programmatic access</li>
+                            <li>Status polling for real-time updates</li>
+                            <li>JSON-formatted responses</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4 class="mt-4">User Roles & Permissions</h4>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-star-fill text-warning"></i> Admin</h6>
+                                <p class="small mb-0">Full system access, user management, all scans, admin panel, database explorer, system settings</p>
+                            </div>
+                        </div>
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-lightning-fill text-primary"></i> Power User</h6>
+                                <p class="small mb-0">Active scans, own scan management, sharing, email, logo uploads</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-person-fill text-info"></i> User</h6>
+                                <p class="small mb-0">Passive scans only, own scan management, sharing, email, basic features</p>
+                            </div>
+                        </div>
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title"><i class="bi bi-eye-fill text-secondary"></i> Viewer</h6>
+                                <p class="small mb-0">Read-only access to shared scans, cannot create or modify scans</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <h4 class="mt-4">Technology Stack</h4>
                 <div class="row">
                     <div class="col-md-6">
                         <h6>Backend</h6>
-                        <ul>
-                            <li>Flask (Python web framework)</li>
-                            <li>SQLAlchemy (Database ORM)</li>
-                            <li>SQLite (Database)</li>
-                            <li>WTForms (Form handling)</li>
+                        <ul class="small">
+                            <li><strong>Flask</strong> - Python web framework</li>
+                            <li><strong>SQLAlchemy</strong> - Database ORM</li>
+                            <li><strong>SQLite</strong> - Default database</li>
+                            <li><strong>Celery</strong> - Asynchronous task queue</li>
+                            <li><strong>Redis</strong> - Message broker</li>
+                            <li><strong>Flask-Login</strong> - User sessions</li>
+                            <li><strong>Flask-Bcrypt</strong> - Password hashing</li>
+                            <li><strong>WTForms</strong> - Form handling</li>
+                            <li><strong>Gunicorn</strong> - Production WSGI server</li>
                         </ul>
                     </div>
                     <div class="col-md-6">
                         <h6>Frontend</h6>
-                        <ul>
-                            <li>Bootstrap 5 (UI framework)</li>
-                            <li>Bootstrap Icons</li>
-                            <li>Jinja2 (Templating)</li>
+                        <ul class="small">
+                            <li><strong>Bootstrap 5</strong> - UI framework</li>
+                            <li><strong>Bootstrap Icons</strong> - Icon library</li>
+                            <li><strong>Jinja2</strong> - Template engine</li>
+                            <li><strong>JavaScript</strong> - Client-side interactivity</li>
+                        </ul>
+                        <h6 class="mt-3">Production Infrastructure</h6>
+                        <ul class="small">
+                            <li><strong>Nginx</strong> - Reverse proxy</li>
+                            <li><strong>systemd</strong> - Service management</li>
+                            <li>PostgreSQL/MySQL support</li>
                         </ul>
                     </div>
                 </div>
 
                 <h4 class="mt-4">Architecture</h4>
                 <p>
-                    KAST Web is built as a separate project from the core KAST CLI tool, providing a clean 
-                    separation of concerns. The web interface communicates with KAST by executing it as a 
-                    subprocess and parsing the results.
+                    KAST Web uses a modern, multi-layered architecture designed for security, scalability, and maintainability:
                 </p>
+                <ul>
+                    <li><strong>Web Layer:</strong> Flask application with blueprint-based routing for organized code structure</li>
+                    <li><strong>Authentication Layer:</strong> Flask-Login with bcrypt password hashing and session management</li>
+                    <li><strong>Authorization Layer:</strong> Role-based access control (RBAC) with four user roles and granular permissions</li>
+                    <li><strong>Task Queue:</strong> Celery workers execute scans and send emails asynchronously</li>
+                    <li><strong>Message Broker:</strong> Redis coordinates communication between Flask and Celery workers</li>
+                    <li><strong>Data Layer:</strong> SQLAlchemy ORM with SQLite (development) or PostgreSQL/MySQL (production)</li>
+                    <li><strong>Audit System:</strong> Comprehensive logging of all security-sensitive actions</li>
+                </ul>
 
                 <div class="alert alert-info">
                     <h6><i class="bi bi-folder"></i> Project Structure</h6>
                     <ul class="mb-0 small">
-                        <li><strong>KAST CLI:</strong> <code>/opt/kast/kast/</code></li>
+                        <li><strong>KAST CLI:</strong> <code>/usr/local/bin/kast</code></li>
                         <li><strong>KAST Web:</strong> <code>/opt/kast-web/</code></li>
                         <li><strong>Database:</strong> <code>~/kast-web/db/kast.db</code></li>
                         <li><strong>Scan Results:</strong> <code>~/kast_results/</code></li>
+                        <li><strong>Uploaded Logos:</strong> <code>/opt/kast-web/app/static/uploads/logos/</code></li>
                     </ul>
                 </div>
+
+                <h4 class="mt-4">API Endpoints</h4>
+                <p class="small">KAST Web provides a comprehensive RESTful API for programmatic access:</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="small">Scans</h6>
+                        <ul class="small">
+                            <li><code>GET /api/scans</code> - List scans with pagination</li>
+                            <li><code>GET /api/scans/&lt;id&gt;</code> - Get scan details</li>
+                            <li><code>GET /api/scans/&lt;id&gt;/status</code> - Real-time status</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="small">Other Resources</h6>
+                        <ul class="small">
+                            <li><code>GET /api/plugins</code> - Available plugins</li>
+                            <li><code>GET /api/stats</code> - Scan statistics</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <h4 class="mt-4">Security Features</h4>
+                <ul>
+                    <li><strong>Audit Logging:</strong> All sensitive actions logged with user, timestamp, and details</li>
+                    <li><strong>Password Security:</strong> Bcrypt hashing, failed login tracking, account lockout</li>
+                    <li><strong>Role-Based Access:</strong> Granular permissions prevent unauthorized access</li>
+                    <li><strong>Session Management:</strong> Secure session handling with Flask-Login</li>
+                    <li><strong>Maintenance Mode:</strong> System-wide lockdown for maintenance (admins can still access)</li>
+                    <li><strong>CSRF Protection:</strong> Built-in protection for all forms</li>
+                </ul>
+
+                <h4 class="mt-4">Production Deployment</h4>
+                <p>
+                    KAST Web includes complete production deployment support with:
+                </p>
+                <ul>
+                    <li>Nginx reverse proxy configuration</li>
+                    <li>systemd service units for web app and Celery worker</li>
+                    <li>Gunicorn WSGI server for high performance</li>
+                    <li>Automated update scripts with backup and rollback</li>
+                    <li>Database migration utilities</li>
+                    <li>Production-ready security configurations</li>
+                </ul>
 
                 <h4 class="mt-4">Future Enhancements</h4>
                 <p>Planned features for future releases:</p>
                 <ul>
-                    <li>User authentication and multi-user support</li>
-                    <li>Asynchronous scan execution with Celery</li>
-                    <li>Real-time progress updates via WebSockets</li>
-                    <li>Scan scheduling and automation</li>
-                    <li>Scan comparison tools</li>
-                    <li>Email notifications</li>
-                    <li>Advanced analytics and dashboards</li>
-                </ul>
-
-                <h4 class="mt-4">API Access</h4>
-                <p>KAST Web provides a RESTful API for programmatic access:</p>
-                <ul class="small">
-                    <li><code>GET /api/scans</code> - List all scans</li>
-                    <li><code>GET /api/scans/{id}</code> - Get scan details</li>
-                    <li><code>GET /api/plugins</code> - List available plugins</li>
-                    <li><code>GET /api/stats</code> - Get scan statistics</li>
+                    <li>WebSocket integration for full real-time updates (eliminate polling)</li>
+                    <li>Scan scheduling and automation (cron-like recurring scans)</li>
+                    <li>Scan comparison tools and trend analysis</li>
+                    <li>Advanced analytics and vulnerability tracking dashboards</li>
+                    <li>Export functionality (PDF, CSV, XML formats)</li>
+                    <li>API authentication with token-based access</li>
+                    <li>Plugin management interface</li>
+                    <li>Resource monitoring and optimization</li>
+                    <li>Group-based sharing and distribution lists</li>
                 </ul>
 
                 <div class="text-center mt-4">
-                    <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg">
+                    <a href="{{ url_for('main.index') }}" class="btn btn-primary btn-lg me-2">
                         <i class="bi bi-play-circle"></i> Start Scanning
                     </a>
+                    {% if current_user.is_authenticated %}
+                        <a href="{{ url_for('scans.list') }}" class="btn btn-outline-primary btn-lg">
+                            <i class="bi bi-clock-history"></i> View History
+                        </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
