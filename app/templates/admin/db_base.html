@@ -1,76 +1,70 @@
 {% extends 'admin/base.html' %}
 
+{% block admin_title %}Database Explorer{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Database Explorer</li>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('admin.dashboard') }}" class="btn btn-light">
+    <i class="fas fa-arrow-left"></i> Back to Admin Panel
+</a>
+{% endblock %}
+
 {% block head_css %}
 {{ super() }}
 <style>
-    /* Integrate with existing Bootstrap theme */
-    .navbar-brand {
-        font-weight: bold;
+    /* Database Explorer specific styles */
+    .db-table {
+        font-size: 0.9rem;
     }
     
-    .admin-content {
-        padding: 20px;
+    .db-table th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 10;
     }
     
-    /* Make badges render properly */
-    .badge {
-        display: inline-block;
-        padding: 0.25em 0.4em;
-        font-size: 75%;
-        font-weight: 700;
-        line-height: 1;
-        text-align: center;
-        white-space: nowrap;
-        vertical-align: baseline;
-        border-radius: 0.25rem;
+    .db-table-responsive {
+        max-height: 600px;
+        overflow-y: auto;
     }
     
-    .badge-success {
-        color: #fff;
-        background-color: #28a745;
+    .query-editor {
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+        min-height: 150px;
     }
     
-    .badge-danger {
-        color: #fff;
-        background-color: #dc3545;
+    .db-warning {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 1rem;
+        margin-bottom: 1rem;
     }
     
-    .badge-warning {
-        color: #212529;
-        background-color: #ffc107;
+    .table-list {
+        max-height: 400px;
+        overflow-y: auto;
     }
     
-    .badge-secondary {
-        color: #fff;
-        background-color: #6c757d;
+    .table-item {
+        padding: 0.5rem 1rem;
+        border-bottom: 1px solid #e9ecef;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .table-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .table-item.active {
+        background-color: #667eea;
+        color: white;
     }
 </style>
-{% endblock %}
-
-{% block brand %}
-<a class="navbar-brand" href="{{ url_for('admin.dashboard') }}">
-    <i class="fas fa-arrow-left"></i> Back to Admin Panel
-</a>
-<span class="navbar-text mx-3">|</span>
-<a class="navbar-brand" href="{{ url_for('db_admin.index') }}">
-    <i class="fas fa-database"></i> Database Explorer
-</a>
-{% endblock %}
-
-{% block messages %}
-{{ super() }}
-{% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-        <div class="container-fluid">
-            {% for category, message in messages %}
-                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-            {% endfor %}
-        </div>
-    {% endif %}
-{% endwith %}
 {% endblock %}

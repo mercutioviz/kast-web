@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<style>
+    /* Admin-specific styling */
+    .admin-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem 0;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .admin-header h1 {
+        margin: 0;
+        font-size: 1.75rem;
+        font-weight: 600;
+    }
+    
+    .admin-breadcrumb {
+        background: transparent;
+        padding: 0;
+        margin: 0.5rem 0 0 0;
+    }
+    
+    .admin-breadcrumb .breadcrumb-item {
+        color: rgba(255, 255, 255, 0.8);
+    }
+    
+    .admin-breadcrumb .breadcrumb-item.active {
+        color: white;
+    }
+    
+    .admin-breadcrumb .breadcrumb-item + .breadcrumb-item::before {
+        color: rgba(255, 255, 255, 0.6);
+    }
+    
+    .admin-breadcrumb a {
+        color: white;
+        text-decoration: none;
+    }
+    
+    .admin-breadcrumb a:hover {
+        text-decoration: underline;
+    }
+    
+    .admin-nav {
+        background: white;
+        border-bottom: 2px solid #e9ecef;
+        padding: 1rem 0;
+        margin-bottom: 2rem;
+    }
+    
+    .admin-nav .nav-link {
+        color: #495057;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        border-radius: 0.25rem;
+        transition: all 0.3s ease;
+    }
+    
+    .admin-nav .nav-link:hover {
+        background: #f8f9fa;
+        color: #667eea;
+    }
+    
+    .admin-nav .nav-link.active {
+        background: #667eea;
+        color: white;
+    }
+    
+    .admin-nav .nav-link i {
+        margin-right: 0.5rem;
+    }
+    
+    .admin-card {
+        border: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        margin-bottom: 2rem;
+    }
+    
+    .admin-card .card-header {
+        background: #f8f9fa;
+        border-bottom: 2px solid #e9ecef;
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    /* Override main content container for admin pages */
+    main.container {
+        max-width: 100%;
+    }
+    
+    .admin-content {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 15px;
+    }
+    
+    /* Badge styling */
+    .badge {
+        font-weight: 600;
+        padding: 0.35em 0.65em;
+    }
+    
+    .badge-success {
+        background-color: #28a745;
+    }
+    
+    .badge-danger {
+        background-color: #dc3545;
+    }
+    
+    .badge-warning {
+        background-color: #ffc107;
+        color: #212529;
+    }
+    
+    .badge-info {
+        background-color: #17a2b8;
+    }
+    
+    .badge-secondary {
+        background-color: #6c757d;
+    }
+    
+    /* Button styling */
+    .btn-admin-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+    }
+    
+    .btn-admin-primary:hover {
+        background: linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%);
+        color: white;
+    }
+</style>
+{% block head_css %}{% endblock %}
+{% endblock %}
+
+{% block content %}
+<!-- Admin Header -->
+<div class="admin-header">
+    <div class="admin-content">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1>
+                    <i class="fas fa-user-shield"></i> 
+                    {% block admin_title %}Admin Panel{% endblock %}
+                </h1>
+                <nav aria-label="breadcrumb">
+                    <ol class="admin-breadcrumb breadcrumb">
+                        <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}"><i class="bi bi-house"></i> Home</a></li>
+                        <li class="breadcrumb-item"><a href="{{ url_for('admin.dashboard') }}">Admin</a></li>
+                        {% block breadcrumb %}{% endblock %}
+                    </ol>
+                </nav>
+            </div>
+            <div>
+                {% block header_actions %}{% endblock %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Admin Navigation -->
+{% block admin_nav %}
+<div class="admin-nav">
+    <div class="admin-content">
+        <ul class="nav nav-pills">
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'admin.dashboard' %}active{% endif %}" href="{{ url_for('admin.dashboard') }}">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'auth.list_users' %}active{% endif %}" href="{{ url_for('auth.list_users') }}">
+                    <i class="fas fa-users"></i> Users
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">
+                    <i class="bi bi-gear"></i> Settings
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'admin.activity' %}active{% endif %}" href="{{ url_for('admin.activity') }}">
+                    <i class="bi bi-list-check"></i> Activity Log
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'admin.system_info' %}active{% endif %}" href="{{ url_for('admin.system_info') }}">
+                    <i class="bi bi-info-circle"></i> System Info
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'db_admin' in request.endpoint %}active{% endif %}" href="{{ url_for('db_admin.index') }}">
+                    <i class="fas fa-database"></i> Database Explorer
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+<!-- Admin Content -->
+<div class="admin-content">
+    {% block admin_content %}
+    <div class="card admin-card">
+        <div class="card-body">
+            {% block admin_body %}{% endblock %}
+        </div>
+    </div>
+    {% endblock %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Admin-specific JavaScript can go here
+    console.log('Admin panel loaded');
+</script>
+{% block admin_js %}{% endblock %}
+{% endblock %}
