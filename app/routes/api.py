@@ -145,9 +145,13 @@ def get_scan_status(scan_id):
         if output_dir and output_dir.exists():
             processed_file = output_dir / f"{plugin}_processed.json"
             raw_file = output_dir / f"{plugin}.json"
+            txt_file = output_dir / f"{plugin}.txt"
+            log_file = output_dir / f"{plugin}_plugin.log"
             
             logger.debug(f"  Checking processed file: {processed_file.name} -> exists={processed_file.exists()}")
             logger.debug(f"  Checking raw file: {raw_file.name} -> exists={raw_file.exists()}")
+            logger.debug(f"  Checking txt file: {txt_file.name} -> exists={txt_file.exists()}")
+            logger.debug(f"  Checking log file: {log_file.name} -> exists={log_file.exists()}")
             
             if processed_file.exists():
                 # Plugin completed
@@ -160,10 +164,10 @@ def get_scan_status(scan_id):
                     logger.debug(f"  Database data: {db_results[plugin]['findings_count']} findings")
                 else:
                     logger.debug(f"  No database entry found for this plugin yet")
-            elif raw_file.exists():
-                # Plugin in progress
+            elif raw_file.exists() or txt_file.exists() or log_file.exists():
+                # Plugin in progress - check for any file indicating execution
                 plugin_status['status'] = 'in_progress'
-                logger.debug(f"  Status: IN_PROGRESS (raw file exists, no processed file)")
+                logger.debug(f"  Status: IN_PROGRESS (found intermediate files)")
             else:
                 # Status remains 'pending'
                 logger.debug(f"  Status: PENDING (no files found)")
