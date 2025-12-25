@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField, PasswordField
+from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField, PasswordField, TextAreaField
 from wtforms.validators import DataRequired, Regexp, Length, NumberRange, Email, EqualTo, ValidationError
 from wtforms.widgets import CheckboxInput, ListWidget
 
@@ -82,6 +82,24 @@ class ScanConfigForm(FlaskForm):
         coerce=int,
         choices=[],  # Will be populated dynamically
         render_kw={'class': 'form-select'}
+    )
+    
+    config_profile_id = SelectField(
+        'Configuration Profile',
+        coerce=int,
+        choices=[],  # Will be populated dynamically based on user role
+        render_kw={'class': 'form-select'}
+    )
+    
+    config_overrides = StringField(
+        'Configuration Overrides (Advanced)',
+        validators=[
+            Length(max=1000, message='Overrides must not exceed 1000 characters')
+        ],
+        render_kw={
+            'placeholder': 'e.g., plugins.katana.rate_limit=50,plugins.ftap.concurrency=5',
+            'class': 'form-control font-monospace'
+        }
     )
     
     submit = SubmitField('Start Scan', render_kw={'class': 'btn btn-primary btn-lg'})
@@ -340,7 +358,6 @@ class ImportScanForm(FlaskForm):
 
 class ScanConfigProfileForm(FlaskForm):
     """Form for creating/editing scan configuration profiles"""
-    from wtforms import TextAreaField
     
     name = StringField(
         'Profile Name',

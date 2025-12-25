@@ -32,6 +32,9 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
     """
     from flask import current_app
     from app.utils import get_logo_for_scan
+    from app.models import ScanConfigProfile
+    import tempfile
+    import yaml
     
     try:
         # Get scan from database
@@ -83,9 +86,51 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         scan.execution_log_path = str(log_file_path)
         db.session.commit()
         
+        # Handle config profile if specified
+        config_file_path = None
+        temp_config_fd = None
+        
+        if scan.config_profile_id:
+            profile = db.session.get(ScanConfigProfile, scan.config_profile_id)
+            if profile:
+                current_app.logger.info(f"Using config profile: {profile.name} (ID: {profile.id})")
+                
+                # Create temporary config file
+                temp_config_fd, config_file_path = tempfile.mkstemp(suffix='.yaml', prefix='kast_config_')
+                
+                try:
+                    # Write profile YAML to temp file
+                    with os.fdopen(temp_config_fd, 'w') as f:
+                        f.write(profile.config_yaml)
+                    temp_config_fd = None  # Mark as handled
+                    
+                    current_app.logger.info(f"Created temporary config file: {config_file_path}")
+                except Exception as e:
+                    current_app.logger.error(f"Error creating config file: {e}")
+                    if temp_config_fd:
+                        os.close(temp_config_fd)
+                    if config_file_path and os.path.exists(config_file_path):
+                        os.unlink(config_file_path)
+                    config_file_path = None
+            else:
+                current_app.logger.warning(f"Config profile ID {scan.config_profile_id} not found")
+        
         # Build command
         kast_cli = current_app.config['KAST_CLI_PATH']
         cmd = [kast_cli, '-t', target, '-m', scan_mode, '--format', 'both']
+        
+        # Add config file if we created one
+        if config_file_path:
+            cmd.extend(['--config', config_file_path])
+            current_app.logger.info(f"Added --config argument: {config_file_path}")
+        
+        # Add config overrides if specified (power users/admins only)
+        if scan.config_overrides:
+            # Parse comma-separated overrides: "key1=value1,key2=value2"
+            overrides = [o.strip() for o in scan.config_overrides.split(',') if o.strip()]
+            for override in overrides:
+                cmd.extend(['--set', override])
+            current_app.logger.info(f"Added {len(overrides)} config override(s): {overrides}")
         
         # Add logo if available
         logo_path = get_logo_for_scan(scan)
@@ -296,6 +341,15 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         scan.completed_at = datetime.utcnow()
         db.session.commit()
         return {'success': False, 'error': str(e)}
+    
+    finally:
+        # Clean up temporary config file if it was created
+        if config_file_path and os.path.exists(config_file_path):
+            try:
+                os.unlink(config_file_path)
+                current_app.logger.info(f"Cleaned up temporary config file: {config_file_path}")
+            except Exception as e:
+                current_app.logger.warning(f"Could not delete temporary config file: {e}")
 
 
 def parse_scan_results(scan_id, output_dir):

@@ -80,7 +80,7 @@
                         </dd>
 
                         <dt class="col-sm-3">Usage:</dt>
-                        <dd class="col-sm-9">Used in {{ profile.scans.count() }} scan(s)</dd>
+                        <dd class="col-sm-9">Used in {{ profile.scans|length }} scan(s)</dd>
                     </dl>
                 </div>
             </div>
@@ -150,7 +150,7 @@ function copyToClipboard() {
 }
 
 function deleteProfile() {
-    if (confirm('Are you sure you want to delete this configuration profile?\n\nThis action cannot be undone.{% if profile.scans.count() > 0 %}\n\nNote: This profile is currently used by {{ profile.scans.count() }} scan(s) and cannot be deleted.{% endif %}')) {
+    if (confirm('Are you sure you want to delete this configuration profile?\n\nThis action cannot be undone.{% if profile.scans|length > 0 %}\n\nNote: This profile is currently used by {{ profile.scans|length }} scan(s) and cannot be deleted.{% endif %}')) {
         document.getElementById('deleteForm').submit();
     }
 }

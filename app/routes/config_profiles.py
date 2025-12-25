@@ -171,8 +171,9 @@ def delete_profile(profile_id):
     profile = ScanConfigProfile.query.get_or_404(profile_id)
     
     # Check if profile is in use
-    if profile.scans.count() > 0:
-        flash(f'Cannot delete profile "{profile.name}" as it is being used by {profile.scans.count()} scan(s).', 'danger')
+    scan_count = len(profile.scans)
+    if scan_count > 0:
+        flash(f'Cannot delete profile "{profile.name}" as it is being used by {scan_count} scan(s).', 'danger')
         return redirect(url_for('config_profiles.view_profile', profile_id=profile.id))
     
     profile_name = profile.name

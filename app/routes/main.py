@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, current_app
 from flask_login import login_required, current_user
 from app import db
-from app.models import Scan, ReportLogo, SystemSettings
+from app.models import Scan, ReportLogo, SystemSettings, ScanConfigProfile
 from app.forms import ScanConfigForm
 from app.utils import get_available_plugins
 from app.tasks import execute_scan_task
@@ -28,6 +28,27 @@ def index():
     for logo in logos:
         logo_choices.append((logo.id, logo.name))
     form.logo_id.choices = logo_choices
+    
+    # Populate config profile choices based on user role
+    if current_user.is_power_user or current_user.is_admin:
+        # Power users and admins see all profiles
+        profiles = ScanConfigProfile.query.order_by(ScanConfigProfile.name).all()
+    else:
+        # Standard users only see profiles that allow standard users
+        profiles = ScanConfigProfile.query.filter_by(allow_standard_users=True).order_by(ScanConfigProfile.name).all()
+    
+    profile_choices = [(0, 'No Profile (Use Basic Settings)')]  # 0 means no profile
+    for profile in profiles:
+        label = profile.name
+        if profile.is_system_default:
+            label += ' (System Default)'
+        profile_choices.append((profile.id, label))
+    form.config_profile_id.choices = profile_choices
+    
+    # Set default selection to system default profile if one exists
+    default_profile = ScanConfigProfile.query.filter_by(is_system_default=True).first()
+    if default_profile:
+        form.config_profile_id.data = default_profile.id
     
     # Get recent scans for display (user's own scans unless admin)
     if current_user.is_admin:
@@ -59,6 +80,20 @@ def create_scan():
         logo_choices.append((logo.id, logo.name))
     form.logo_id.choices = logo_choices
     
+    # Populate config profile choices for validation
+    if current_user.is_power_user or current_user.is_admin:
+        profiles = ScanConfigProfile.query.order_by(ScanConfigProfile.name).all()
+    else:
+        profiles = ScanConfigProfile.query.filter_by(allow_standard_users=True).order_by(ScanConfigProfile.name).all()
+    
+    profile_choices = [(0, 'No Profile (Use Basic Settings)')]
+    for profile in profiles:
+        label = profile.name
+        if profile.is_system_default:
+            label += ' (System Default)'
+        profile_choices.append((profile.id, label))
+    form.config_profile_id.choices = profile_choices
+    
     if form.validate_on_submit():
         # Check if user is allowed to run active scans
         if form.scan_mode.data == 'active' and not current_user.can_run_active_scans:
@@ -80,6 +115,23 @@ def create_scan():
         # Handle logo selection (0 means use system default, so store as None)
         logo_id = form.logo_id.data if form.logo_id.data and form.logo_id.data != 0 else None
         
+        # Handle config profile selection
+        config_profile_id = form.config_profile_id.data if form.config_profile_id.data and form.config_profile_id.data != 0 else None
+        
+        # Validate that standard users can only use profiles that allow them
+        if config_profile_id and not (current_user.is_power_user or current_user.is_admin):
+            profile = ScanConfigProfile.query.get(config_profile_id)
+            if profile and not profile.allow_standard_users:
+                flash('You do not have permission to use this configuration profile.', 'danger')
+                return redirect(url_for('main.index'))
+        
+        # Handle config overrides (only for power users and admins)
+        config_overrides = None
+        if form.config_overrides.data and (current_user.is_power_user or current_user.is_admin):
+            config_overrides = form.config_overrides.data.strip()
+        elif form.config_overrides.data and not (current_user.is_power_user or current_user.is_admin):
+            flash('Only Power Users and Admins can use configuration overrides.', 'warning')
+        
         # Create scan record (assign to current user)
         scan = Scan(
             user_id=current_user.id,
@@ -90,6 +142,8 @@ def create_scan():
             verbose=form.verbose.data,
             dry_run=form.dry_run.data,
             logo_id=logo_id,
+            config_profile_id=config_profile_id,
+            config_overrides=config_overrides,
             status='pending',
             config_json=json.dumps({
                 'target': form.target.data,
@@ -99,7 +153,9 @@ def create_scan():
                 'verbose': form.verbose.data,
                 'dry_run': form.dry_run.data,
                 'max_workers': form.max_workers.data,
-                'logo_id': logo_id
+                'logo_id': logo_id,
+                'config_profile_id': config_profile_id,
+                'config_overrides': config_overrides
             })
         )
         

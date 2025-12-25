@@ -99,10 +99,10 @@
                 </div>
             </div>
 
-            {% if profile.scans.count() > 0 %}
+            {% if profile.scans|length > 0 %}
             <div class="alert alert-warning mt-3">
                 <i class="fas fa-exclamation-triangle"></i> 
-                <strong>Note:</strong> This profile is currently used by {{ profile.scans.count() }} scan(s). 
+                <strong>Note:</strong> This profile is currently used by {{ profile.scans|length }} scan(s). 
                 Changes will not affect existing scans, but will be used for new scans that select this profile.
             </div>
             {% endif %}
@@ -127,7 +127,7 @@
                         {% endif %}
 
                         <dt class="col-sm-6">Usage:</dt>
-                        <dd class="col-sm-6">{{ profile.scans.count() }} scan(s)</dd>
+                        <dd class="col-sm-6">{{ profile.scans|length }} scan(s)</dd>
                     </dl>
                 </div>
             </div>

@@ -190,6 +190,40 @@
                         </div>
                     </div>
 
+                    <!-- Configuration Profile -->
+                    <div class="mb-3">
+                        {{ form.config_profile_id.label(class="form-label fw-bold") }}
+                        {{ form.config_profile_id(class="form-select", id="config_profile_select") }}
+                        <div class="form-text">
+                            Select a predefined configuration profile for this scan
+                            {% if current_user.is_power_user or current_user.is_admin %}
+                                <a href="{{ url_for('config_profiles.list_profiles') }}" class="ms-2" target="_blank">
+                                    <i class="bi bi-box-arrow-up-right"></i> Manage Profiles
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if current_user.is_power_user or current_user.is_admin %}
+                    <!-- Configuration Overrides (Power Users & Admins Only) -->
+                    <div class="mb-3">
+                        {{ form.config_overrides.label(class="form-label fw-bold") }}
+                        <span class="badge bg-warning text-dark ms-2">Power User</span>
+                        {{ form.config_overrides(class="form-control font-monospace") }}
+                        {% if form.config_overrides.errors %}
+                            <div class="text-danger small mt-1">
+                                {% for error in form.config_overrides.errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">
+                            Override specific settings from the selected profile. Format: <code>key1=value1,key2=value2</code><br>
+                            Example: <code>plugins.katana.rate_limit=50,plugins.ftap.concurrency=5</code>
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <!-- Advanced Options -->
                     <div class="card mb-3">
                         <div class="card-header">

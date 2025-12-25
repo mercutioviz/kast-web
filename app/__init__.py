@@ -64,6 +64,13 @@ def create_app(config_name='default'):
         from config import VERSION
         return {'app_version': VERSION}
     
+    # Context processor to inject CSRF token function into all templates
+    @app.context_processor
+    def inject_csrf_token():
+        """Make CSRF token generation available to all templates"""
+        from flask_wtf.csrf import generate_csrf
+        return {'csrf_token': generate_csrf}
+    
     # Register blueprints
     from app.routes import main, scans, api, auth, admin, logos, config_profiles
     app.register_blueprint(main.bp)
