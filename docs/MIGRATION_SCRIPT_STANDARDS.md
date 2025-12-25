@@ -1,347 +1,595 @@
-# Migration Script Standards for KAST-Web
+# Migration Script Standards
 
-This document outlines best practices for creating database migration scripts in KAST-Web, ensuring they work correctly in both interactive and automated contexts.
+This document defines the standards for all database migration scripts in the KAST-Web project to ensure consistency, reliability, and compatibility with automated installation/update processes.
 
 ## Overview
 
-Migration scripts in the `utils/` directory are used to update the database schema. These scripts must work correctly when:
-- Run manually by developers (interactive mode)
-- Run automatically during installation (non-interactive mode)
-- Run in CI/CD pipelines or cron jobs
+Migration scripts are located in the `utils/` directory and are automatically executed during installation and updates. They must support both interactive and non-interactive execution modes.
 
-## Non-Interactive Mode Detection
+## File Naming Convention
 
-### The Problem
+- **Pattern**: `migrate_<feature_name>.py`
+- **Examples**: 
+  - `migrate_scan_configs.py`
+  - `migrate_email_feature.py`
+  - `migrate_logo_feature.py`
 
-Interactive prompts (like `input()`) will cause migration scripts to hang when run in automated contexts where stdin is not available or is redirected to a log file.
+## Required Features
 
-### The Solution
+All migration scripts MUST include:
 
-Use Python's `sys.stdin.isatty()` **AND** `sys.stdout.isatty()` to detect if the script is running in an interactive terminal. Checking both ensures proper detection even when output is redirected during installation:
+1. **Non-interactive mode support**
+2. **Idempotent operations** (safe to run multiple times)
+3. **Proper error handling**
+4. **Clear status messages**
+5. **Rollback capability** (where applicable)
 
-```python
-import sys
-
-# Check if running in an interactive environment
-# Check both stdin and stdout to handle redirected output during installation
-is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
-
-if not is_interactive:
-    # Non-interactive mode: skip prompts, use safe defaults
-    print("  Running in non-interactive mode - skipping re-migration")
-    return
-else:
-    # Interactive mode: prompt user for input
-    response = input("Do you want to continue anyway? (y/N): ")
-    if response.lower() != 'y':
-        print("Migration cancelled.")
-        return
-```
-
-**Why check both stdin AND stdout?**
-During installation, the install.sh script redirects output like this:
-```bash
-python3 "$migration" >> "$LOG_FILE" 2>&1
-```
-
-This redirects stdout and stderr to a log file, but stdin might still be attached to a TTY. By checking both `stdin.isatty()` and `stdout.isatty()`, we ensure proper non-interactive detection regardless of how the script is invoked.
-
-## Standard Migration Script Template
-
-All migration scripts should follow this pattern:
+## Standard Template
 
 ```python
 #!/usr/bin/env python3
 """
-Migration script description.
+Migration script for [Feature Name]
+
+This migration:
+1. [Action 1]
+2. [Action 2]
+3. [Action 3]
+
+Run this script after backing up your database.
 
 Usage:
-    python3 utils/migrate_example.py
-
-Changes:
-    - List of changes this migration makes
-
-Non-Interactive Mode:
-    When run in an automated context, the script automatically detects
-    non-interactive environments and skips prompts.
+  python3 migrate_feature.py [--non-interactive]
+  python3 migrate_feature.py rollback [--non-interactive]
 """
 
-import sys
 import os
+import sys
+import argparse
+from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add parent directory to path to import app
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app import create_app, db
-from sqlalchemy import text
+from app.models import YourModels
+from sqlalchemy import text, inspect
 
-def migrate():
-    """Run the migration"""
+
+def is_interactive():
+    """
+    Check if running in interactive mode.
+    Returns False if:
+    - --non-interactive flag is passed
+    - NON_INTERACTIVE environment variable is set
+    - stdin is not a TTY
+    """
+    # Check command-line flag
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--non-interactive', action='store_true')
+    args, _ = parser.parse_known_args()
+    
+    if args.non_interactive:
+        return False
+    
+    # Check environment variable
+    if os.environ.get('NON_INTERACTIVE', '').lower() in ('1', 'true', 'yes'):
+        return False
+    
+    # Check if stdin is a TTY
+    return sys.stdin.isatty()
+
+
+def run_migration():
+    """Execute the migration"""
     app = create_app()
+    interactive = is_interactive()
     
     with app.app_context():
-        print("="*80)
-        print("KAST-Web Example Migration")
-        print("="*80)
+        print("=" * 60)
+        print("KAST-Web [Feature Name] Migration")
+        print("=" * 60)
         print()
         
-        try:
-            # Check if migration has already been applied
-            # (Check for specific column, table, or data condition)
+        # Check if migration already applied
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        if 'target_table' in existing_tables:
+            print("⚠️  WARNING: target_table already exists!")
             
-            if migration_already_applied:
-                print("✓ Migration already applied")
-                
-                # Non-interactive mode detection
-                if not sys.stdin.isatty():
-                    print("  Running in non-interactive mode - skipping")
-                    print()
-                    print("="*80)
-                    print("Migration skipped (already applied)")
-                    print("="*80)
-                    return
-                
-                # Interactive prompt
-                print()
-                response = input("Do you want to continue anyway? (y/N): ")
-                if response.lower() != 'y':
+            if interactive:
+                response = input("Do you want to continue anyway? (yes/no): ")
+                if response.lower() != 'yes':
                     print("Migration cancelled.")
                     return
-            
-            # Perform migration steps
-            print("Applying migration...")
-            
-            # Your migration code here
-            
-            # Commit changes
-            db.session.commit()
-            
-            print("="*80)
-            print("Migration completed successfully!")
-            print("="*80)
-            print()
-            
+            else:
+                print("ℹ️  Non-interactive mode: Checking if migration needed...")
+                # Check if migration is actually complete
+                existing_data = db.session.execute(
+                    text("SELECT COUNT(*) FROM target_table")
+                ).scalar()
+                
+                if existing_data > 0:
+                    print(f"✓ Found {existing_data} existing records. Skipping migration.")
+                    return
+                else:
+                    print("ℹ️  Table exists but empty. Proceeding...")
+        
+        # Perform migration steps
+        print("Step 1: Creating tables...")
+        try:
+            db.create_all()
+            print("✓ Tables created successfully")
         except Exception as e:
+            print(f"✗ Error creating tables: {e}")
             db.session.rollback()
-            print()
-            print("="*80)
-            print("ERROR: Migration failed!")
-            print("="*80)
-            print(f"Error: {str(e)}")
-            print()
-            print("The database has been rolled back.")
-            sys.exit(1)
+            return
+        
+        # Additional steps...
+        
+        print("\n" + "=" * 60)
+        print("✅ Migration completed successfully!")
+        print("=" * 60)
+
+
+def rollback_migration():
+    """Rollback the migration (if applicable)"""
+    app = create_app()
+    interactive = is_interactive()
+    
+    with app.app_context():
+        print("=" * 60)
+        print("KAST-Web [Feature Name] Migration ROLLBACK")
+        print("=" * 60)
+        print()
+        print("⚠️  WARNING: This will [describe what will be removed]!")
+        print()
+        
+        if interactive:
+            response = input("Are you sure you want to rollback? (yes/no): ")
+            if response.lower() != 'yes':
+                print("Rollback cancelled.")
+                return
+        else:
+            print("⚠️  Non-interactive mode: Proceeding with rollback...")
+        
+        # Perform rollback...
+        
+        print("\n" + "=" * 60)
+        print("✅ Rollback completed!")
+        print("=" * 60)
+
 
 if __name__ == '__main__':
-    migrate()
+    if len(sys.argv) > 1 and sys.argv[1] == 'rollback':
+        rollback_migration()
+    else:
+        run_migration()
 ```
 
-## Key Points
+## Non-Interactive Mode Implementation
 
-### 1. Always Check if Migration Already Applied
-
-Before making changes, check if the migration has already been run:
+### 1. Detection Function
 
 ```python
-# For SQLite
-result = db.session.execute(text("PRAGMA table_info(table_name)"))
-columns = [row[1] for row in result]
-if 'new_column' in columns:
-    # Already applied
+def is_interactive():
+    """
+    Check if running in interactive mode.
+    Priority order:
+    1. Command-line flag (--non-interactive)
+    2. Environment variable (NON_INTERACTIVE)
+    3. TTY detection (sys.stdin.isatty())
+    """
+    # Check command-line flag
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--non-interactive', action='store_true')
+    args, _ = parser.parse_known_args()
+    
+    if args.non_interactive:
+        return False
+    
+    # Check environment variable
+    if os.environ.get('NON_INTERACTIVE', '').lower() in ('1', 'true', 'yes'):
+        return False
+    
+    # Check if stdin is a TTY
+    return sys.stdin.isatty()
 ```
 
+### 2. Handling User Input
+
+**Interactive Mode:**
 ```python
-# For checking if a table exists (works for all DB types)
-from sqlalchemy import inspect
-inspector = inspect(db.engine)
-if 'new_table' in inspector.get_table_names():
-    # Already applied
+if interactive:
+    response = input("Continue? (yes/no): ")
+    if response.lower() != 'yes':
+        print("Operation cancelled.")
+        return
 ```
 
-### 2. Always Use TTY Detection for Interactive Prompts
-
+**Non-Interactive Mode:**
 ```python
-if not sys.stdin.isatty():
-    # Non-interactive: safe default behavior
-    return  # or continue with safe defaults
 else:
-    # Interactive: ask user
-    response = input("Continue? (y/N): ")
+    print("ℹ️  Non-interactive mode: Using safe default behavior")
+    # Check if operation is needed
+    if not needs_operation():
+        print("✓ Operation not needed. Skipping.")
+        return
+    print("ℹ️  Proceeding with operation...")
 ```
 
-### 3. Always Provide Clear Output
+## Idempotent Operations
 
-- Use clear section headers with `=` borders
-- Indicate whether migration was applied or skipped
-- Show progress for long operations
-- Provide summary of changes made
+Migrations MUST be idempotent - safe to run multiple times without causing errors or duplicate data.
 
-### 4. Always Handle Errors Gracefully
+### Checking Existing State
+
+```python
+# Check if table exists
+inspector = inspect(db.engine)
+existing_tables = inspector.get_table_names()
+
+if 'new_table' in existing_tables:
+    print("⚠️  Table already exists")
+    # Decide whether to skip or continue
+
+# Check if column exists
+columns = [col['name'] for col in inspector.get_columns('existing_table')]
+if 'new_column' not in columns:
+    # Add column
+else:
+    print("⚠️  Column already exists, skipping")
+
+# Check if data exists
+existing_count = db.session.execute(
+    text("SELECT COUNT(*) FROM table WHERE condition")
+).scalar()
+
+if existing_count > 0:
+    print(f"✓ Found {existing_count} existing records. Skipping data creation.")
+    return
+```
+
+### Creating Tables
+
+```python
+# Use CREATE TABLE IF NOT EXISTS
+db.session.execute(text("""
+    CREATE TABLE IF NOT EXISTS new_table (
+        id INTEGER PRIMARY KEY,
+        ...
+    )
+"""))
+```
+
+### Adding Columns (SQLite)
+
+```python
+# Check before adding
+columns = [col['name'] for col in inspector.get_columns('table_name')]
+
+if 'new_column' not in columns:
+    db.session.execute(text("""
+        ALTER TABLE table_name 
+        ADD COLUMN new_column TYPE
+    """))
+    print("✓ Added new_column")
+else:
+    print("⚠️  new_column already exists")
+```
+
+### Inserting Data
+
+```python
+# Check if record exists before inserting
+existing = db.session.execute(
+    text("SELECT id FROM table WHERE unique_key = :key"),
+    {'key': value}
+).fetchone()
+
+if not existing:
+    # Insert new record
+    db.session.execute(text("INSERT INTO ..."), {...})
+    print("✓ Record created")
+else:
+    print("⚠️  Record already exists, skipping")
+```
+
+## Error Handling
+
+### Database Operations
 
 ```python
 try:
-    # Migration code
+    db.session.execute(text("..."))
     db.session.commit()
+    print("✓ Operation successful")
 except Exception as e:
+    print(f"✗ Error: {e}")
     db.session.rollback()
-    print(f"ERROR: {str(e)}")
-    sys.exit(1)  # Non-zero exit for automation
+    return  # or sys.exit(1) for critical failures
 ```
 
-### 5. Always Set Working Directory
-
-To prevent files being created in the wrong location:
+### File Operations
 
 ```python
-# At the start of migrate()
-os.chdir('/opt/kast-web')  # or use path from config
+try:
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    print(f"✓ Created directory: {directory}")
+except Exception as e:
+    print(f"✗ Error creating directory: {e}")
+    # Decide whether to continue or fail
 ```
 
-## Testing Migration Scripts
+## Status Messages
 
-Test both interactive and non-interactive modes:
-
-### Interactive Mode
-```bash
-# Run directly in terminal
-python3 utils/migrate_example.py
-```
-
-### Non-Interactive Mode
-```bash
-# Simulate automated context (no TTY)
-python3 utils/migrate_example.py < /dev/null
-
-# Or redirect output (like install.sh does)
-python3 utils/migrate_example.py >> /tmp/test.log 2>&1
-```
-
-### Test Idempotency
-```bash
-# Run twice to ensure it handles "already applied" correctly
-python3 utils/migrate_example.py
-python3 utils/migrate_example.py  # Should skip gracefully
-```
-
-## Examples
-
-### Example 1: Adding a Column (Simple)
+Use clear, consistent status messages:
 
 ```python
-# Check if column exists
-result = db.session.execute(text("PRAGMA table_info(scans)"))
-columns = [row[1] for row in result]
+# Info messages
+print("ℹ️  Checking database structure...")
 
-if 'new_field' in columns:
-    print("✓ Column 'new_field' already exists")
-    if not sys.stdin.isatty():
-        print("  Non-interactive mode - skipping")
-        return
-    # ... interactive prompt ...
+# Success messages
+print("✓ Table created successfully")
 
-# Add column
-db.session.execute(text(
-    "ALTER TABLE scans ADD COLUMN new_field VARCHAR(50)"
-))
-db.session.commit()
+# Warning messages
+print("⚠️  WARNING: Table already exists!")
+
+# Error messages
+print("✗ Error: Failed to create table")
+
+# Non-interactive mode messages
+print("ℹ️  Non-interactive mode: Proceeding with defaults...")
 ```
 
-### Example 2: Creating a New Table
+## Testing Checklist
 
-```python
-from sqlalchemy import inspect
+Before committing a migration script, verify:
 
-inspector = inspect(db.engine)
-if 'new_table' in inspector.get_table_names():
-    print("✓ Table 'new_table' already exists")
-    if not sys.stdin.isatty():
-        return
-    # ... interactive prompt ...
+- [ ] **Interactive Mode**: Runs successfully with user prompts
+- [ ] **Non-Interactive Mode**: Runs with `--non-interactive` flag
+- [ ] **Environment Variable**: Respects `NON_INTERACTIVE=1`
+- [ ] **Idempotent**: Can be run multiple times safely
+- [ ] **Fresh Database**: Works on new installation
+- [ ] **Existing Data**: Handles existing tables/columns correctly
+- [ ] **Error Handling**: Gracefully handles failures
+- [ ] **Rollback**: Rollback function works (if provided)
+- [ ] **Status Messages**: Clear output for both modes
+- [ ] **Documentation**: Docstring explains what migration does
 
-# Create table using SQLAlchemy model
-db.create_all()  # Creates only missing tables
-db.session.commit()
-```
+## Integration with Install/Update Scripts
 
-### Example 3: Data Migration
-
-```python
-# Check if data migration already done
-result = db.session.execute(text(
-    "SELECT COUNT(*) FROM users WHERE migrated_flag = 1"
-))
-migrated_count = result.scalar()
-
-if migrated_count > 0:
-    print(f"✓ Data migration already applied ({migrated_count} records)")
-    if not sys.stdin.isatty():
-        return
-    # ... interactive prompt ...
-
-# Perform data migration
-db.session.execute(text("""
-    UPDATE users 
-    SET new_field = old_field, migrated_flag = 1 
-    WHERE migrated_flag = 0
-"""))
-db.session.commit()
-```
-
-## Installation Script Integration
-
-The `install.sh` script runs migrations in non-interactive mode:
+### Install Script (install.sh)
 
 ```bash
-# In initialize_database() function
-for migration in "$INSTALL_DIR"/utils/migrate*.py; do
-    if [[ -f "$migration" ]]; then
-        print_info "Running migration: $(basename "$migration")"
-        python3 "$migration" >> "$LOG_FILE" 2>&1 || true
-    fi
-done
+# Run database migrations if they exist
+if [[ -d "$INSTALL_DIR/utils" ]]; then
+    print_info "Running database migrations..."
+    
+    # Set environment variable for non-interactive mode
+    export NON_INTERACTIVE=1
+    
+    for migration in "$INSTALL_DIR"/utils/migrate*.py; do
+        if [[ -f "$migration" ]]; then
+            print_info "Running migration: $(basename "$migration")"
+            # Pass --non-interactive flag to all migration scripts
+            python3 "$migration" --non-interactive >> "$LOG_FILE" 2>&1 || true
+        fi
+    done
+    
+    # Unset the environment variable
+    unset NON_INTERACTIVE
+fi
 ```
 
-Key points:
-- Output is redirected to log file (triggers non-interactive mode)
-- `|| true` ensures failure doesn't stop installation
-- Migrations run in alphabetical order
+### Update Script (update.sh)
+
+```bash
+# Run migration scripts if they exist
+if [[ -d "$INSTALL_DIR/utils" ]]; then
+    # Set environment variable for non-interactive mode
+    export NON_INTERACTIVE=1
+    
+    MIGRATION_COUNT=0
+    for migration in "$INSTALL_DIR"/utils/migrate*.py; do
+        if [[ -f "$migration" ]]; then
+            print_info "Running migration: $(basename "$migration")"
+            # Pass --non-interactive flag to all migration scripts
+            if python3 "$migration" --non-interactive >> "$LOG_FILE" 2>&1; then
+                print_success "Migration completed: $(basename "$migration")"
+                ((MIGRATION_COUNT++))
+            else
+                print_warning "Migration had issues: $(basename "$migration") (continuing)"
+            fi
+        fi
+    done
+    
+    # Unset the environment variable
+    unset NON_INTERACTIVE
+fi
+```
+
+## Common Patterns
+
+### Pattern 1: Simple Table Creation
+
+```python
+def run_migration():
+    app = create_app()
+    interactive = is_interactive()
+    
+    with app.app_context():
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        if 'new_table' in existing_tables:
+            if interactive:
+                response = input("Table exists. Continue? (yes/no): ")
+                if response.lower() != 'yes':
+                    return
+            else:
+                print("ℹ️  Table exists. Skipping migration.")
+                return
+        
+        db.create_all()
+        print("✓ Tables created")
+```
+
+### Pattern 2: Column Addition
+
+```python
+def run_migration():
+    app = create_app()
+    interactive = is_interactive()
+    
+    with app.app_context():
+        inspector = inspect(db.engine)
+        columns = [col['name'] for col in inspector.get_columns('existing_table')]
+        
+        if 'new_column' not in columns:
+            db.session.execute(text("""
+                ALTER TABLE existing_table 
+                ADD COLUMN new_column TEXT
+            """))
+            db.session.commit()
+            print("✓ Column added")
+        else:
+            print("⚠️  Column already exists. Skipping.")
+```
+
+### Pattern 3: Data Population
+
+```python
+def run_migration():
+    app = create_app()
+    interactive = is_interactive()
+    
+    with app.app_context():
+        # Check if data exists
+        count = db.session.execute(
+            text("SELECT COUNT(*) FROM table")
+        ).scalar()
+        
+        if count > 0:
+            if interactive:
+                response = input(f"Found {count} records. Add more? (yes/no): ")
+                if response.lower() != 'yes':
+                    return
+            else:
+                print(f"✓ Found {count} existing records. Skipping.")
+                return
+        
+        # Insert data...
+        print("✓ Data populated")
+```
+
+## Best Practices
+
+1. **Always check before creating**: Use `IF NOT EXISTS` or check existence first
+2. **Use transactions**: Wrap related operations in try-except with rollback
+3. **Provide clear feedback**: Use emoji prefixes (✓ ⚠️ ✗ ℹ️) for status
+4. **Handle both modes**: Support interactive and non-interactive execution
+5. **Be defensive**: Assume migrations may run multiple times
+6. **Log important actions**: Use print statements for audit trail
+7. **Test thoroughly**: Verify on fresh DB and existing DB
+8. **Document changes**: Update relevant docs when adding migrations
+
+## Rollback Considerations
+
+Not all migrations can be safely rolled back. When implementing rollback:
+
+1. **Document what gets deleted**: Clearly state in warnings
+2. **Require confirmation**: In interactive mode, ask for explicit "yes"
+3. **Handle dependencies**: Check for foreign key constraints
+4. **Backup data**: Suggest backup before rollback
+5. **SQLite limitations**: Note that SQLite doesn't support DROP COLUMN
+
+```python
+def rollback_migration():
+    app = create_app()
+    interactive = is_interactive()
+    
+    with app.app_context():
+        print("⚠️  WARNING: This will delete all [feature] data!")
+        print("⚠️  This action cannot be undone!")
+        print()
+        
+        if interactive:
+            print("Please type 'DELETE ALL DATA' to confirm:")
+            response = input("> ")
+            if response != 'DELETE ALL DATA':
+                print("Rollback cancelled.")
+                return
+        else:
+            print("⚠️  Non-interactive mode: Proceeding with rollback...")
+        
+        # Perform rollback operations...
+```
 
 ## Troubleshooting
 
-### Migration Hangs During Installation
+### Common Issues
 
-**Cause:** Interactive prompt waiting for input
-**Solution:** Add `sys.stdin.isatty()` check before any `input()` calls
+**Issue**: Migration hangs during automated install
+- **Cause**: Interactive prompt waiting for input
+- **Solution**: Ensure `is_interactive()` detects non-interactive mode
 
-### Migration Runs Twice
+**Issue**: Migration creates duplicate data
+- **Cause**: Not checking if data already exists
+- **Solution**: Always check before inserting
 
-**Cause:** No check for "already applied" condition
-**Solution:** Add detection at start of migration
+**Issue**: Migration fails on SQLite
+- **Cause**: Using unsupported SQL operations
+- **Solution**: Use SQLite-compatible syntax, check docs
 
-### Files Created in Wrong Location
+**Issue**: Migration fails with permission error
+- **Cause**: Database file ownership/permissions
+- **Solution**: Ensure proper ownership (www-data:www-data)
 
-**Cause:** Working directory not set
-**Solution:** Use `os.chdir()` or absolute paths
+## Migration Script Checklist
 
-## References
+Use this checklist when creating a new migration:
 
-- Python `sys.stdin.isatty()` documentation
-- SQLAlchemy inspection API
-- KAST-Web migration examples in `utils/`
+```markdown
+## Migration Script Checklist
 
-## Checklist for New Migration Scripts
-
-- [ ] Follows template structure
-- [ ] Checks if migration already applied
-- [ ] Uses `sys.stdin.isatty()` for any interactive prompts
-- [ ] Sets working directory if needed
-- [ ] Has clear error handling and rollback
-- [ ] Tested in both interactive and non-interactive modes
+- [ ] Added `is_interactive()` function
+- [ ] Supports `--non-interactive` flag
+- [ ] Respects `NON_INTERACTIVE` environment variable
+- [ ] Checks for existing tables/columns before creating
+- [ ] Handles existing data gracefully
+- [ ] Provides clear status messages
+- [ ] Includes proper error handling with rollback
+- [ ] Has informative docstring with usage examples
+- [ ] Tested in interactive mode
+- [ ] Tested in non-interactive mode
+- [ ] Tested on fresh database
+- [ ] Tested on database with existing data
 - [ ] Tested running twice (idempotent)
-- [ ] Documentation updated (this file, README, etc.)
-- [ ] Added to version control
+- [ ] Rollback function provided (if applicable)
+- [ ] Updated this documentation if new patterns added
+```
 
----
+## Future Considerations
 
-**Last Updated:** December 2025  
-**Author:** KAST-Web Development Team
+As the project evolves, consider:
+
+1. **Migration versioning**: Track which migrations have been applied
+2. **Migration dependencies**: Specify which migrations must run first
+3. **Migration history table**: Record when each migration ran
+4. **Automated testing**: CI/CD tests for all migrations
+5. **Migration rollback tracking**: Keep history of rollbacks
+
+## Reference Examples
+
+See these existing migrations for reference:
+
+- **Simple table creation**: `migrate_phase3.py`
+- **Column addition**: `migrate_logo_feature.py`
+- **Data population**: `migrate_email_feature.py`
+- **Complex migration**: `migrate_scan_configs.py` (includes rollback)
+
+## Conclusion
+
+Following these standards ensures that all migration scripts work reliably in both interactive and automated deployment scenarios. This consistency makes the installation and update process more robust and maintainable.

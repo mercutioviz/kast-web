@@ -8,10 +8,15 @@ This migration:
 3. Creates three preset configuration profiles (Standard, Stealth, Aggressive)
 
 Run this script after backing up your database.
+
+Usage:
+  python3 migrate_scan_configs.py [--non-interactive]
+  python3 migrate_scan_configs.py rollback [--non-interactive]
 """
 
 import os
 import sys
+import argparse
 from pathlib import Path
 
 # Add parent directory to path to import app
@@ -20,6 +25,30 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app import create_app, db
 from app.models import User
 from sqlalchemy import text
+
+
+def is_interactive():
+    """
+    Check if running in interactive mode.
+    Returns False if:
+    - --non-interactive flag is passed
+    - NON_INTERACTIVE environment variable is set
+    - stdin is not a TTY
+    """
+    # Check command-line flag
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--non-interactive', action='store_true')
+    args, _ = parser.parse_known_args()
+    
+    if args.non_interactive:
+        return False
+    
+    # Check environment variable
+    if os.environ.get('NON_INTERACTIVE', '').lower() in ('1', 'true', 'yes'):
+        return False
+    
+    # Check if stdin is a TTY
+    return sys.stdin.isatty()
 
 # Preset configuration templates
 PRESET_CONFIGS = {
@@ -201,6 +230,7 @@ plugins:
 def run_migration():
     """Execute the migration"""
     app = create_app()
+    interactive = is_interactive()
     
     with app.app_context():
         print("=" * 60)
@@ -214,10 +244,24 @@ def run_migration():
         
         if 'scan_config_profiles' in existing_tables:
             print("⚠️  WARNING: scan_config_profiles table already exists!")
-            response = input("Do you want to continue anyway? (yes/no): ")
-            if response.lower() != 'yes':
-                print("Migration cancelled.")
-                return
+            
+            if interactive:
+                response = input("Do you want to continue anyway? (yes/no): ")
+                if response.lower() != 'yes':
+                    print("Migration cancelled.")
+                    return
+            else:
+                print("ℹ️  Non-interactive mode: Checking for existing profiles...")
+                # In non-interactive mode, check if we need to do anything
+                existing_profiles = db.session.execute(
+                    text("SELECT COUNT(*) FROM scan_config_profiles")
+                ).scalar()
+                
+                if existing_profiles > 0:
+                    print(f"✓ Found {existing_profiles} existing profiles. Skipping migration.")
+                    return
+                else:
+                    print("ℹ️  Table exists but empty. Proceeding with profile creation...")
         
         print("Step 1: Creating scan_config_profiles table...")
         try:
@@ -333,6 +377,7 @@ def run_migration():
 def rollback_migration():
     """Rollback the migration"""
     app = create_app()
+    interactive = is_interactive()
     
     with app.app_context():
         print("=" * 60)
@@ -342,11 +387,14 @@ def rollback_migration():
         print("⚠️  WARNING: This will delete all scan configuration profiles!")
         print("⚠️  Scans will lose their config_profile_id references!")
         print()
-        response = input("Are you sure you want to rollback? (yes/no): ")
         
-        if response.lower() != 'yes':
-            print("Rollback cancelled.")
-            return
+        if interactive:
+            response = input("Are you sure you want to rollback? (yes/no): ")
+            if response.lower() != 'yes':
+                print("Rollback cancelled.")
+                return
+        else:
+            print("⚠️  Non-interactive mode: Proceeding with rollback...")
         
         print("\nStep 1: Removing columns from scans table...")
         try:

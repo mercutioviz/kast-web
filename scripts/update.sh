@@ -532,11 +532,15 @@ run_migrations() {
     
     # Run migration scripts if they exist
     if [[ -d "$INSTALL_DIR/utils" ]]; then
+        # Set environment variable for non-interactive mode
+        export NON_INTERACTIVE=1
+        
         MIGRATION_COUNT=0
         for migration in "$INSTALL_DIR"/utils/migrate*.py; do
             if [[ -f "$migration" ]]; then
                 print_info "Running migration: $(basename "$migration")"
-                if python3 "$migration" >> "$LOG_FILE" 2>&1; then
+                # Pass --non-interactive flag to all migration scripts
+                if python3 "$migration" --non-interactive >> "$LOG_FILE" 2>&1; then
                     print_success "Migration completed: $(basename "$migration")"
                     ((MIGRATION_COUNT++))
                 else
@@ -544,6 +548,9 @@ run_migrations() {
                 fi
             fi
         done
+        
+        # Unset the environment variable
+        unset NON_INTERACTIVE
         
         if [[ $MIGRATION_COUNT -gt 0 ]]; then
             print_success "Ran $MIGRATION_COUNT migration(s)"

@@ -991,12 +991,19 @@ initialize_database() {
     if [[ -d "$INSTALL_DIR/utils" ]]; then
         print_info "Running database migrations..."
         
+        # Set environment variable for non-interactive mode
+        export NON_INTERACTIVE=1
+        
         for migration in "$INSTALL_DIR"/utils/migrate*.py; do
             if [[ -f "$migration" ]]; then
                 print_info "Running migration: $(basename "$migration")"
-                python3 "$migration" >> "$LOG_FILE" 2>&1 || true
+                # Pass --non-interactive flag to all migration scripts
+                python3 "$migration" --non-interactive >> "$LOG_FILE" 2>&1 || true
             fi
         done
+        
+        # Unset the environment variable
+        unset NON_INTERACTIVE
     fi
     
     # Initialize database tables
