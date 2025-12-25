@@ -1,0 +1,18 @@
+{
+  "plugin-name": "script_detection",
+  "plugin-description": "Detects and analyzes external JavaScript files loaded by the target.",
+  "plugin-display-name": "External Script Detection",
+  "plugin-website-url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script",
+  "timestamp": "2025-12-25T18:04:43.587",
+  "findings": {
+    "name": "script_detection",
+    "timestamp": "2025-12-25T18:04:43.587",
+    "disposition": "fail",
+    "results": "Session.request() got an unexpected keyword argument 'max_redirects'. Did you mean 'allow_redirects'?"
+  },
+  "summary": "Script detection failed: Session.request() got an unexpected keyword argument 'max_redirects'. Did you mean 'allow_redirects'?",
+  "details": "",
+  "issues": [],
+  "executive_summary": "Script detection could not complete: Session.request() got an unexpected keyword argument 'max_redirects'. Did you mean 'allow_redirects'?",
+  "report": "Script detection failed to complete"
+}

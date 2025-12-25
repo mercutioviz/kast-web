@@ -1,0 +1,85 @@
+{
+  "kast_version": "2.9.3",
+  "start_timestamp": "2025-12-25T18:08:23.740249",
+  "end_timestamp": "2025-12-25T18:11:49.358058",
+  "duration_seconds": 205.62,
+  "cli_arguments": {
+    "target": "secure-js.democuda.org",
+    "mode": "passive",
+    "parallel": true,
+    "max_workers": 5,
+    "verbose": true,
+    "output_dir": "/opt/kast-web/kast_results/secure-js.democuda.org-20251225-180823",
+    "run_only": "mozilla_observatory,subfinder,script_detection,wafw00f,whatweb,related_sites,ftap,testssl,katana",
+    "log_dir": "/var/log/kast/",
+    "format": "both",
+    "logo": "/opt/kast-web/app/static/uploads/logos/b4f3d135-9b02-4c64-8707-d9779dbdbe5e-kast-logo.png",
+    "dry_run": false,
+    "report_only": null
+  },
+  "plugins": [
+    {
+      "plugin_name": "wafw00f",
+      "start_timestamp": "2025-12-25T18:08:23.979370",
+      "end_timestamp": "2025-12-25T18:08:28.602800",
+      "duration_seconds": 4.62,
+      "status": "success"
+    },
+    {
+      "plugin_name": "mozilla_observatory",
+      "start_timestamp": "2025-12-25T18:08:23.974355",
+      "end_timestamp": "2025-12-25T18:08:34.038217",
+      "duration_seconds": 10.06,
+      "status": "success"
+    },
+    {
+      "plugin_name": "whatweb",
+      "start_timestamp": "2025-12-25T18:08:23.989439",
+      "end_timestamp": "2025-12-25T18:08:37.895122",
+      "duration_seconds": 13.91,
+      "status": "success"
+    },
+    {
+      "plugin_name": "katana",
+      "start_timestamp": "2025-12-25T18:08:37.903673",
+      "end_timestamp": "2025-12-25T18:08:50.384963",
+      "duration_seconds": 12.48,
+      "status": "success"
+    },
+    {
+      "plugin_name": "script_detection",
+      "start_timestamp": "2025-12-25T18:08:50.388003",
+      "end_timestamp": "2025-12-25T18:08:50.425735",
+      "duration_seconds": 0.04,
+      "status": "fail"
+    },
+    {
+      "plugin_name": "subfinder",
+      "start_timestamp": "2025-12-25T18:08:23.975676",
+      "end_timestamp": "2025-12-25T18:08:51.225081",
+      "duration_seconds": 27.25,
+      "status": "success"
+    },
+    {
+      "plugin_name": "testssl",
+      "start_timestamp": "2025-12-25T18:08:34.045397",
+      "end_timestamp": "2025-12-25T18:08:58.422664",
+      "duration_seconds": 24.38,
+      "status": "success"
+    },
+    {
+      "plugin_name": "related_sites",
+      "start_timestamp": "2025-12-25T18:08:23.987716",
+      "end_timestamp": "2025-12-25T18:10:08.399935",
+      "duration_seconds": 104.41,
+      "status": "success"
+    },
+    {
+      "plugin_name": "ftap",
+      "start_timestamp": "2025-12-25T18:08:28.626668",
+      "end_timestamp": "2025-12-25T18:11:49.355157",
+      "duration_seconds": 200.73,
+      "status": "success"
+    }
+  ]
+}

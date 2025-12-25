@@ -1,0 +1,10 @@
+dvwa-insecure.democuda.org
+insecure.democuda.org
+dvwa-secure.democuda.org
+crapi.democuda.org
+dvwa.democuda.org
+test01.democuda.org
+lab.democuda.org
+secure-js.democuda.org
+secure.democuda.org
+insecure-js.democuda.org

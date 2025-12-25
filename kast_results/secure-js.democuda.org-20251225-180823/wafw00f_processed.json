@@ -1,0 +1,26 @@
+{
+  "plugin-name": "wafw00f",
+  "plugin-description": "Detects and identifies Web Application Firewalls (WAFs) on the target.",
+  "plugin-display-name": "Wafw00f",
+  "plugin-website-url": "https://github.com/EnableSecurity/wafw00f",
+  "timestamp": "2025-12-25T18:08:28.577",
+  "findings": {
+    "name": "wafw00f",
+    "timestamp": "2025-12-25T18:08:28.558",
+    "disposition": "success",
+    "results": [
+      {
+        "detected": true,
+        "firewall": "Barracuda",
+        "manufacturer": "Barracuda Networks",
+        "trigger_url": "https://secure-js.democuda.org/?lyvdwyde=%3Cscript%3Ealert%28%22XSS%22%29%3B%3C%2Fscript%3E&xwzdmyqz=UNION+SELECT+ALL+FROM+information_schema+AND+%22+or+SLEEP%285%29+or+%22&sdcekwil=..%2F..%2Fetc%2Fpasswd",
+        "url": "https://secure-js.democuda.org"
+      }
+    ]
+  },
+  "summary": "Detected 1 WAF(s): Barracuda",
+  "details": "<b>WAF Detected:</b> Barracuda\n<b>Manufacturer:</b> Barracuda Networks\n<b>Test URL:</b> /?lyvdwyde=%3Cscript%3Ealert%28%22XSS%22%29%3B%3C%2Fscript%3E&xwzdmyqz=UNION+SELECT+ALL+FROM+information_schema+AND+%22+or+SLEEP%285%29+or+%22&sdcekwil=..%2F..%2Fetc%2Fpasswd\n<b>Test URL:</b> /?jxjyjvuz=%3Cscript%3Ealert%28%22XSS%22%29%3B%3C%2Fscript%3E\n<b>Trigger URL:</b> https://secure-js.democuda.org/?lyvdwyde=%3Cscript%3Ealert%28%22XSS%22%29%3B%3C%2Fscript%3E&xwzdmyqz=UNION+SELECT+ALL+FROM+information_schema+AND+%22+or+SLEEP%285%29+or+%22&sdcekwil=..%2F..%2Fetc%2Fpasswd",
+  "issues": [],
+  "executive_summary": "Detected WAF: Barracuda.",
+  "report": "<code style=\"color: #00008B; font-family: Consolas, 'Courier New', monospace;\">wafw00f secure-js.democuda.org -a -vvv -T 30 -f json -o /opt/kast-web/kast_results/secure-js.democuda.org-20251225-180823/wafw00f.json</code>"
+}

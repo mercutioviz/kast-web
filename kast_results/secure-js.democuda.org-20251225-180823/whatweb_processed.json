@@ -1,0 +1,173 @@
+{
+  "plugin-name": "whatweb",
+  "plugin-description": "Identifies technologies used by a website.",
+  "plugin-display-name": "WhatWeb",
+  "plugin-website-url": "https://github.com/urbanadventurer/whatweb",
+  "timestamp": "2025-12-25T18:08:37.872",
+  "findings": {
+    "disposition": "success",
+    "results": {
+      "name": "whatweb",
+      "timestamp": "2025-12-25T18:08:23.993",
+      "disposition": "success",
+      "results": [
+        {
+          "target": "http://secure-js.democuda.org/",
+          "http_status": 302,
+          "request_config": {
+            "headers": {
+              "User-Agent": "WhatWeb/0.6.3"
+            }
+          },
+          "plugins": {
+            "Country": {
+              "string": [
+                "UNITED STATES"
+              ],
+              "module": [
+                "US"
+              ]
+            },
+            "IP": {
+              "string": [
+                "135.18.212.153"
+              ]
+            },
+            "RedirectLocation": {
+              "string": [
+                "https://secure-js.democuda.org/"
+              ]
+            }
+          }
+        },
+        {
+          "target": "https://secure-js.democuda.org",
+          "http_status": 200,
+          "request_config": {
+            "headers": {
+              "User-Agent": "WhatWeb/0.6.3"
+            }
+          },
+          "plugins": {
+            "Country": {
+              "string": [
+                "UNITED STATES"
+              ],
+              "module": [
+                "US"
+              ]
+            },
+            "HTML5": {},
+            "IP": {
+              "string": [
+                "135.18.212.153"
+              ]
+            },
+            "JQuery": {
+              "version": [
+                "2.2.4"
+              ]
+            },
+            "Script": {
+              "string": [
+                "module",
+                "text/javascript"
+              ]
+            },
+            "Strict-Transport-Security": {
+              "string": [
+                "max-age=31536000; includeSubDomains; preload"
+              ]
+            },
+            "Title": {
+              "string": [
+                "OWASP Juice Shop"
+              ]
+            },
+            "UncommonHeaders": {
+              "string": [
+                "access-control-allow-origin,feature-policy,x-recruiting,referrer-policy,content-security-policy,x-content-type-options"
+              ]
+            },
+            "X-Frame-Options": {
+              "string": [
+                "SAMEORIGIN, SAMEORIGIN"
+              ]
+            }
+          }
+        },
+        {
+          "target": "https://secure-js.democuda.org/",
+          "http_status": 200,
+          "request_config": {
+            "headers": {
+              "User-Agent": "WhatWeb/0.6.3"
+            }
+          },
+          "plugins": {
+            "Country": {
+              "string": [
+                "UNITED STATES"
+              ],
+              "module": [
+                "US"
+              ]
+            },
+            "HTML5": {},
+            "IP": {
+              "string": [
+                "135.18.212.153"
+              ]
+            },
+            "JQuery": {
+              "version": [
+                "2.2.4"
+              ]
+            },
+            "Script": {
+              "string": [
+                "module",
+                "text/javascript"
+              ]
+            },
+            "Strict-Transport-Security": {
+              "string": [
+                "max-age=31536000; includeSubDomains; preload"
+              ]
+            },
+            "Title": {
+              "string": [
+                "OWASP Juice Shop"
+              ]
+            },
+            "UncommonHeaders": {
+              "string": [
+                "access-control-allow-origin,feature-policy,x-recruiting,referrer-policy,content-security-policy,x-content-type-options"
+              ]
+            },
+            "X-Frame-Options": {
+              "string": [
+                "SAMEORIGIN, SAMEORIGIN"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "summary": [
+    {
+      "http://secure-js.democuda.org - HTTP 302": "Country [UNITED STATES]; IP [135.18.212.153]; RedirectLocation [https://secure-js.democuda.org/]"
+    },
+    {
+      "https://secure-js.democuda.org (#1) - HTTP 200": "Country [UNITED STATES]; IP [135.18.212.153]; JQuery (v2.2.4); Script [module, text/javascript]; Strict-Transport-Security [max-age=31536000; includeSubDomains; preload]; Title [OWASP Juice Shop]; UncommonHeaders [access-control-allow-origin,feature-policy,x-recruiting,referrer-policy,content-security-policy,x-content-type-options]; X-Frame-Options [SAMEORIGIN, SAMEORIGIN]"
+    },
+    {
+      "https://secure-js.democuda.org (#2) - HTTP 200": "Country [UNITED STATES]; IP [135.18.212.153]; JQuery (v2.2.4); Script [module, text/javascript]; Strict-Transport-Security [max-age=31536000; includeSubDomains; preload]; Title [OWASP Juice Shop]; UncommonHeaders [access-control-allow-origin,feature-policy,x-recruiting,referrer-policy,content-security-policy,x-content-type-options]; X-Frame-Options [SAMEORIGIN, SAMEORIGIN]"
+    }
+  ],
+  "details": "",
+  "issues": [],
+  "executive_summary": "",
+  "report": "<code style=\"color: #00008B; font-family: Consolas, 'Courier New', monospace;\">whatweb -a 3 --read-timeout 30 --max-redirects 2 --log-json /opt/kast-web/kast_results/secure-js.democuda.org-20251225-180823/whatweb.json secure-js.democuda.org</code>"
+}

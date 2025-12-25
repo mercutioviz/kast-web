@@ -64,9 +64,10 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         current_app.logger.info(f"Python executable: {os.sys.executable}")
         current_app.logger.info(f"Python version: {os.sys.version}")
         
-        # Generate output directory name
+        # Generate output directory name with absolute path
+        from app.utils import get_kast_results_dir
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_dir = Path(current_app.config['KAST_RESULTS_DIR']) / f"{target}-{timestamp}"
+        output_dir = get_kast_results_dir() / f"{target}-{timestamp}"
         
         # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)

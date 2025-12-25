@@ -65,6 +65,23 @@
                     <h6 class="mb-3">Scan Settings</h6>
                     
                     <div class="mb-3">
+                        <label for="kast_results_root" class="form-label">KAST Results Root Directory</label>
+                        <input type="text" class="form-control" id="kast_results_root" 
+                               name="kast_results_root" 
+                               value="{{ settings.get('kast_results_root', '/opt/kast-web') }}"
+                               placeholder="/opt/kast-web">
+                        <small class="form-text text-muted">
+                            Root directory where <code>kast_results/</code> will be created. Must be an absolute path.
+                        </small>
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-info" id="testKastPermissionsBtn">
+                                <i class="bi bi-shield-check"></i> Test Permissions
+                            </button>
+                        </div>
+                        <div id="kastPermissionsResult" class="mt-2"></div>
+                    </div>
+                    
+                    <div class="mb-3">
                         <label for="max_scan_age_days" class="form-label">Maximum Scan Age (days)</label>
                         <input type="number" class="form-control" id="max_scan_age_days" 
                                name="max_scan_age_days" min="0" max="365"
@@ -263,6 +280,46 @@ document.getElementById('testSmtpBtn').addEventListener('click', function() {
         // Re-enable button
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-plug"></i> Test SMTP Connection';
+    });
+});
+
+document.getElementById('testKastPermissionsBtn').addEventListener('click', function() {
+    const btn = this;
+    const resultDiv = document.getElementById('kastPermissionsResult');
+    
+    // Disable button and show loading
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Testing...';
+    resultDiv.innerHTML = '';
+    
+    // Get form data
+    const formData = new FormData();
+    formData.append('kast_results_root', document.getElementById('kast_results_root').value);
+    
+    // Send test request
+    fetch('{{ url_for("admin.test_kast_permissions") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            let message = data.message;
+            if (data.full_path) {
+                message += '<br><small>Full path: <code>' + data.full_path + '</code></small>';
+            }
+            resultDiv.innerHTML = '<div class="alert alert-success mb-0"><i class="bi bi-check-circle"></i> ' + message + '</div>';
+        } else {
+            resultDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-x-circle"></i> ' + data.message + '</div>';
+        }
+    })
+    .catch(error => {
+        resultDiv.innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-x-circle"></i> Test failed: ' + error + '</div>';
+    })
+    .finally(() => {
+        // Re-enable button
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-shield-check"></i> Test Permissions';
     });
 });
 </script>

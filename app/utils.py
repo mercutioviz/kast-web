@@ -469,6 +469,109 @@ def get_scan_logo_usage_count(logo_id):
 
 
 # ============================================================================
+# KAST RESULTS DIRECTORY MANAGEMENT
+# ============================================================================
+
+def get_kast_results_dir():
+    """
+    Get the absolute path to the kast_results directory based on SystemSettings
+    
+    Returns:
+        Path: Absolute path to kast_results directory
+    """
+    from app.models import SystemSettings
+    
+    # Get configured root directory from settings
+    root_dir = SystemSettings.get_setting('kast_results_root')
+    
+    # If not configured, use default (/opt/kast-web)
+    if not root_dir:
+        root_dir = '/opt/kast-web'
+        current_app.logger.info(f"No kast_results_root configured, using default: {root_dir}")
+    
+    # Build full path to kast_results directory
+    results_dir = Path(root_dir).resolve() / 'kast_results'
+    
+    # Ensure directory exists
+    try:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        current_app.logger.debug(f"Using kast_results directory: {results_dir}")
+    except Exception as e:
+        current_app.logger.error(f"Failed to create kast_results directory {results_dir}: {e}")
+    
+    return results_dir
+
+
+def verify_kast_results_permissions(root_path):
+    """
+    Verify that the Flask app can create and write to kast_results directory
+    
+    Args:
+        root_path: Root directory path (string) where kast_results will be created
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    import tempfile
+    import pwd
+    
+    try:
+        # Validate path is absolute
+        if not os.path.isabs(root_path):
+            return (False, "Path must be absolute (e.g., /opt/kast-web, not ./kast-web)")
+        
+        # Resolve path
+        root = Path(root_path).resolve()
+        results_dir = root / 'kast_results'
+        
+        # Check if root directory exists
+        if not root.exists():
+            return (False, f"Root directory '{root}' does not exist")
+        
+        # Try to create kast_results directory if it doesn't exist
+        try:
+            results_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            # Get current user for helpful error message
+            try:
+                current_username = pwd.getpwuid(os.getuid()).pw_name
+            except:
+                current_username = 'www-data'
+            
+            return (False, f"Permission denied: Cannot create directory '{results_dir}'. "
+                          f"Flask runs as user '{current_username}'. "
+                          f"Please run: sudo chown -R {current_username}:{current_username} {root_path}")
+        except Exception as e:
+            return (False, f"Cannot create directory '{results_dir}': {str(e)}")
+        
+        # Test write permissions by creating a temporary file
+        try:
+            with tempfile.NamedTemporaryFile(dir=results_dir, delete=True, mode='w') as f:
+                f.write('test')
+                f.flush()
+            
+            return (True, f"✓ Permissions verified: {results_dir} is writable")
+        
+        except PermissionError:
+            # Get current user for helpful error message
+            try:
+                current_username = pwd.getpwuid(os.getuid()).pw_name
+            except:
+                current_username = 'www-data'
+            
+            return (False, f"Permission denied: Directory '{results_dir}' exists but is not writable. "
+                          f"Flask runs as user '{current_username}'. "
+                          f"Please run: sudo chown -R {current_username}:{current_username} {results_dir}")
+        
+        except Exception as e:
+            return (False, f"Cannot write to directory '{results_dir}': {str(e)}")
+    
+    except Exception as e:
+        current_app.logger.exception(f"Error verifying permissions for {root_path}: {str(e)}")
+        return (False, f"Error checking permissions: {str(e)}")
+
+
+# ============================================================================
 # AUTHORIZATION DECORATORS
 # ============================================================================
 

@@ -1,0 +1,7 @@
+[
+{"target":"http://insecure-js.democuda.org/","http_status":302,"request_config":{"headers":{"User-Agent":"WhatWeb/0.6.3"}},"plugins":{"Country":{"string":["UNITED STATES"],"module":["US"]},"IP":{"string":["4.152.87.222"]},"RedirectLocation":{"string":["https://insecure-js.democuda.org/"]}}}
+,
+{"target":"https://insecure-js.democuda.org","http_status":200,"request_config":{"headers":{"User-Agent":"WhatWeb/0.6.3"}},"plugins":{"Country":{"string":["UNITED STATES"],"module":["US"]},"HTML5":{},"IP":{"string":["4.152.87.222"]},"JQuery":{"version":["2.2.4"]},"Script":{"string":["module","text/javascript"]},"Title":{"string":["OWASP Juice Shop"]},"UncommonHeaders":{"string":["access-control-allow-origin,x-content-type-options,feature-policy,x-recruiting"]},"X-Frame-Options":{"string":["SAMEORIGIN, SAMEORIGIN"]}}}
+,
+{"target":"https://insecure-js.democuda.org/","http_status":200,"request_config":{"headers":{"User-Agent":"WhatWeb/0.6.3"}},"plugins":{"Country":{"string":["UNITED STATES"],"module":["US"]},"HTML5":{},"IP":{"string":["4.152.87.222"]},"JQuery":{"version":["2.2.4"]},"Script":{"string":["module","text/javascript"]},"Title":{"string":["OWASP Juice Shop"]},"UncommonHeaders":{"string":["access-control-allow-origin,x-content-type-options,feature-policy,x-recruiting"]},"X-Frame-Options":{"string":["SAMEORIGIN, SAMEORIGIN"]}}}
+]

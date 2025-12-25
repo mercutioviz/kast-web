@@ -88,5 +88,18 @@ def create_app(config_name='default'):
     # Create database tables
     with app.app_context():
         db.create_all()
+        
+        # Initialize default system settings if not present
+        from app.models import SystemSettings
+        
+        # Set default kast_results_root if not configured
+        if not SystemSettings.get_setting('kast_results_root'):
+            SystemSettings.set_setting(
+                'kast_results_root',
+                '/opt/kast-web',
+                value_type='string',
+                user_id=None  # System initialization
+            )
+            app.logger.info("Initialized default kast_results_root setting: /opt/kast-web")
     
     return app

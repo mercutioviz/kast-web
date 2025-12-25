@@ -110,6 +110,8 @@ def settings():
             'max_scans_per_user': int(request.form.get('max_scans_per_user', 0)),
             'enable_audit_log': request.form.get('enable_audit_log') == 'on',
             'session_timeout_minutes': int(request.form.get('session_timeout_minutes', 60)),
+            # Scan settings
+            'kast_results_root': request.form.get('kast_results_root', '/opt/kast-web').strip(),
             # Email settings
             'email_enabled': request.form.get('email_enabled') == 'on',
             'smtp_host': request.form.get('smtp_host', ''),
@@ -311,6 +313,35 @@ def test_smtp():
         return jsonify({'success': True, 'message': 'SMTP connection successful!'})
     else:
         return jsonify({'success': False, 'message': error}), 400
+
+
+@bp.route('/test-kast-permissions', methods=['POST'])
+@login_required
+@admin_required
+def test_kast_permissions():
+    """Test permissions for KAST results root directory"""
+    from app.utils import verify_kast_results_permissions
+    
+    # Get root path from form
+    root_path = request.form.get('kast_results_root', '').strip()
+    
+    if not root_path:
+        return jsonify({'success': False, 'message': 'No path provided'}), 400
+    
+    # Verify permissions
+    success, message = verify_kast_results_permissions(root_path)
+    
+    if success:
+        # Also show the full path that will be used
+        from pathlib import Path
+        full_path = Path(root_path).resolve() / 'kast_results'
+        return jsonify({
+            'success': True, 
+            'message': message,
+            'full_path': str(full_path)
+        })
+    else:
+        return jsonify({'success': False, 'message': message}), 400
 
 
 @bp.route('/system-info')
