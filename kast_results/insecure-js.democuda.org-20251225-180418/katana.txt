@@ -1,7 +1,0 @@
-[GET] https://insecure-js.democuda.org
-[script] [GET] https://insecure-js.democuda.org/runtime.js
-[script] [GET] https://insecure-js.democuda.org/polyfills.js
-[script] [GET] https://insecure-js.democuda.org/bnith__moG8utBJ8IJS_zNpMC5aufOzBlg5EYrLkoIC4b3D73ltcr4r7f3OBp4_9Cf4VlLe
-[script] [GET] https://insecure-js.democuda.org/main.js
-[link] [GET] https://insecure-js.democuda.org/styles.css
-[script] [GET] https://insecure-js.democuda.org/vendor.js
