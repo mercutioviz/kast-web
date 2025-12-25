@@ -195,13 +195,18 @@ def detail(scan_id):
     from app.models import SystemSettings
     email_enabled = SystemSettings.get_setting('email_enabled', False)
     
+    # Generate CLI command for display
+    from flask import current_app
+    cli_command = scan.get_cli_command(current_app.config['KAST_CLI_PATH'])
+    
     return render_template(
         'scan_detail.html',
         scan=scan,
         results=plugin_statuses,
         report_path=report_path,
         format_duration=format_duration,
-        email_enabled=email_enabled
+        email_enabled=email_enabled,
+        cli_command=cli_command
     )
 
 @bp.route('/<int:scan_id>/delete', methods=['POST'])

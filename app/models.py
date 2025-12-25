@@ -113,6 +113,66 @@ class Scan(db.Model):
             return [p.strip() for p in self.plugins.split(',')]
         return []
     
+    def get_cli_command(self, kast_cli_path):
+        """
+        Reconstruct the KAST CLI command that was/will be executed for this scan
+        
+        Args:
+            kast_cli_path: Path to KAST CLI executable from config
+        
+        Returns:
+            str: Formatted CLI command with line breaks
+        """
+        # Start building command parts
+        cmd_parts = [kast_cli_path]
+        cmd_parts.extend(['-t', self.target])
+        cmd_parts.extend(['-m', self.scan_mode])
+        cmd_parts.extend(['--format', 'both'])
+        
+        # Add config profile if used
+        if self.config_profile_id and self.config_profile:
+            cmd_parts.extend(['--config', f'{self.config_profile.name}.yaml'])
+        
+        # Add config overrides if specified
+        if self.config_overrides:
+            overrides = [o.strip() for o in self.config_overrides.split(',') if o.strip()]
+            for override in overrides:
+                cmd_parts.extend(['--set', override])
+        
+        # Add logo if used
+        if self.logo_id:
+            cmd_parts.extend(['--logo', '<logo_file>'])
+        
+        # Add plugins if specified
+        if self.plugins:
+            cmd_parts.extend(['--run-only', ','.join(self.plugin_list)])
+        
+        # Add parallel execution
+        if self.parallel:
+            cmd_parts.append('-p')
+            cmd_parts.extend(['--max-workers', '5'])
+        
+        # Add verbose flag
+        if self.verbose:
+            cmd_parts.append('-v')
+        
+        # Add dry-run flag
+        if self.dry_run:
+            cmd_parts.append('--dry-run')
+        
+        # Add output directory
+        if self.output_dir:
+            cmd_parts.extend(['-o', self.output_dir])
+        
+        # Format with line breaks (use backslash continuation)
+        formatted_cmd = cmd_parts[0] + ' \\\n'
+        for i, part in enumerate(cmd_parts[1:], 1):
+            formatted_cmd += f'  {part}'
+            if i < len(cmd_parts) - 1:
+                formatted_cmd += ' \\\n'
+        
+        return formatted_cmd
+    
     def to_dict(self):
         """Convert scan to dictionary"""
         return {

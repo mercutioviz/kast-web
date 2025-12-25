@@ -159,6 +159,59 @@ if (currentStatus === 'running' || currentStatus === 'pending') {
 // Stop polling when page is unloaded
 window.addEventListener('beforeunload', stopPolling);
 
+// Copy CLI command to clipboard
+function copyCLICommand() {
+    const codeElement = document.getElementById('cli-command');
+    const textToCopy = codeElement.textContent;
+    
+    // Use modern clipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            // Show success feedback
+            const btn = event.target.closest('button');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-outline-secondary');
+            }, 2000);
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            alert('Failed to copy to clipboard');
+        });
+    } else {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = textToCopy;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            const btn = event.target.closest('button');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-outline-secondary');
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            alert('Failed to copy to clipboard');
+        }
+        document.body.removeChild(textArea);
+    }
+}
+
 // Initialize Bootstrap tooltips
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize all tooltips on the page
@@ -261,6 +314,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="mb-3">
                         <strong>Output Directory:</strong>
                         <code class="d-block mt-1">{{ scan.output_dir }}</code>
+                    </div>
+                {% endif %}
+                
+                {% if cli_command %}
+                    <div class="mb-3">
+                        <strong>KAST CLI Syntax:</strong>
+                        <div class="position-relative mt-2">
+                            <pre class="bg-light p-3 rounded" style="max-height: 300px; overflow-y: auto;"><code id="cli-command">{{ cli_command }}</code></pre>
+                            <button class="btn btn-sm btn-outline-secondary position-absolute top-0 end-0 m-2" 
+                                    onclick="copyCLICommand()" 
+                                    title="Copy to clipboard">
+                                <i class="bi bi-clipboard"></i> Copy
+                            </button>
+                        </div>
                     </div>
                 {% endif %}
                 
