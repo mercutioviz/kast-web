@@ -43,13 +43,13 @@ class ScanConfigForm(FlaskForm):
     
     parallel = BooleanField(
         'Run plugins in parallel',
-        default=False,
+        default=True,
         render_kw={'class': 'form-check-input'}
     )
     
     verbose = BooleanField(
         'Verbose output',
-        default=False,
+        default=True,
         render_kw={'class': 'form-check-input'}
     )
     
