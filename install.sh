@@ -970,7 +970,15 @@ KAST_RESULTS_DIR=/var/lib/kast-web/results
 EOF
     
     chmod 600 "$INSTALL_DIR/.env"
+    chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/.env"
     print_success "Configuration file created"
+    
+    # Verify and fix ownership of all application files
+    print_info "Verifying file ownership..."
+    chown -R $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR"
+    # Preserve execute permissions on scripts
+    chmod +x "$INSTALL_DIR/scripts"/*.sh 2>/dev/null || true
+    print_success "File ownership verified"
 }
 
 initialize_database() {

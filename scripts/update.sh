@@ -751,6 +751,10 @@ main() {
     # Initialize log file
     mkdir -p "$(dirname "$LOG_FILE")"
     touch "$LOG_FILE"
+    # Set proper ownership for log directory and file
+    chown -R www-data:www-data "$(dirname "$LOG_FILE")"
+    chmod 755 "$(dirname "$LOG_FILE")"
+    chmod 644 "$LOG_FILE"
     log "KAST-Web Update Started (v2.0)"
     log "Update mode: $UPDATE_MODE"
     log "Source directory: $SOURCE_DIR"
