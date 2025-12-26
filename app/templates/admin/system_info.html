@@ -16,6 +16,104 @@
     <i class="bi bi-shield-lock"></i> <strong>Security Notice:</strong> Sensitive information is masked. This page logs access for audit purposes.
 </div>
 
+<!-- Health Warnings -->
+{% if info.health_warnings %}
+<div class="alert alert-{% if info.health_warnings|selectattr('severity', 'equalto', 'danger')|list %}danger{% elif info.health_warnings|selectattr('severity', 'equalto', 'warning')|list %}warning{% else %}info{% endif %} mb-4">
+    <h5 class="alert-heading">
+        <i class="bi bi-exclamation-triangle-fill"></i> System Health Warnings
+    </h5>
+    <ul class="mb-0">
+        {% for warning in info.health_warnings %}
+        <li>{{ warning.message }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- Quick Actions -->
+<div class="card mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Quick Actions</h5>
+    </div>
+    <div class="card-body">
+        <button id="test-kast-btn" class="btn btn-primary me-2">
+            <i class="bi bi-check-circle"></i> Test KAST CLI
+        </button>
+        <button id="backup-db-btn" class="btn btn-success">
+            <i class="bi bi-download"></i> Backup Database
+        </button>
+        <div id="quick-action-result" class="mt-3" style="display: none;">
+            <div id="quick-action-alert" class="alert"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity Stats -->
+{% if info.recent_activity %}
+<div class="card mb-4">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Activity (Last 24 Hours)</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h3 class="text-success">{{ info.recent_activity.scans.completed }}</h3>
+                    <small class="text-muted">Completed Scans</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h3 class="text-danger">{{ info.recent_activity.scans.failed }}</h3>
+                    <small class="text-muted">Failed Scans</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h3 class="text-primary">{{ info.recent_activity.scans.running }}</h3>
+                    <small class="text-muted">Running Scans</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-center">
+                    <h3 class="text-info">{{ info.recent_activity.active_users }}</h3>
+                    <small class="text-muted">Active Users</small>
+                </div>
+            </div>
+        </div>
+        {% if info.recent_activity.last_successful_scan %}
+        <hr>
+        <div class="row">
+            <div class="col-md-6">
+                <small class="text-muted"><strong>Last Successful Scan:</strong></small>
+                <p class="mb-0">
+                    <a href="{{ url_for('scans.detail', scan_id=info.recent_activity.last_successful_scan.id) }}">
+                        {{ info.recent_activity.last_successful_scan.target }}
+                    </a>
+                    <br>
+                    <small class="text-muted">{{ info.recent_activity.last_successful_scan.time }}</small>
+                </p>
+            </div>
+            {% if info.recent_activity.last_failed_scan %}
+            <div class="col-md-6">
+                <small class="text-muted"><strong>Last Failed Scan:</strong></small>
+                <p class="mb-0">
+                    <a href="{{ url_for('scans.detail', scan_id=info.recent_activity.last_failed_scan.id) }}">
+                        {{ info.recent_activity.last_failed_scan.target }}
+                    </a>
+                    <br>
+                    <small class="text-muted">{{ info.recent_activity.last_failed_scan.time }}</small>
+                    <br>
+                    <small class="text-danger">{{ info.recent_activity.last_failed_scan.error }}</small>
+                </p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Service Status Overview -->
 <div class="row mb-4">
     <div class="col-12">
@@ -428,6 +526,33 @@
                         <td><code>{{ info.database.url }}</code></td>
                     </tr>
                     {% endif %}
+                    {% if info.database_stats %}
+                    <tr>
+                        <th>File Size:</th>
+                        <td>
+                            <strong>{{ info.database_stats.size_human }}</strong>
+                            <small class="text-muted">({{ info.database_stats.size_mb }} MB)</small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Last Modified:</th>
+                        <td>{{ info.database_stats.modified }}</td>
+                    </tr>
+                    {% if info.database_stats.tables %}
+                    <tr>
+                        <th>Table Records:</th>
+                        <td>
+                            <span class="badge bg-secondary me-1">Users: {{ info.database_stats.tables.users }}</span>
+                            <span class="badge bg-secondary me-1">Scans: {{ info.database_stats.tables.scans }}</span>
+                            <span class="badge bg-secondary me-1">Results: {{ info.database_stats.tables.scan_results }}</span>
+                            <span class="badge bg-secondary me-1">Audit Logs: {{ info.database_stats.tables.audit_logs }}</span>
+                            <span class="badge bg-secondary me-1">Shares: {{ info.database_stats.tables.scan_shares }}</span>
+                            <span class="badge bg-secondary me-1">Logos: {{ info.database_stats.tables.report_logos }}</span>
+                            <span class="badge bg-secondary">Settings: {{ info.database_stats.tables.system_settings }}</span>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endif %}
                 </table>
                 {% else %}
                 <p class="text-muted">No database configuration found</p>
@@ -450,7 +575,7 @@
                         <strong>Error:</strong> {{ info.kast_cli.error }}
                     </div>
                 {% elif info.kast_cli.exists %}
-                    <table class="table table-sm">
+                    <table class="table table-sm mb-3">
                         <tr>
                             <th>Path:</th>
                             <td><code>{{ info.kast_cli.path }}</code></td>
@@ -464,6 +589,50 @@
                             <td><span class="badge bg-info">{{ info.kast_cli.plugin_count }}</span></td>
                         </tr>
                     </table>
+                    
+                    {% if info.kast_cli.plugin_error %}
+                    <div class="alert alert-warning">
+                        <strong>Plugin Parsing Error:</strong><br>
+                        <pre class="mb-0 mt-2">{{ info.kast_cli.plugin_error }}</pre>
+                    </div>
+                    {% endif %}
+                    
+                    {% if info.kast_cli.plugins %}
+                    <div class="mt-3">
+                        <h6 class="mb-3"><i class="bi bi-puzzle"></i> Available Plugins</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 20%;">Plugin Name</th>
+                                        <th style="width: 65%;">Description</th>
+                                        <th style="width: 15%;" class="text-center">Priority</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for plugin in info.kast_cli.plugins|sort(attribute='priority', reverse=true) %}
+                                    <tr>
+                                        <td><code class="text-primary">{{ plugin.name }}</code></td>
+                                        <td>{{ plugin.description }}</td>
+                                        <td class="text-center">
+                                            <span class="badge {% if plugin.priority >= 7 %}bg-danger{% elif plugin.priority >= 5 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                                {{ plugin.priority }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i> 
+                            Priority levels: Higher numbers run first. 
+                            <span class="badge bg-danger">7+</span> Critical, 
+                            <span class="badge bg-warning text-dark">5-6</span> Important, 
+                            <span class="badge bg-secondary">&lt;5</span> Standard
+                        </small>
+                    </div>
+                    {% endif %}
                 {% else %}
                     <div class="alert alert-warning">
                         <strong>KAST CLI not found</strong> at <code>{{ info.kast_cli.path }}</code>
@@ -474,5 +643,143 @@
     </div>
 
 </div>
+
+<script>
+// Quick Action handlers
+document.addEventListener('DOMContentLoaded', function() {
+    const testKastBtn = document.getElementById('test-kast-btn');
+    const backupDbBtn = document.getElementById('backup-db-btn');
+    const resultDiv = document.getElementById('quick-action-result');
+    
+    // Helper function to get or create alert div
+    function getAlertDiv() {
+        let alertDiv = document.getElementById('quick-action-alert');
+        if (!alertDiv) {
+            // Create alert div if it doesn't exist (it may have been removed by Bootstrap)
+            alertDiv = document.createElement('div');
+            alertDiv.id = 'quick-action-alert';
+            alertDiv.className = 'alert';
+            resultDiv.appendChild(alertDiv);
+        }
+        return alertDiv;
+    }
+    
+    // Test KAST CLI button
+    testKastBtn.addEventListener('click', function() {
+        // Disable button and show loading state
+        testKastBtn.disabled = true;
+        testKastBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+        
+        // Hide previous results
+        resultDiv.style.display = 'none';
+        
+        console.log('Testing KAST CLI...');
+        
+        // Make AJAX request
+        fetch('{{ url_for("admin.test_kast_cli") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => {
+            console.log('Response status:', response.status);
+            console.log('Response ok:', response.ok);
+            
+            // Handle both success and error responses
+            return response.json().then(data => ({
+                status: response.status,
+                ok: response.ok,
+                data: data
+            }));
+        })
+        .then(result => {
+            console.log('Parsed result:', result);
+            
+            // Show result
+            resultDiv.style.display = 'block';
+            const alertDiv = getAlertDiv();
+            
+            if (result.ok && result.data.success) {
+                alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                alertDiv.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>' + 
+                    '<strong>Success!</strong><pre class="mb-0 mt-2">' + result.data.message + '</pre>' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+            } else {
+                alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                alertDiv.innerHTML = '<i class="bi bi-x-circle-fill me-2"></i>' + 
+                    '<strong>Error:</strong><pre class="mb-0 mt-2">' + result.data.message + '</pre>' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+            }
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+            resultDiv.style.display = 'block';
+            const alertDiv = getAlertDiv();
+            alertDiv.className = 'alert alert-danger';
+            alertDiv.innerHTML = '<i class="bi bi-x-circle-fill me-2"></i>' + 
+                '<strong>Network Error:</strong> ' + error.message;
+        })
+        .finally(() => {
+            // Re-enable button
+            testKastBtn.disabled = false;
+            testKastBtn.innerHTML = '<i class="bi bi-check-circle"></i> Test KAST CLI';
+        });
+    });
+    
+    // Backup Database button
+    backupDbBtn.addEventListener('click', function() {
+        // Confirm action
+        if (!confirm('Create a backup of the database? This will copy kast.db to the backups/ directory.')) {
+            return;
+        }
+        
+        // Disable button and show loading state
+        backupDbBtn.disabled = true;
+        backupDbBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Backing up...';
+        
+        // Hide previous results
+        resultDiv.style.display = 'none';
+        
+        // Make AJAX request
+        fetch('{{ url_for("admin.backup_database") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Show result
+            resultDiv.style.display = 'block';
+            const alertDiv = getAlertDiv();
+            if (data.success) {
+                alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                alertDiv.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>' + 
+                    '<strong>Success!</strong><pre class="mb-0 mt-2">' + data.message + '</pre>' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+            } else {
+                alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                alertDiv.innerHTML = '<i class="bi bi-x-circle-fill me-2"></i>' + 
+                    '<strong>Error:</strong><pre class="mb-0 mt-2">' + data.message + '</pre>' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+            }
+        })
+        .catch(error => {
+            resultDiv.style.display = 'block';
+            const alertDiv = getAlertDiv();
+            alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+            alertDiv.innerHTML = '<i class="bi bi-x-circle-fill me-2"></i>' + 
+                '<strong>Error:</strong> ' + error.message +
+                '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        })
+        .finally(() => {
+            // Re-enable button
+            backupDbBtn.disabled = false;
+            backupDbBtn.innerHTML = '<i class="bi bi-download"></i> Backup Database';
+        });
+    });
+});
+</script>
 
 {% endblock %}

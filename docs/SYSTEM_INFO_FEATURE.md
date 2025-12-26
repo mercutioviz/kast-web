@@ -22,7 +22,62 @@ The System Information feature provides administrators with a comprehensive view
 
 ## Information Displayed
 
-### 1. Service Status Overview (Top of Page)
+### 1. Health Warnings (Top of Page - When Issues Detected)
+Real-time system health monitoring with color-coded alerts:
+- **🔴 Critical (Red)**: Severe issues requiring immediate attention
+  - Disk space > 90% full
+  - Memory usage > 90%
+  - Redis/Celery broker not accessible
+- **🟡 Warning (Yellow)**: Issues that need attention
+  - Disk space 80-90% full
+  - Memory usage 80-90%
+  - Database file > 1GB
+- **🔵 Info (Blue)**: Informational notices
+  - No scans run in last 7 days
+
+**Use Cases:**
+- Immediate visibility of system problems
+- Proactive maintenance alerts
+- Quick health check on page load
+
+### 2. Quick Actions
+Two convenient action buttons for common administrative tasks:
+
+**Test KAST CLI:**
+- Runs `kast --version` and `kast -ls` commands
+- Verifies KAST installation and plugin availability
+- Shows real-time feedback with loading indicators
+- Logs action to audit trail
+
+**Backup Database:**
+- Creates timestamped backup of kast.db
+- Stores in `backups/` directory
+- Shows backup file size and location
+- Requires confirmation before execution
+- Logs action to audit trail
+
+**Use Cases:**
+- Quick KAST functionality verification
+- On-demand database backups before major changes
+- Testing system configuration
+- Pre-upgrade safety backups
+
+### 3. Recent Activity (Last 24 Hours)
+Real-time statistics dashboard showing:
+- **Completed Scans**: Count of successfully finished scans
+- **Failed Scans**: Count of scans that encountered errors
+- **Running Scans**: Currently executing scans
+- **Active Users**: Users who logged in within 24 hours
+- **Last Successful Scan**: Link to most recent completed scan with timestamp
+- **Last Failed Scan**: Link to most recent failed scan with error preview
+
+**Use Cases:**
+- Monitor system usage patterns
+- Quickly identify recent failures
+- Track user activity
+- Verify scan processing is working
+
+### 4. Service Status Overview
 Real-time status indicators for:
 - **Redis Server** - Message broker status
 - **kast-web** - Main application service
@@ -118,27 +173,53 @@ Color coding:
 - Identify space-consuming directories
 
 ### 8. Database Information
+**Enhanced with detailed statistics:**
 - Database type (SQLite, PostgreSQL, MySQL/MariaDB)
 - File path (SQLite) or connection URL (masked for security)
+- **File Size**: Human-readable size (e.g., "45.2 MB") and exact MB value
+- **Last Modified**: Timestamp of last database modification
+- **Table Records**: Record counts for all tables
+  - Users, Scans, Scan Results
+  - Audit Logs, Scan Shares
+  - Report Logos, System Settings
 - Connection test status
 
 **Use Cases:**
 - Verify database configuration
+- Monitor database growth over time
 - Check connection issues
 - Validate database path
-- Confirm database type
+- Plan database optimization
+- Track data accumulation
+- Identify need for cleanup/archival
 
 ### 9. KAST CLI Information
+**Enhanced with complete plugin details:**
 - Installation path
 - Version information
 - Plugin count
-- Executable status
+
+**Plugin Details Table:**
+- **Plugin Name**: Code-formatted name (e.g., `port_scan`)
+- **Description**: Full description of plugin functionality
+- **Priority**: Color-coded priority badges
+  - 🔴 Red (7+): Critical plugins run first
+  - 🟡 Yellow (5-6): Important plugins
+  - ⚫ Gray (<5): Standard plugins
+- Plugins sorted by priority (highest first)
+
+**Priority System Explained:**
+Higher priority plugins execute first during scans. Critical security checks run before informational gathering to identify immediate threats.
 
 **Use Cases:**
 - Verify KAST CLI is installed
 - Check KAST version
-- Confirm plugin availability
+- Understand available security checks
+- Review plugin execution order
+- Identify which plugins are active
+- Plan scan configurations
 - Troubleshoot scan failures
+- Understand scan capabilities
 
 ## Security Features
 

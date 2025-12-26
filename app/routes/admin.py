@@ -11,11 +11,14 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from functools import wraps
 from app import db
-from app.models import User, Scan, AuditLog, SystemSettings
+from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo
 from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import json
 import psutil
+import os
+import shutil
+import re
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -344,6 +347,302 @@ def test_kast_permissions():
         return jsonify({'success': False, 'message': message}), 400
 
 
+def get_database_stats():
+    """Get database file statistics and table counts"""
+    from flask import current_app
+    
+    stats = {
+        'size_mb': 0,
+        'size_human': 'N/A',
+        'modified': 'N/A',
+        'tables': {}
+    }
+    
+    try:
+        # Get database path
+        db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if db_url.startswith('sqlite:///'):
+            db_path = db_url.replace('sqlite:///', '')
+            
+            if os.path.exists(db_path):
+                # Get file size
+                size_bytes = os.path.getsize(db_path)
+                stats['size_mb'] = round(size_bytes / (1024 * 1024), 2)
+                
+                # Human readable size
+                if size_bytes < 1024:
+                    stats['size_human'] = f"{size_bytes} B"
+                elif size_bytes < 1024 * 1024:
+                    stats['size_human'] = f"{round(size_bytes / 1024, 2)} KB"
+                elif size_bytes < 1024 * 1024 * 1024:
+                    stats['size_human'] = f"{round(size_bytes / (1024 * 1024), 2)} MB"
+                else:
+                    stats['size_human'] = f"{round(size_bytes / (1024 * 1024 * 1024), 2)} GB"
+                
+                # Last modified timestamp
+                mod_time = os.path.getmtime(db_path)
+                stats['modified'] = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Get table counts
+        stats['tables'] = {
+            'users': User.query.count(),
+            'scans': Scan.query.count(),
+            'scan_results': ScanResult.query.count(),
+            'audit_logs': AuditLog.query.count(),
+            'scan_shares': ScanShare.query.count(),
+            'report_logos': ReportLogo.query.count(),
+            'system_settings': SystemSettings.query.count()
+        }
+        
+    except Exception as e:
+        stats['error'] = str(e)
+    
+    return stats
+
+
+def get_health_warnings():
+    """Check system health and return warnings"""
+    warnings = []
+    
+    try:
+        # Check disk space
+        for mount in ['/', '/opt', '/var']:
+            try:
+                usage = shutil.disk_usage(mount)
+                percent = (usage.used / usage.total) * 100
+                if percent > 90:
+                    warnings.append({
+                        'severity': 'danger',
+                        'message': f'Critical: {mount} disk space is {round(percent, 1)}% full (< 10% free)'
+                    })
+                elif percent > 80:
+                    warnings.append({
+                        'severity': 'warning',
+                        'message': f'Warning: {mount} disk space is {round(percent, 1)}% full'
+                    })
+            except:
+                pass
+        
+        # Check memory usage
+        try:
+            mem = psutil.virtual_memory()
+            if mem.percent > 90:
+                warnings.append({
+                    'severity': 'danger',
+                    'message': f'Critical: Memory usage is {mem.percent}% (< 10% available)'
+                })
+            elif mem.percent > 80:
+                warnings.append({
+                    'severity': 'warning',
+                    'message': f'Warning: Memory usage is {mem.percent}%'
+                })
+        except:
+            pass
+        
+        # Check Redis/Celery services
+        try:
+            from redis import Redis
+            from flask import current_app
+            redis_url = current_app.config.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+            if '://' in redis_url:
+                parts = redis_url.split('://')[1].split('/')
+                host_port = parts[0].split(':')
+                host = host_port[0] if len(host_port) > 0 else 'localhost'
+                port = int(host_port[1]) if len(host_port) > 1 else 6379
+            else:
+                host, port = 'localhost', 6379
+            
+            r = Redis(host=host, port=port, socket_connect_timeout=2)
+            r.ping()
+        except:
+            warnings.append({
+                'severity': 'danger',
+                'message': 'Critical: Redis/Celery broker is not accessible'
+            })
+        
+        # Check database size
+        try:
+            from flask import current_app
+            db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+            if db_url.startswith('sqlite:///'):
+                db_path = db_url.replace('sqlite:///', '')
+                if os.path.exists(db_path):
+                    size_gb = os.path.getsize(db_path) / (1024 * 1024 * 1024)
+                    if size_gb > 1:
+                        warnings.append({
+                            'severity': 'warning',
+                            'message': f'Database file is {round(size_gb, 2)} GB - consider optimization'
+                        })
+        except:
+            pass
+        
+        # Check for recent scan activity
+        try:
+            week_ago = datetime.utcnow() - timedelta(days=7)
+            recent_scans = Scan.query.filter(Scan.started_at >= week_ago).count()
+            if recent_scans == 0:
+                warnings.append({
+                    'severity': 'info',
+                    'message': 'No scans have been run in the last 7 days'
+                })
+        except:
+            pass
+            
+    except Exception as e:
+        warnings.append({
+            'severity': 'danger',
+            'message': f'Error checking system health: {str(e)}'
+        })
+    
+    return warnings
+
+
+def get_recent_activity():
+    """Get 24-hour activity statistics"""
+    activity = {
+        'scans': {'completed': 0, 'failed': 0, 'running': 0},
+        'active_users': 0,
+        'last_successful_scan': None,
+        'last_failed_scan': None
+    }
+    
+    try:
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        
+        # Scan counts by status
+        activity['scans']['completed'] = Scan.query.filter(
+            Scan.started_at >= yesterday,
+            Scan.status == 'completed'
+        ).count()
+        
+        activity['scans']['failed'] = Scan.query.filter(
+            Scan.started_at >= yesterday,
+            Scan.status == 'failed'
+        ).count()
+        
+        activity['scans']['running'] = Scan.query.filter(
+            Scan.started_at >= yesterday,
+            Scan.status == 'running'
+        ).count()
+        
+        # Active users
+        activity['active_users'] = User.query.filter(
+            User.last_login >= yesterday
+        ).count()
+        
+        # Last successful scan
+        last_success = Scan.query.filter_by(status='completed').order_by(
+            Scan.completed_at.desc()
+        ).first()
+        if last_success:
+            activity['last_successful_scan'] = {
+                'id': last_success.id,
+                'target': last_success.target,
+                'time': last_success.completed_at.strftime('%Y-%m-%d %H:%M:%S') if last_success.completed_at else 'N/A'
+            }
+        
+        # Last failed scan
+        last_failed = Scan.query.filter_by(status='failed').order_by(
+            Scan.completed_at.desc()
+        ).first()
+        if last_failed:
+            activity['last_failed_scan'] = {
+                'id': last_failed.id,
+                'target': last_failed.target,
+                'time': last_failed.completed_at.strftime('%Y-%m-%d %H:%M:%S') if last_failed.completed_at else 'N/A',
+                'error': last_failed.error_message[:100] if last_failed.error_message else 'Unknown error'
+            }
+            
+    except Exception as e:
+        activity['error'] = str(e)
+    
+    return activity
+
+
+def parse_kast_plugins(kast_path):
+    """Parse kast -ls output for plugin details
+    
+    Expected format:
+    ✓ plugin_name (priority: N, type: passive/active)
+      Description text (may span multiple lines)
+    """
+    import subprocess
+    
+    plugins = []
+    error = None
+    
+    try:
+        result = subprocess.run(
+            [kast_path, '-ls'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode != 0:
+            error = f"Command returned error code {result.returncode}"
+            if result.stderr:
+                error += f": {result.stderr.strip()}"
+            return plugins, error
+        
+        # Parse output line by line
+        # Format: ✓ plugin_name (priority: N, type: passive/active)
+        #           Description (indented, may be multi-line)
+        lines = result.stdout.split('\n')
+        i = 0
+        current_plugin = None
+        
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check if this is a plugin header line (starts with checkmark or plugin name)
+            # Format: ✓ plugin_name (priority: N, type: X)
+            if line.strip() and (line.strip().startswith('✓') or '(priority:' in line):
+                # Save previous plugin if exists
+                if current_plugin and current_plugin.get('name'):
+                    plugins.append(current_plugin)
+                
+                # Parse new plugin header
+                match = re.match(r'[✓\s]*(\w+)\s*\(priority:\s*(\d+)', line)
+                if match:
+                    current_plugin = {
+                        'name': match.group(1),
+                        'priority': int(match.group(2)),
+                        'description': ''
+                    }
+                else:
+                    current_plugin = None
+            
+            # Check if this is a description line (indented)
+            elif line.startswith('  ') and current_plugin:
+                desc_line = line.strip()
+                if desc_line:
+                    if current_plugin['description']:
+                        current_plugin['description'] += ' ' + desc_line
+                    else:
+                        current_plugin['description'] = desc_line
+            
+            # Skip empty lines and headers
+            elif not line.strip() or 'Available KAST Plugins' in line:
+                pass
+            
+            i += 1
+        
+        # Don't forget the last plugin
+        if current_plugin and current_plugin.get('name'):
+            plugins.append(current_plugin)
+        
+        if not plugins and result.stdout:
+            error = f"Could not parse plugin output. Raw output:\n{result.stdout[:500]}"
+            
+    except subprocess.TimeoutExpired:
+        error = "Command timed out after 5 seconds"
+    except Exception as e:
+        error = f"Exception during parsing: {str(e)}"
+    
+    return plugins, error
+
+
 @bp.route('/system-info')
 @login_required
 @admin_required
@@ -430,21 +729,22 @@ def system_info():
                 )
                 version = result.stdout.strip() if result.returncode == 0 else 'Unknown'
                 
-                # Get plugin count
-                result = subprocess.run(
-                    [kast_path, '-ls'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                plugin_count = result.stdout.count('(priority:') if result.returncode == 0 else 0
+                # Parse plugins using helper function (returns tuple: plugins, error)
+                plugins, parse_error = parse_kast_plugins(kast_path)
                 
-                return {
+                info = {
                     'path': kast_path,
                     'exists': True,
                     'version': version,
-                    'plugin_count': plugin_count
+                    'plugin_count': len(plugins),
+                    'plugins': plugins
                 }
+                
+                # Add error if plugin parsing failed
+                if parse_error:
+                    info['plugin_error'] = parse_error
+                
+                return info
             else:
                 return {'path': kast_path, 'exists': False}
         except Exception as e:
@@ -588,6 +888,11 @@ def system_info():
                 'url': mask_sensitive(db_url, 10)
             }
     
+    # NEW: Collect enhanced data
+    info['database_stats'] = get_database_stats()
+    info['health_warnings'] = get_health_warnings()
+    info['recent_activity'] = get_recent_activity()
+    
     # Log this action
     AuditLog.log(
         user_id=current_user.id,
@@ -608,6 +913,144 @@ def export_system_info():
     # For now, redirect to the main page
     flash('Export functionality coming soon', 'info')
     return redirect(url_for('admin.system_info'))
+
+
+@bp.route('/quick-action/test-kast', methods=['POST'])
+@login_required
+@admin_required
+def test_kast_cli():
+    """Test KAST CLI execution"""
+    import subprocess
+    
+    try:
+        kast_path = os.environ.get('KAST_CLI_PATH', '/usr/local/bin/kast')
+        
+        if not os.path.exists(kast_path):
+            return jsonify({
+                'success': False,
+                'message': f'KAST CLI not found at {kast_path}'
+            }), 400
+        
+        # Test version command
+        result = subprocess.run(
+            [kast_path, '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'message': f'KAST CLI returned error code {result.returncode}'
+            }), 400
+        
+        version = result.stdout.strip()
+        
+        # Test plugin list
+        result = subprocess.run(
+            [kast_path, '-ls'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'message': 'KAST CLI version OK but plugin list failed'
+            }), 400
+        
+        plugin_count = result.stdout.count('(priority:')
+        
+        # Log the action
+        AuditLog.log(
+            user_id=current_user.id,
+            action='kast_cli_tested',
+            resource_type='system',
+            details=f'KAST CLI test performed by {current_user.username}'
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'KAST CLI is working correctly!\n\nVersion: {version}\nPlugins found: {plugin_count}'
+        })
+        
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'message': 'KAST CLI test timed out after 5 seconds'
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error testing KAST CLI: {str(e)}'
+        }), 400
+
+
+@bp.route('/quick-action/backup-database', methods=['POST'])
+@login_required
+@admin_required
+def backup_database():
+    """Create database backup"""
+    from flask import current_app
+    
+    try:
+        # Get database path
+        db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if not db_url.startswith('sqlite:///'):
+            return jsonify({
+                'success': False,
+                'message': 'Backup only supported for SQLite databases'
+            }), 400
+        
+        db_path = db_url.replace('sqlite:///', '')
+        
+        if not os.path.exists(db_path):
+            return jsonify({
+                'success': False,
+                'message': f'Database file not found: {db_path}'
+            }), 400
+        
+        # Create backups directory if it doesn't exist
+        backup_dir = os.path.join(os.getcwd(), 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Generate backup filename with timestamp
+        timestamp = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+        backup_filename = f'kast.db.backup-{timestamp}'
+        backup_path = os.path.join(backup_dir, backup_filename)
+        
+        # Copy database file
+        shutil.copy2(db_path, backup_path)
+        
+        # Get backup file size
+        backup_size = os.path.getsize(backup_path)
+        if backup_size < 1024:
+            size_str = f"{backup_size} B"
+        elif backup_size < 1024 * 1024:
+            size_str = f"{round(backup_size / 1024, 2)} KB"
+        else:
+            size_str = f"{round(backup_size / (1024 * 1024), 2)} MB"
+        
+        # Log the action
+        AuditLog.log(
+            user_id=current_user.id,
+            action='database_backed_up',
+            resource_type='system',
+            details=f'Database backup created by {current_user.username}: {backup_filename}'
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'Database backup created successfully!\n\nFile: {backup_filename}\nSize: {size_str}\nLocation: {backup_dir}'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error creating backup: {str(e)}'
+        }), 400
 
 
 @bp.route('/import-scan', methods=['GET', 'POST'])
