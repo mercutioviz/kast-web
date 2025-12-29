@@ -57,3 +57,6 @@ htmlcov/
 # Celery
 celerybeat-schedule
 celerybeat.pid
+
+# Assets
+app/static/uploads/
