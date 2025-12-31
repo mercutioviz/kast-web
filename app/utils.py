@@ -469,6 +469,42 @@ def get_scan_logo_usage_count(logo_id):
 
 
 # ============================================================================
+# PLUGIN NAME EXTRACTION
+# ============================================================================
+
+def extract_plugin_name_from_file(json_file_path):
+    """
+    Extract plugin name from a JSON file (processed or raw)
+    
+    Ensures consistent plugin name extraction across the application.
+    Used by both database population and scan detail page.
+    
+    Args:
+        json_file_path: Path object or string path to JSON file
+    
+    Returns:
+        str: Plugin name extracted from filename
+    
+    Example:
+        katana_processed.json -> katana
+        subfinder.json -> subfinder
+    """
+    from pathlib import Path
+    
+    file_path = Path(json_file_path)
+    filename = file_path.name
+    
+    # Remove _processed.json or .json extension
+    if filename.endswith('_processed.json'):
+        return filename[:-len('_processed.json')]
+    elif filename.endswith('.json'):
+        return filename[:-len('.json')]
+    else:
+        # Fallback: use stem
+        return file_path.stem
+
+
+# ============================================================================
 # KAST RESULTS DIRECTORY MANAGEMENT
 # ============================================================================
 

@@ -375,17 +375,13 @@ def parse_scan_results(scan_id, output_dir):
                 with open(json_file, 'r') as f:
                     data = json.load(f)
                 
-                plugin_name = data.get('plugin_name', json_file.stem.replace('_processed', ''))
+                # Extract plugin name consistently using utility function
+                from app.utils import extract_plugin_name_from_file
+                plugin_name = extract_plugin_name_from_file(json_file)
                 disposition = data.get('disposition', 'unknown')
                 
-                # Count findings correctly - look at results array within findings
-                findings_data = data.get('findings', {})
-                if isinstance(findings_data, dict):
-                    # findings is a dict with a 'results' key containing the actual findings
-                    findings_count = len(findings_data.get('results', []))
-                else:
-                    # fallback: findings is a list
-                    findings_count = len(findings_data) if isinstance(findings_data, list) else 0
+                # Use findings_count key from plugin JSON, default to 0 if not present
+                findings_count = data.get('findings_count', 0)
                 
                 # Extract error message if plugin failed
                 error_message = extract_plugin_error(data, disposition)

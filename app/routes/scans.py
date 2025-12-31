@@ -121,23 +121,16 @@ def detail(scan_id):
         # Specific plugins were selected
         plugin_list = scan.plugin_list
     elif output_dir and output_dir.exists():
-        # No specific plugins - scan all files in output directory
-        # Only look for files matching the pattern: plugin.json or plugin_processed.json
+        # No specific plugins - scan processed files in output directory
+        # Only use _processed.json files as they are the source of truth
+        from app.utils import extract_plugin_name_from_file
         plugin_set = set()
-        for json_file in output_dir.glob("*.json"):
-            filename = json_file.name
+        for json_file in output_dir.glob("*_processed.json"):
             # Skip non-plugin files
-            if filename == 'kast_report.json':
+            if json_file.name == 'kast_report.json':
                 continue
-            # Only consider files ending with .json or _processed.json
-            if filename.endswith('_processed.json'):
-                plugin_name = filename[:-len('_processed.json')]
-            elif filename.endswith('.json') and not '_' in filename[:-5]:
-                # Only accept simple plugin.json files (no underscores before .json)
-                plugin_name = filename[:-len('.json')]
-            else:
-                # Skip files with other patterns (like subfinder_tmp.json)
-                continue
+            # Extract plugin name consistently
+            plugin_name = extract_plugin_name_from_file(json_file)
             plugin_set.add(plugin_name)
         plugin_list = sorted(plugin_set)
     else:
