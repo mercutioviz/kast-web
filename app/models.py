@@ -91,9 +91,16 @@ class Scan(db.Model):
     config_profile_id = db.Column(db.Integer, db.ForeignKey('scan_config_profiles.id'), nullable=True)  # NULL = use system default
     config_overrides = db.Column(db.Text)  # JSON dict of --set overrides (admin/power_user only)
     
+    # ZAP-specific fields
+    zap_plan_id = db.Column(db.Integer, db.ForeignKey('zap_automation_plans.id'))
+    zap_config_id = db.Column(db.Integer, db.ForeignKey('zap_configurations.id'))
+    zap_execution_mode = db.Column(db.String(20))  # Track which mode was actually used
+    
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
     config_profile = db.relationship('ScanConfigProfile', backref='scans')
+    zap_plan = db.relationship('ZapAutomationPlan', backref='scans')
+    zap_config = db.relationship('ZapConfiguration', backref='scans')
     
     def __repr__(self):
         return f'<Scan {self.id}: {self.target} ({self.status})>'
@@ -522,3 +529,312 @@ class SystemSettings(db.Model):
                 value_type = 'string'
             
             SystemSettings.set_setting(key, value, value_type, user_id=user_id)
+
+
+class ZapAutomationPlan(db.Model):
+    """Model for storing ZAP automation framework plans (YAML)"""
+    __tablename__ = 'zap_automation_plans'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+    plan_yaml = db.Column(db.Text, nullable=False)
+    
+    # Access control
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    is_system_default = db.Column(db.Boolean, default=False)
+    allow_power_users = db.Column(db.Boolean, default=True)
+    
+    # Draft system for power user submissions
+    is_draft = db.Column(db.Boolean, default=False)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    approved_at = db.Column(db.DateTime)
+    
+    # Metadata
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime)
+    usage_count = db.Column(db.Integer, default=0)
+    
+    # Relationships
+    creator = db.relationship('User', foreign_keys=[created_by], backref='created_zap_plans')
+    approver = db.relationship('User', foreign_keys=[approved_by])
+    
+    def __repr__(self):
+        return f'<ZapAutomationPlan {self.id}: {self.name}>'
+    
+    def can_be_used_by(self, user):
+        """Check if user can use this plan"""
+        if user.is_admin:
+            return True
+        if self.is_draft:
+            return False  # Drafts not usable
+        if user.is_power_user and self.allow_power_users:
+            return True
+        return False
+    
+    def to_dict(self):
+        """Convert plan to dictionary"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'plan_yaml': self.plan_yaml,
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None,
+            'is_system_default': self.is_system_default,
+            'allow_power_users': self.allow_power_users,
+            'is_draft': self.is_draft,
+            'approved_by': self.approved_by,
+            'approver_username': self.approver.username if self.approver else None,
+            'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None,
+            'usage_count': self.usage_count
+        }
+
+
+class ZapConfiguration(db.Model):
+    """Model for storing ZAP execution environment configurations"""
+    __tablename__ = 'zap_configurations'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+    execution_mode = db.Column(db.String(20), nullable=False)  # local, remote, cloud, auto
+    
+    # Mode-specific configs (stored as encrypted JSON strings)
+    local_config_encrypted = db.Column(db.Text)  # Docker settings
+    remote_config_encrypted = db.Column(db.Text)  # URL, API key
+    cloud_config_encrypted = db.Column(db.Text)  # Provider, credentials
+    
+    # Settings
+    is_active = db.Column(db.Boolean, default=True)
+    is_default = db.Column(db.Boolean, default=False)
+    
+    # Metadata
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime)
+    
+    # Relationships
+    creator = db.relationship('User', backref='created_zap_configs')
+    
+    def __repr__(self):
+        return f'<ZapConfiguration {self.id}: {self.name}>'
+    
+    @property
+    def local_config(self):
+        """Decrypt and return local config"""
+        if self.local_config_encrypted:
+            from app.encryption import decrypt_json
+            return decrypt_json(self.local_config_encrypted)
+        return {}
+    
+    @local_config.setter
+    def local_config(self, value):
+        """Encrypt and store local config"""
+        from app.encryption import encrypt_json
+        self.local_config_encrypted = encrypt_json(value)
+    
+    @property
+    def remote_config(self):
+        """Decrypt and return remote config"""
+        if self.remote_config_encrypted:
+            from app.encryption import decrypt_json
+            return decrypt_json(self.remote_config_encrypted)
+        return {}
+    
+    @remote_config.setter
+    def remote_config(self, value):
+        """Encrypt and store remote config"""
+        from app.encryption import encrypt_json
+        self.remote_config_encrypted = encrypt_json(value)
+    
+    @property
+    def cloud_config(self):
+        """Decrypt and return cloud config"""
+        if self.cloud_config_encrypted:
+            from app.encryption import decrypt_json
+            return decrypt_json(self.cloud_config_encrypted)
+        return {}
+    
+    @cloud_config.setter
+    def cloud_config(self, value):
+        """Encrypt and store cloud config"""
+        from app.encryption import encrypt_json
+        self.cloud_config_encrypted = encrypt_json(value)
+    
+    def to_dict(self, include_sensitive=False):
+        """Convert to dict, optionally masking sensitive data"""
+        result = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'execution_mode': self.execution_mode,
+            'is_active': self.is_active,
+            'is_default': self.is_default,
+            'created_by': self.created_by,
+            'creator_username': self.creator.username if self.creator else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None
+        }
+        
+        if include_sensitive:
+            # Only include decrypted configs for admin users
+            result['local_config'] = self.local_config
+            result['remote_config'] = self.remote_config
+            result['cloud_config'] = self.cloud_config
+        else:
+            # Mask sensitive values
+            result['local_config'] = self._mask_config(self.local_config)
+            result['remote_config'] = self._mask_config(self.remote_config)
+            result['cloud_config'] = self._mask_config(self.cloud_config)
+        
+        return result
+    
+    @staticmethod
+    def _mask_config(config):
+        """Mask sensitive values in config dict"""
+        if not config:
+            return {}
+        
+        masked = config.copy()
+        sensitive_keys = ['api_key', 'password', 'secret', 'token', 'credential', 'access_key', 'secret_key']
+        
+        for key in masked:
+            if any(sensitive in key.lower() for sensitive in sensitive_keys):
+                if masked[key]:
+                    masked[key] = '********'
+        
+        return masked
+
+
+class ZapScanProgress(db.Model):
+    """Model for tracking real-time ZAP scan progress"""
+    __tablename__ = 'zap_scan_progress'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), unique=True, nullable=False, index=True)
+    
+    # Progress metrics
+    plan_id = db.Column(db.String(50))
+    status = db.Column(db.String(20), default='pending')  # pending, running, completed, failed
+    spider_percent = db.Column(db.Integer, default=0)
+    active_scan_percent = db.Column(db.Integer, default=0)
+    passive_scan_queue = db.Column(db.Integer, default=0)
+    
+    # Alert counts
+    total_alerts = db.Column(db.Integer, default=0)
+    high_alerts = db.Column(db.Integer, default=0)
+    medium_alerts = db.Column(db.Integer, default=0)
+    low_alerts = db.Column(db.Integer, default=0)
+    informational_alerts = db.Column(db.Integer, default=0)
+    
+    # Job tracking
+    job_updates = db.Column(db.Text)  # JSON array of job status messages
+    warnings = db.Column(db.Text)  # JSON array of warnings
+    errors = db.Column(db.Text)  # JSON array of errors
+    
+    # Timestamps
+    started_at = db.Column(db.DateTime)
+    last_updated = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    
+    # Full snapshot (for debugging)
+    raw_snapshot = db.Column(db.Text)  # Full JSON from zap_scan_progress.json
+    
+    # Relationship
+    scan = db.relationship('Scan', backref=db.backref('zap_progress', uselist=False))
+    
+    def __repr__(self):
+        return f'<ZapScanProgress {self.id}: Scan {self.scan_id} ({self.status})>'
+    
+    def to_dict(self):
+        """Convert to dictionary"""
+        import json
+        return {
+            'id': self.id,
+            'scan_id': self.scan_id,
+            'plan_id': self.plan_id,
+            'status': self.status,
+            'progress': {
+                'spider_percent': self.spider_percent,
+                'active_scan_percent': self.active_scan_percent,
+                'passive_scan_queue': self.passive_scan_queue
+            },
+            'alerts': {
+                'total': self.total_alerts,
+                'high': self.high_alerts,
+                'medium': self.medium_alerts,
+                'low': self.low_alerts,
+                'informational': self.informational_alerts
+            },
+            'job_updates': json.loads(self.job_updates) if self.job_updates else [],
+            'warnings': json.loads(self.warnings) if self.warnings else [],
+            'errors': json.loads(self.errors) if self.errors else [],
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'last_updated': self.last_updated.isoformat() if self.last_updated else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+        }
+    
+    @staticmethod
+    def update_from_snapshot(scan_id, snapshot_data):
+        """Update progress from zap_scan_progress.json snapshot"""
+        import json
+        
+        progress = ZapScanProgress.query.filter_by(scan_id=scan_id).first()
+        if not progress:
+            progress = ZapScanProgress(scan_id=scan_id)
+            db.session.add(progress)
+        
+        # Update fields from snapshot
+        progress.plan_id = snapshot_data.get('plan_id')
+        progress.status = snapshot_data.get('status', 'running')
+        
+        # Progress metrics
+        prog = snapshot_data.get('progress', {})
+        progress.spider_percent = prog.get('spider_percent', 0)
+        progress.active_scan_percent = prog.get('active_scan_percent', 0)
+        progress.passive_scan_queue = prog.get('passive_scan_queue', 0)
+        
+        # Alerts
+        alerts = snapshot_data.get('alerts', {})
+        progress.total_alerts = alerts.get('total', 0)
+        by_risk = alerts.get('by_risk', {})
+        progress.high_alerts = by_risk.get('High', 0)
+        progress.medium_alerts = by_risk.get('Medium', 0)
+        progress.low_alerts = by_risk.get('Low', 0)
+        progress.informational_alerts = by_risk.get('Informational', 0)
+        
+        # Job updates
+        progress.job_updates = json.dumps(snapshot_data.get('job_updates', []))
+        progress.warnings = json.dumps(snapshot_data.get('warnings', []))
+        progress.errors = json.dumps(snapshot_data.get('errors', []))
+        
+        # Timestamps
+        from datetime import datetime as dt
+        if snapshot_data.get('scan_started'):
+            try:
+                progress.started_at = dt.fromisoformat(snapshot_data['scan_started'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+        if snapshot_data.get('last_updated'):
+            try:
+                progress.last_updated = dt.fromisoformat(snapshot_data['last_updated'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+        if snapshot_data.get('finished'):
+            try:
+                progress.completed_at = dt.fromisoformat(snapshot_data['finished'].replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pass
+        
+        # Store raw snapshot
+        progress.raw_snapshot = json.dumps(snapshot_data)
+        
+        db.session.commit()
+        return progress
