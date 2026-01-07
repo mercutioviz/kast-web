@@ -135,6 +135,84 @@
     </div>
 </div>
 
+<!-- ZAP Management -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-shield-check"></i> ZAP Automation Plans</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h3 class="text-primary">{{ stats.zap.plans.total }}</h3>
+                        <small class="text-muted">Total Plans</small>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-success">{{ stats.zap.plans.active }}</h3>
+                        <small class="text-muted">Active</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="mb-2">
+                    <small class="text-muted">System Default:</small>
+                    <strong>{{ stats.zap.plans.default_name or 'None' }}</strong>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted">Power User Access:</small>
+                    <strong>{{ stats.zap.plans.power_user_count }} plans</strong>
+                </div>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('zap_admin.plans_list') }}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-list"></i> Manage Plans
+                    </a>
+                    <a href="{{ url_for('zap_admin.plan_create') }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus-circle"></i> Create Plan
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-server"></i> ZAP Configurations</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6">
+                        <h3 class="text-info">{{ stats.zap.configs.total }}</h3>
+                        <small class="text-muted">Total Configs</small>
+                    </div>
+                    <div class="col-6">
+                        <h3 class="text-success">{{ stats.zap.configs.active }}</h3>
+                        <small class="text-muted">Active</small>
+                    </div>
+                </div>
+                <hr>
+                <div class="mb-2">
+                    <small class="text-muted">Modes:</small>
+                    <div class="d-flex justify-content-between mt-1">
+                        <span class="badge bg-info">Local: {{ stats.zap.configs.by_mode.local }}</span>
+                        <span class="badge bg-warning">Remote: {{ stats.zap.configs.by_mode.remote }}</span>
+                        <span class="badge bg-primary">Cloud: {{ stats.zap.configs.by_mode.cloud }}</span>
+                        <span class="badge bg-secondary">Auto: {{ stats.zap.configs.by_mode.auto }}</span>
+                    </div>
+                </div>
+                <div class="d-grid gap-2 mt-3">
+                    <a href="{{ url_for('zap_admin.configs_list') }}" class="btn btn-outline-info btn-sm">
+                        <i class="bi bi-list"></i> Manage Configurations
+                    </a>
+                    <a href="{{ url_for('zap_admin.config_create') }}" class="btn btn-info btn-sm">
+                        <i class="bi bi-plus-circle"></i> Create Configuration
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- System Status & Recent Logs -->
 <div class="row">
     <div class="col-md-4">

@@ -150,11 +150,20 @@ def verify_migration():
                 print(f"  ✓ ZapConfiguration.creator relationship works")
                 print(f"    - Config '{config.name}' created by User ID {config.created_by}")
             
-            # Check Scan model has new fields
-            print("  ✓ Scan model updated with ZAP fields:")
-            print("    - zap_plan_id")
-            print("    - zap_config_id")
-            print("    - zap_execution_mode")
+            # Check Scan model has new fields by querying the table
+            try:
+                # Try to query with ZAP fields to ensure they exist
+                result = db.session.execute(
+                    db.text("SELECT zap_plan_id, zap_config_id, zap_execution_mode FROM scans LIMIT 1")
+                )
+                print("  ✓ Scan model updated with ZAP fields:")
+                print("    - zap_plan_id (verified in database)")
+                print("    - zap_config_id (verified in database)")
+                print("    - zap_execution_mode (verified in database)")
+            except Exception as col_error:
+                print(f"  ✗ Error: Scan table missing ZAP columns: {col_error}")
+                print("    Run: python utils/fix_zap_scan_columns.py")
+                all_passed = False
             
         except Exception as e:
             print(f"  ✗ Error verifying relationships: {e}")

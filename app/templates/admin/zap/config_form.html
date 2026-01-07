@@ -1,0 +1,261 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Create' }} ZAP Configuration - Admin Panel{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>
+                <i class="fas fa-{{ 'edit' if mode == 'edit' else 'plus' }}"></i>
+                {{ 'Edit' if mode == 'edit' else 'Create' }} ZAP Configuration
+            </h2>
+            <p class="text-muted mb-0">
+                {{ 'Modify existing' if mode == 'edit' else 'Create new' }} ZAP execution configuration
+            </p>
+        </div>
+        <a href="{{ url_for('zap_admin.configs_list') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Configurations
+        </a>
+    </div>
+
+    <form method="post" id="config-form">
+        {{ form.hidden_tag() }}
+        
+        <div class="row">
+            <!-- Main Form Column -->
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cog"></i> Basic Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Name -->
+                        <div class="mb-3">
+                            {{ form.name.label(class="form-label") }}
+                            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else "")) }}
+                            {% if form.name.errors %}
+                            <div class="invalid-feedback">{{ form.name.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Description -->
+                        <div class="mb-3">
+                            {{ form.description.label(class="form-label") }}
+                            {{ form.description(class="form-control", rows=2) }}
+                        </div>
+
+                        <!-- Execution Mode -->
+                        <div class="mb-3">
+                            {{ form.execution_mode.label(class="form-label") }}
+                            {{ form.execution_mode(class="form-select", id="execution-mode-select") }}
+                            <small class="form-text text-muted">Select how ZAP will be executed</small>
+                        </div>
+
+                        <!-- Status Checkboxes -->
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    {{ form.is_active(class="form-check-input") }}
+                                    {{ form.is_active.label(class="form-check-label") }}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    {{ form.is_default(class="form-check-input") }}
+                                    {{ form.is_default.label(class="form-check-label") }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Local Docker Configuration -->
+                <div class="card mb-4" id="local-config" style="display: none;">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-laptop"></i> Local Docker Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            {{ form.docker_image.label(class="form-label") }}
+                            {{ form.docker_image(class="form-control") }}
+                            <small class="form-text text-muted">Default: ghcr.io/zaproxy/zaproxy:stable</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                {{ form.docker_port.label(class="form-label") }}
+                                {{ form.docker_port(class="form-control") }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                {{ form.docker_memory_limit.label(class="form-label") }}
+                                {{ form.docker_memory_limit(class="form-control") }}
+                                <small class="form-text text-muted">e.g., 2g, 512m</small>
+                            </div>
+                        </div>
+                        <div class="form-check">
+                            {{ form.docker_auto_remove(class="form-check-input") }}
+                            {{ form.docker_auto_remove.label(class="form-check-label") }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Remote Configuration -->
+                <div class="card mb-4" id="remote-config" style="display: none;">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-network-wired"></i> Remote ZAP Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            {{ form.remote_url.label(class="form-label") }}
+                            {{ form.remote_url(class="form-control", placeholder="http://zap.example.com:8080") }}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.remote_api_key.label(class="form-label") }}
+                            {{ form.remote_api_key(class="form-control", placeholder="Enter API key" + (" or leave blank to keep existing" if mode == 'edit' else "")) }}
+                            {% if mode == 'edit' %}
+                            <small class="form-text text-muted">Leave blank to keep existing API key</small>
+                            {% endif %}
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                {{ form.remote_timeout.label(class="form-label") }}
+                                {{ form.remote_timeout(class="form-control") }}
+                                <small class="form-text text-muted">Seconds</small>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check mt-4">
+                                    {{ form.remote_verify_ssl(class="form-check-input") }}
+                                    {{ form.remote_verify_ssl.label(class="form-check-label") }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cloud Configuration -->
+                <div class="card mb-4" id="cloud-config" style="display: none;">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cloud"></i> Cloud Configuration</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            {{ form.cloud_provider.label(class="form-label") }}
+                            {{ form.cloud_provider(class="form-select") }}
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                {{ form.cloud_region.label(class="form-label") }}
+                                {{ form.cloud_region(class="form-control", placeholder="e.g., us-east-1") }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                {{ form.cloud_instance_type.label(class="form-label") }}
+                                {{ form.cloud_instance_type(class="form-control", placeholder="e.g., t3.medium") }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            {{ form.cloud_access_key.label(class="form-label") }}
+                            {{ form.cloud_access_key(class="form-control", placeholder="Access key" + (" or leave blank to keep existing" if mode == 'edit' else "")) }}
+                            {% if mode == 'edit' %}
+                            <small class="form-text text-muted">Leave blank to keep existing access key</small>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.cloud_secret_key.label(class="form-label") }}
+                            {{ form.cloud_secret_key(class="form-control", type="password", placeholder="Secret key" + (" or leave blank to keep existing" if mode == 'edit' else "")) }}
+                            {% if mode == 'edit' %}
+                            <small class="form-text text-muted">Leave blank to keep existing secret key</small>
+                            {% endif %}
+                        </div>
+                        <div class="form-check">
+                            {{ form.cloud_auto_terminate(class="form-check-input") }}
+                            {{ form.cloud_auto_terminate.label(class="form-check-label") }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Buttons -->
+                <div class="d-flex justify-content-between">
+                    <a href="{{ url_for('zap_admin.configs_list') }}" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> {{ 'Update' if mode == 'edit' else 'Create' }} Configuration
+                    </button>
+                </div>
+            </div>
+
+            <!-- Help Sidebar -->
+            <div class="col-lg-4">
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-info-circle"></i> Execution Modes</h6>
+                    </div>
+                    <div class="card-body">
+                        <h6><i class="fas fa-laptop"></i> Local (Docker)</h6>
+                        <p class="small">Runs ZAP in a Docker container on the same machine. Requires Docker to be installed and running.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-network-wired"></i> Remote</h6>
+                        <p class="small">Connects to an existing ZAP instance running elsewhere. Useful for dedicated ZAP servers.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-cloud"></i> Cloud</h6>
+                        <p class="small">Launches temporary ZAP instances in cloud providers (AWS, GCP, Azure). Requires cloud credentials.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-magic"></i> Auto</h6>
+                        <p class="small">Automatically selects the best available method based on environment.</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-shield-alt"></i> Security Notes</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0">
+                            <li>API keys and credentials are encrypted at rest</li>
+                            <li>Sensitive data is never shown in logs</li>
+                            <li>Use strong, unique API keys</li>
+                            <li>Restrict network access to ZAP instances</li>
+                            <li>Test configurations before production use</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const modeSelect = document.getElementById('execution-mode-select');
+    const localConfig = document.getElementById('local-config');
+    const remoteConfig = document.getElementById('remote-config');
+    const cloudConfig = document.getElementById('cloud-config');
+    
+    function updateVisibility() {
+        const mode = modeSelect.value;
+        
+        // Hide all
+        localConfig.style.display = 'none';
+        remoteConfig.style.display = 'none';
+        cloudConfig.style.display = 'none';
+        
+        // Show relevant section
+        if (mode === 'local') {
+            localConfig.style.display = 'block';
+        } else if (mode === 'remote') {
+            remoteConfig.style.display = 'block';
+        } else if (mode === 'cloud') {
+            cloudConfig.style.display = 'block';
+        }
+        // 'auto' mode shows none (uses defaults)
+    }
+    
+    // Set initial visibility
+    updateVisibility();
+    
+    // Update on change
+    modeSelect.addEventListener('change', updateVisibility);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,271 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}ZAP Configurations - Admin Panel{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-server"></i> ZAP Configurations</h2>
+            <p class="text-muted mb-0">Manage ZAP execution environments and connection settings</p>
+        </div>
+        <a href="{{ url_for('zap_admin.config_create') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create New Configuration
+        </a>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Filter by Mode</label>
+                    <select name="mode" class="form-select" onchange="this.form.submit()">
+                        <option value="all" {% if mode_filter == 'all' %}selected{% endif %}>All Modes</option>
+                        <option value="local" {% if mode_filter == 'local' %}selected{% endif %}>Local (Docker)</option>
+                        <option value="remote" {% if mode_filter == 'remote' %}selected{% endif %}>Remote</option>
+                        <option value="cloud" {% if mode_filter == 'cloud' %}selected{% endif %}>Cloud</option>
+                        <option value="auto" {% if mode_filter == 'auto' %}selected{% endif %}>Auto</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Filter by Status</label>
+                    <select name="status" class="form-select" onchange="this.form.submit()">
+                        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+                        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Only</option>
+                        <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive Only</option>
+                        <option value="default" {% if status_filter == 'default' %}selected{% endif %}>Default Config</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Configurations Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Configurations
+                <span class="badge bg-secondary">{{ configs|length }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if configs %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Mode</th>
+                            <th>Status</th>
+                            <th>Usage</th>
+                            <th>Success Rate</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for config in configs %}
+                        <tr>
+                            <td>
+                                <strong>{{ config.name }}</strong>
+                                {% if config.is_default %}
+                                <span class="badge bg-primary ms-2">Default</span>
+                                {% endif %}
+                                <br>
+                                <small class="text-muted">{{ config.description|truncate(60) }}</small>
+                            </td>
+                            <td>
+                                {% if config.execution_mode == 'local' %}
+                                <span class="badge bg-info"><i class="fas fa-laptop"></i> Local</span>
+                                {% elif config.execution_mode == 'remote' %}
+                                <span class="badge bg-warning"><i class="fas fa-network-wired"></i> Remote</span>
+                                {% elif config.execution_mode == 'cloud' %}
+                                <span class="badge bg-primary"><i class="fas fa-cloud"></i> Cloud</span>
+                                {% elif config.execution_mode == 'auto' %}
+                                <span class="badge bg-secondary"><i class="fas fa-magic"></i> Auto</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if config.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ config.stats.total_scans }}</strong> total
+                                <br><small class="text-muted">{{ config.stats.recent_scans }} last 30 days</small>
+                            </td>
+                            <td>
+                                {% if config.stats.total_scans > 0 %}
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar {% if config.stats.success_rate >= 80 %}bg-success{% elif config.stats.success_rate >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                                         role="progressbar"
+                                         style="width: {{ config.stats.success_rate }}%"
+                                         aria-valuenow="{{ config.stats.success_rate }}"
+                                         aria-valuemin="0"
+                                         aria-valuemax="100">
+                                        {{ config.stats.success_rate }}%
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="text-muted">No scans yet</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if config.updated_at %}
+                                {{ config.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                <span class="text-muted">Never</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" 
+                                            class="btn btn-outline-info test-config-btn"
+                                            data-config-id="{{ config.id }}"
+                                            title="Test Connection">
+                                        <i class="fas fa-check-circle"></i>
+                                    </button>
+                                    {% if not config.is_default %}
+                                    <form method="post" action="{{ url_for('zap_admin.config_set_default', config_id=config.id) }}" style="display: inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="btn btn-outline-success"
+                                                title="Set as Default"
+                                                onclick="return confirm('Set as default configuration?')">
+                                            <i class="fas fa-star"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <a href="{{ url_for('zap_admin.config_edit', config_id=config.id) }}"
+                                       class="btn btn-outline-primary"
+                                       title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <form method="post" action="{{ url_for('zap_admin.config_delete', config_id=config.id) }}" style="display: inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="btn btn-outline-danger"
+                                                title="Delete"
+                                                onclick="return confirm('Are you sure you want to delete this configuration?')">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                No ZAP configurations found.
+                <a href="{{ url_for('zap_admin.config_create') }}">Create your first configuration</a> to get started.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5><i class="fas fa-question-circle"></i> About ZAP Configurations</h5>
+            <p>ZAP configurations define how and where ZAP scans are executed:</p>
+            <ul>
+                <li><strong>Local (Docker):</strong> Run ZAP in a Docker container on the same machine</li>
+                <li><strong>Remote:</strong> Connect to an existing remote ZAP instance</li>
+                <li><strong>Cloud:</strong> Launch ZAP instances in cloud environments (AWS, GCP, Azure)</li>
+                <li><strong>Auto:</strong> Automatically select the best available method</li>
+            </ul>
+            <p class="mb-0">Test configurations before use to ensure connectivity and proper setup.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Test Result Modal -->
+<div class="modal fade" id="testResultModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Configuration Test Result</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="testResultBody">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Testing...</span>
+                    </div>
+                    <p class="mt-2">Testing configuration...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const testButtons = document.querySelectorAll('.test-config-btn');
+    const modal = new bootstrap.Modal(document.getElementById('testResultModal'));
+    const modalBody = document.getElementById('testResultBody');
+    
+    testButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const configId = this.dataset.configId;
+            
+            // Show modal with loading state
+            modalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Testing...</span>
+                    </div>
+                    <p class="mt-2">Testing configuration...</p>
+                </div>
+            `;
+            modal.show();
+            
+            // Send test request
+            fetch('/admin/zap/configs/' + configId + '/test', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                }
+            })
+            .then(response => response.json().then(data => ({status: response.status, data: data})))
+            .then(({status, data}) => {
+                if (status === 200) {
+                    modalBody.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle fa-2x mb-2"></i>
+                            <p class="mb-0">${data.message}</p>
+                        </div>
+                    `;
+                } else {
+                    modalBody.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                            <p class="mb-0">${data.message}</p>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                modalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p class="mb-0">Test failed: ${error.message}</p>
+                    </div>
+                `;
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

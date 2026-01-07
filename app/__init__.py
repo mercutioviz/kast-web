@@ -72,7 +72,7 @@ def create_app(config_name='default'):
         return {'csrf_token': generate_csrf}
     
     # Register blueprints
-    from app.routes import main, scans, api, auth, admin, logos, config_profiles
+    from app.routes import main, scans, api, auth, admin, logos, config_profiles, zap_admin
     app.register_blueprint(main.bp)
     app.register_blueprint(scans.bp)
     app.register_blueprint(api.bp)
@@ -80,6 +80,7 @@ def create_app(config_name='default'):
     app.register_blueprint(admin.bp)
     app.register_blueprint(logos.bp)
     app.register_blueprint(config_profiles.bp)
+    app.register_blueprint(zap_admin.bp)
     
     # Initialize Flask-Admin for database explorer
     from app.admin_db import init_admin

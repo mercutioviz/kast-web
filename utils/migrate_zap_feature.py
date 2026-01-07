@@ -69,7 +69,7 @@ def migrate():
 
 
 def seed_default_plans():
-    """Create default ZAP automation plans"""
+    """Create default ZAP automation plans from KAST config files"""
     # Get or create system admin user
     admin = User.query.filter_by(role='admin').first()
     if not admin:
@@ -85,6 +85,87 @@ def seed_default_plans():
         db.session.commit()
         print(f"  → Created admin user (ID: {admin.id})")
     
+    # Import plans from KAST config directory
+    kast_config_dir = Path('/opt/kast/kast/config')
+    if not kast_config_dir.exists():
+        print(f"  ⚠ Warning: KAST config directory not found at {kast_config_dir}")
+        print("  → Using fallback default plans")
+        seed_fallback_plans(admin)
+        return
+    
+    # Plan file mapping with metadata
+    plan_files = {
+        'zap_automation_quick.yaml': {
+            'name': 'Quick Scan',
+            'description': 'Fast scan for CI/CD pipelines (~20 minutes)',
+            'allow_power_users': True,
+            'is_system_default': False
+        },
+        'zap_automation_standard.yaml': {
+            'name': 'Standard Scan',
+            'description': 'Balanced scan for regular development testing (~45 minutes)',
+            'allow_power_users': True,
+            'is_system_default': True  # Default plan
+        },
+        'zap_automation_thorough.yaml': {
+            'name': 'Thorough Scan',
+            'description': 'Comprehensive scan for pre-production assessments (~90 minutes)',
+            'allow_power_users': True,
+            'is_system_default': False
+        },
+        'zap_automation_api.yaml': {
+            'name': 'API Scan',
+            'description': 'Optimized scan for REST APIs and microservices (~30 minutes)',
+            'allow_power_users': True,
+            'is_system_default': False
+        },
+        'zap_automation_passive.yaml': {
+            'name': 'Passive Scan',
+            'description': 'Production-safe passive scan with no active attacks (~15 minutes)',
+            'allow_power_users': True,
+            'is_system_default': False
+        }
+    }
+    
+    for filename, metadata in plan_files.items():
+        plan_path = kast_config_dir / filename
+        
+        # Check if plan already exists
+        existing = ZapAutomationPlan.query.filter_by(name=metadata['name']).first()
+        if existing:
+            print(f"  → Plan '{metadata['name']}' already exists (ID: {existing.id})")
+            continue
+        
+        # Read plan YAML
+        if not plan_path.exists():
+            print(f"  ⚠ Warning: Plan file not found: {filename}")
+            continue
+        
+        try:
+            with open(plan_path, 'r') as f:
+                plan_yaml = f.read()
+            
+            # Create new plan
+            plan = ZapAutomationPlan(
+                name=metadata['name'],
+                description=metadata['description'],
+                plan_yaml=plan_yaml,
+                created_by=admin.id,
+                is_system_default=metadata['is_system_default'],
+                allow_power_users=metadata['allow_power_users'],
+                is_draft=False
+            )
+            db.session.add(plan)
+            db.session.commit()
+            print(f"  ✓ Imported plan: {metadata['name']} from {filename} (ID: {plan.id})")
+            
+        except Exception as e:
+            print(f"  ✗ Error importing {filename}: {e}")
+            continue
+
+
+def seed_fallback_plans(admin):
+    """Fallback function to create basic plans if KAST config files not found"""
     plans_data = [
         {
             'name': 'Quick Passive Scan',

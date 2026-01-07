@@ -416,3 +416,278 @@ class ScanConfigProfileForm(FlaskForm):
             profile = ScanConfigProfile.query.filter_by(name=name.data).first()
             if profile:
                 raise ValidationError('A profile with this name already exists. Please choose a different name.')
+
+
+class ZapAutomationPlanForm(FlaskForm):
+    """Form for creating/editing ZAP Automation Framework plans"""
+    
+    name = StringField(
+        'Plan Name',
+        validators=[
+            DataRequired(message='Plan name is required'),
+            Length(min=3, max=100, message='Name must be between 3 and 100 characters'),
+            Regexp(r'^[a-zA-Z0-9\s\-_()]+$', message='Name can only contain letters, numbers, spaces, hyphens, underscores, and parentheses')
+        ],
+        render_kw={'placeholder': 'e.g., Quick Passive Scan, Full Security Audit', 'class': 'form-control'}
+    )
+    
+    description = TextAreaField(
+        'Description',
+        validators=[
+            Length(max=1000, message='Description must not exceed 1000 characters')
+        ],
+        render_kw={
+            'placeholder': 'Describe the purpose and scope of this automation plan...',
+            'class': 'form-control',
+            'rows': 3
+        }
+    )
+    
+    plan_yaml = TextAreaField(
+        'Automation Plan (YAML)',
+        validators=[
+            DataRequired(message='Plan YAML is required')
+        ],
+        render_kw={
+            'placeholder': 'Enter ZAP Automation Framework YAML here...',
+            'class': 'form-control font-monospace',
+            'rows': 25,
+            'spellcheck': 'false'
+        }
+    )
+    
+    allow_power_users = BooleanField(
+        'Allow Power Users',
+        default=True,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    is_system_default = BooleanField(
+        'Set as System Default',
+        default=False,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    is_draft = BooleanField(
+        'Save as Draft',
+        default=False,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    submit = SubmitField('Save Plan', render_kw={'class': 'btn btn-primary'})
+    
+    def validate_name(self, name):
+        """Check if plan name already exists (for new plans)"""
+        from app.models import ZapAutomationPlan
+        # Only check for new plans or if name changed
+        if not hasattr(self, 'obj') or (self.obj and self.obj.name != name.data):
+            plan = ZapAutomationPlan.query.filter_by(name=name.data).first()
+            if plan:
+                raise ValidationError('A plan with this name already exists. Please choose a different name.')
+
+
+class ZapConfigurationForm(FlaskForm):
+    """Form for creating/editing ZAP execution configurations"""
+    
+    name = StringField(
+        'Configuration Name',
+        validators=[
+            DataRequired(message='Configuration name is required'),
+            Length(min=3, max=100, message='Name must be between 3 and 100 characters'),
+            Regexp(r'^[a-zA-Z0-9\s\-_()]+$', message='Name can only contain letters, numbers, spaces, hyphens, underscores, and parentheses')
+        ],
+        render_kw={'placeholder': 'e.g., Local Docker, Production ZAP Server', 'class': 'form-control'}
+    )
+    
+    description = TextAreaField(
+        'Description',
+        validators=[
+            Length(max=1000, message='Description must not exceed 1000 characters')
+        ],
+        render_kw={
+            'placeholder': 'Describe this ZAP execution environment...',
+            'class': 'form-control',
+            'rows': 3
+        }
+    )
+    
+    execution_mode = SelectField(
+        'Execution Mode',
+        choices=[
+            ('local', 'Local Docker - Run ZAP in local Docker container'),
+            ('remote', 'Remote Instance - Connect to existing ZAP server'),
+            ('cloud', 'Cloud - Run ZAP in cloud environment'),
+            ('auto', 'Auto - Automatically select best available mode')
+        ],
+        default='local',
+        validators=[DataRequired()],
+        render_kw={'class': 'form-select'}
+    )
+    
+    # Local Docker configuration
+    docker_image = StringField(
+        'Docker Image',
+        validators=[
+            Length(max=200, message='Image name must not exceed 200 characters')
+        ],
+        render_kw={
+            'placeholder': 'ghcr.io/zaproxy/zaproxy:stable',
+            'class': 'form-control'
+        }
+    )
+    
+    docker_port = IntegerField(
+        'Docker Port',
+        validators=[
+            NumberRange(min=1024, max=65535, message='Port must be between 1024 and 65535')
+        ],
+        render_kw={
+            'placeholder': '8080',
+            'class': 'form-control'
+        }
+    )
+    
+    docker_memory_limit = StringField(
+        'Memory Limit',
+        validators=[
+            Length(max=20, message='Memory limit must not exceed 20 characters')
+        ],
+        render_kw={
+            'placeholder': '2g',
+            'class': 'form-control'
+        }
+    )
+    
+    docker_auto_remove = BooleanField(
+        'Auto-remove Container',
+        default=True,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    # Remote configuration
+    remote_url = StringField(
+        'ZAP Server URL',
+        validators=[
+            Length(max=500, message='URL must not exceed 500 characters')
+        ],
+        render_kw={
+            'placeholder': 'http://zap-server:8080',
+            'class': 'form-control'
+        }
+    )
+    
+    remote_api_key = StringField(
+        'API Key',
+        validators=[
+            Length(max=200, message='API key must not exceed 200 characters')
+        ],
+        render_kw={
+            'placeholder': 'Enter ZAP API key',
+            'class': 'form-control',
+            'type': 'password'
+        }
+    )
+    
+    remote_timeout = IntegerField(
+        'Connection Timeout (seconds)',
+        validators=[
+            NumberRange(min=5, max=300, message='Timeout must be between 5 and 300 seconds')
+        ],
+        render_kw={
+            'placeholder': '30',
+            'class': 'form-control'
+        }
+    )
+    
+    remote_verify_ssl = BooleanField(
+        'Verify SSL Certificate',
+        default=True,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    # Cloud configuration
+    cloud_provider = SelectField(
+        'Cloud Provider',
+        choices=[
+            ('aws', 'Amazon Web Services (AWS)'),
+            ('azure', 'Microsoft Azure'),
+            ('gcp', 'Google Cloud Platform (GCP)')
+        ],
+        render_kw={'class': 'form-select'}
+    )
+    
+    cloud_region = StringField(
+        'Region',
+        validators=[
+            Length(max=50, message='Region must not exceed 50 characters')
+        ],
+        render_kw={
+            'placeholder': 'us-east-1',
+            'class': 'form-control'
+        }
+    )
+    
+    cloud_instance_type = StringField(
+        'Instance Type',
+        validators=[
+            Length(max=50, message='Instance type must not exceed 50 characters')
+        ],
+        render_kw={
+            'placeholder': 't3.medium',
+            'class': 'form-control'
+        }
+    )
+    
+    cloud_access_key = StringField(
+        'Access Key',
+        validators=[
+            Length(max=200, message='Access key must not exceed 200 characters')
+        ],
+        render_kw={
+            'placeholder': 'Cloud provider access key',
+            'class': 'form-control',
+            'type': 'password'
+        }
+    )
+    
+    cloud_secret_key = StringField(
+        'Secret Key',
+        validators=[
+            Length(max=200, message='Secret key must not exceed 200 characters')
+        ],
+        render_kw={
+            'placeholder': 'Cloud provider secret key',
+            'class': 'form-control',
+            'type': 'password'
+        }
+    )
+    
+    cloud_auto_terminate = BooleanField(
+        'Auto-terminate After Scan',
+        default=True,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    # General settings
+    is_active = BooleanField(
+        'Active',
+        default=True,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    is_default = BooleanField(
+        'Set as Default',
+        default=False,
+        render_kw={'class': 'form-check-input'}
+    )
+    
+    submit = SubmitField('Save Configuration', render_kw={'class': 'btn btn-primary'})
+    
+    def validate_name(self, name):
+        """Check if configuration name already exists (for new configs)"""
+        from app.models import ZapConfiguration
+        # Only check for new configs or if name changed
+        if not hasattr(self, 'obj') or (self.obj and self.obj.name != name.data):
+            config = ZapConfiguration.query.filter_by(name=name.data).first()
+            if config:
+                raise ValidationError('A configuration with this name already exists. Please choose a different name.')

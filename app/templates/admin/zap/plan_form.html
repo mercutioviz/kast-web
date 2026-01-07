@@ -1,0 +1,233 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Create' }} ZAP Plan - Admin Panel{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>
+                <i class="fas fa-{{ 'edit' if mode == 'edit' else 'plus' }}"></i>
+                {{ 'Edit' if mode == 'edit' else 'Create' }} ZAP Automation Plan
+            </h2>
+            <p class="text-muted mb-0">
+                {{ 'Modify existing' if mode == 'edit' else 'Create new' }} ZAP Automation Framework plan
+            </p>
+        </div>
+        <a href="{{ url_for('zap_admin.plans_list') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Plans
+        </a>
+    </div>
+
+    <div class="row">
+        <!-- Form Column -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-cog"></i> Plan Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="plan-form">
+                        {{ form.hidden_tag() }}
+
+                        <!-- Name -->
+                        <div class="mb-3">
+                            {{ form.name.label(class="form-label") }}
+                            {{ form.name(class="form-control" + (" is-invalid" if form.name.errors else "")) }}
+                            {% if form.name.errors %}
+                            <div class="invalid-feedback">{{ form.name.errors[0] }}</div>
+                            {% endif %}
+                            <small class="form-text text-muted">Unique name for this automation plan</small>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="mb-3">
+                            {{ form.description.label(class="form-label") }}
+                            {{ form.description(class="form-control", rows=3) }}
+                            <small class="form-text text-muted">Brief description of plan purpose and use case</small>
+                        </div>
+
+                        <!-- YAML Editor -->
+                        <div class="mb-3">
+                            {{ form.plan_yaml.label(class="form-label") }}
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <small class="form-text text-muted">ZAP Automation Framework YAML configuration</small>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="validate-yaml-btn">
+                                    <i class="fas fa-check-circle"></i> Validate YAML
+                                </button>
+                            </div>
+                            {{ form.plan_yaml(class="form-control font-monospace" + (" is-invalid" if form.plan_yaml.errors else ""), 
+                                              rows=20, 
+                                              style="font-size: 0.85rem;") }}
+                            {% if form.plan_yaml.errors %}
+                            <div class="invalid-feedback d-block">{{ form.plan_yaml.errors[0] }}</div>
+                            {% endif %}
+                            <div id="yaml-validation-result" class="mt-2"></div>
+                        </div>
+
+                        <!-- Options Row -->
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    {{ form.is_system_default(class="form-check-input") }}
+                                    {{ form.is_system_default.label(class="form-check-label") }}
+                                    <small class="form-text text-muted d-block">Default plan for new scans</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    {{ form.allow_power_users(class="form-check-input") }}
+                                    {{ form.allow_power_users.label(class="form-check-label") }}
+                                    <small class="form-text text-muted d-block">Allow power users to use this plan</small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    {{ form.is_draft(class="form-check-input") }}
+                                    {{ form.is_draft.label(class="form-check-label") }}
+                                    <small class="form-text text-muted d-block">Save as draft (requires approval)</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('zap_admin.plans_list') }}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> {{ 'Update' if mode == 'edit' else 'Create' }} Plan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Column -->
+        <div class="col-lg-4">
+            <!-- YAML Preview Card -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-info-circle"></i> Plan Summary</h6>
+                </div>
+                <div class="card-body">
+                    <div id="plan-summary">
+                        <p class="text-muted">Validate YAML to see plan summary</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="fas fa-question-circle"></i> YAML Structure</h6>
+                </div>
+                <div class="card-body">
+                    <p><strong>Required sections:</strong></p>
+                    <ul class="small">
+                        <li><code>env</code> - Environment and context configuration</li>
+                        <li><code>jobs</code> - Sequential tasks to execute</li>
+                    </ul>
+                    
+                    <p class="mt-3"><strong>Common job types:</strong></p>
+                    <ul class="small">
+                        <li><code>spider</code> / <code>spiderClient</code> - Web crawling</li>
+                        <li><code>passiveScan-config</code> - Passive scan settings</li>
+                        <li><code>passiveScan-wait</code> - Wait for completion</li>
+                        <li><code>activeScan</code> - Active security testing</li>
+                        <li><code>report</code> - Generate output</li>
+                    </ul>
+
+                    <p class="mt-3"><strong>Variable substitution:</strong></p>
+                    <ul class="small">
+                        <li><code>${TARGET_URL}</code> - Scan target URL</li>
+                    </ul>
+
+                    <p class="mt-3">
+                        <a href="https://www.zaproxy.org/docs/desktop/addons/automation-framework/" 
+                           target="_blank" 
+                           class="btn btn-sm btn-outline-info">
+                            <i class="fas fa-external-link-alt"></i> ZAP Documentation
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const validateBtn = document.getElementById('validate-yaml-btn');
+    const yamlTextarea = document.getElementById('plan_yaml');
+    const resultDiv = document.getElementById('yaml-validation-result');
+    const summaryDiv = document.getElementById('plan-summary');
+    
+    validateBtn.addEventListener('click', function() {
+        const yaml = yamlTextarea.value;
+        
+        // Show loading state
+        validateBtn.disabled = true;
+        validateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Validating...';
+        resultDiv.innerHTML = '';
+        
+        // Send AJAX request
+        fetch('{{ url_for("zap_admin.plan_validate_yaml") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({yaml: yaml})
+        })
+        .then(response => response.json().then(data => ({status: response.status, data: data})))
+        .then(({status, data}) => {
+            validateBtn.disabled = false;
+            validateBtn.innerHTML = '<i class="fas fa-check-circle"></i> Validate YAML';
+            
+            if (status === 200) {
+                // Success
+                resultDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle"></i> ${data.message}
+                    </div>
+                `;
+                
+                // Display summary
+                if (data.summary && data.jobs) {
+                    let summaryHtml = '<div class="small">';
+                    summaryHtml += `<p><strong>Jobs:</strong> ${data.jobs.length}</p>`;
+                    summaryHtml += '<ul class="mb-0">';
+                    data.jobs.forEach(job => {
+                        summaryHtml += `<li>${job.type}`;
+                        if (job.context) summaryHtml += ` (${job.context})`;
+                        summaryHtml += '</li>';
+                    });
+                    summaryHtml += '</ul></div>';
+                    summaryDiv.innerHTML = summaryHtml;
+                }
+            } else {
+                // Error
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i> ${data.message}
+                    </div>
+                `;
+                summaryDiv.innerHTML = '<p class="text-danger">Invalid YAML</p>';
+            }
+        })
+        .catch(error => {
+            validateBtn.disabled = false;
+            validateBtn.innerHTML = '<i class="fas fa-check-circle"></i> Validate YAML';
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Validation error: ${error.message}
+                </div>
+            `;
+        });
+    });
+});
+</script>
+{% endblock %}

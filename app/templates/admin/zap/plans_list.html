@@ -1,0 +1,181 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}ZAP Automation Plans - Admin Panel{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-sitemap"></i> ZAP Automation Plans</h2>
+            <p class="text-muted mb-0">Manage ZAP Automation Framework plans for web application scanning</p>
+        </div>
+        <a href="{{ url_for('zap_admin.plan_create') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create New Plan
+        </a>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Filter by Status</label>
+                    <select name="status" class="form-select" onchange="this.form.submit()">
+                        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Plans</option>
+                        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Only</option>
+                        <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Drafts Only</option>
+                        <option value="default" {% if status_filter == 'default' %}selected{% endif %}>System Default</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Plans Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Automation Plans
+                <span class="badge bg-secondary">{{ plans|length }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if plans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Usage</th>
+                            <th>Success Rate</th>
+                            <th>Last Used</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for plan in plans %}
+                        <tr>
+                            <td>
+                                <strong>{{ plan.name }}</strong>
+                                {% if plan.is_system_default %}
+                                <span class="badge bg-success ms-2">Default</span>
+                                {% endif %}
+                                {% if plan.is_draft %}
+                                <span class="badge bg-warning ms-2">Draft</span>
+                                {% endif %}
+                                <br>
+                                <small class="text-muted">{{ plan.description|truncate(60) }}</small>
+                            </td>
+                            <td>
+                                {% if plan.is_draft %}
+                                <span class="badge bg-warning">Draft</span>
+                                {% else %}
+                                <span class="badge bg-success">Active</span>
+                                {% endif %}
+                                {% if plan.allow_power_users %}
+                                <br><small class="text-muted">Power users allowed</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ plan.stats.total_scans }}</strong> total
+                                <br><small class="text-muted">{{ plan.stats.recent_scans }} last 30 days</small>
+                            </td>
+                            <td>
+                                {% if plan.stats.total_scans > 0 %}
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar {% if plan.stats.success_rate >= 80 %}bg-success{% elif plan.stats.success_rate >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                                         role="progressbar"
+                                         style="width: {{ plan.stats.success_rate }}%"
+                                         aria-valuenow="{{ plan.stats.success_rate }}"
+                                         aria-valuemin="0"
+                                         aria-valuemax="100">
+                                        {{ plan.stats.success_rate }}%
+                                    </div>
+                                </div>
+                                <small class="text-muted">{{ plan.stats.completed }} completed, {{ plan.stats.failed }} failed</small>
+                                {% else %}
+                                <span class="text-muted">No scans yet</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if plan.stats.last_used %}
+                                {{ plan.stats.last_used.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                <span class="text-muted">Never</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if plan.updated_at %}
+                                {{ plan.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                                {% else %}
+                                <span class="text-muted">Never</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('zap_admin.plan_preview', plan_id=plan.id) }}"
+                                       class="btn btn-outline-info"
+                                       title="Preview">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="{{ url_for('zap_admin.plan_edit', plan_id=plan.id) }}"
+                                       class="btn btn-outline-primary"
+                                       title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    {% if plan.is_draft %}
+                                    <form method="post" action="{{ url_for('zap_admin.plan_approve', plan_id=plan.id) }}" style="display: inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="btn btn-outline-success"
+                                                title="Approve"
+                                                onclick="return confirm('Approve this plan?')">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <form method="post" action="{{ url_for('zap_admin.plan_delete', plan_id=plan.id) }}" style="display: inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="btn btn-outline-danger"
+                                                title="Delete"
+                                                onclick="return confirm('Are you sure you want to delete this plan? This action cannot be undone.')">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                No ZAP automation plans found.
+                <a href="{{ url_for('zap_admin.plan_create') }}">Create your first plan</a> to get started.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5><i class="fas fa-question-circle"></i> About ZAP Automation Plans</h5>
+            <p>ZAP Automation Framework plans define the scanning workflow using YAML configuration. Plans can include:</p>
+            <ul>
+                <li><strong>Spider:</strong> Crawl the target to discover URLs</li>
+                <li><strong>Ajax Spider:</strong> Use a headless browser for JavaScript-heavy applications</li>
+                <li><strong>Active Scan:</strong> Perform security vulnerability scanning</li>
+                <li><strong>Passive Scan:</strong> Analyze traffic without active attacks</li>
+            </ul>
+            <p>Learn more in the <a href="https://www.zaproxy.org/docs/desktop/addons/automation-framework/" target="_blank">ZAP Automation Framework documentation</a>.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

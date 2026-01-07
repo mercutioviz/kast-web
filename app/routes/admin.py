@@ -11,7 +11,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from functools import wraps
 from app import db
-from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo
+from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo, ZapAutomationPlan, ZapConfiguration
 from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import json
@@ -68,6 +68,21 @@ def dashboard():
     # System status
     settings = SystemSettings.get_settings()
     
+    # ZAP statistics
+    total_plans = ZapAutomationPlan.query.count()
+    active_plans = ZapAutomationPlan.query.filter_by(is_draft=False).count()
+    default_plan = ZapAutomationPlan.query.filter_by(is_system_default=True).first()
+    power_user_plans = ZapAutomationPlan.query.filter_by(allow_power_users=True, is_draft=False).count()
+    
+    total_configs = ZapConfiguration.query.count()
+    active_configs = ZapConfiguration.query.filter_by(is_active=True).count()
+    
+    # Count configs by execution mode
+    local_configs = ZapConfiguration.query.filter_by(execution_mode='local').count()
+    remote_configs = ZapConfiguration.query.filter_by(execution_mode='remote').count()
+    cloud_configs = ZapConfiguration.query.filter_by(execution_mode='cloud').count()
+    auto_configs = ZapConfiguration.query.filter_by(execution_mode='auto').count()
+    
     stats = {
         'users': {
             'total': total_users,
@@ -89,10 +104,28 @@ def dashboard():
         'system': {
             'maintenance_mode': settings.get('maintenance_mode', False),
             'registration_enabled': settings.get('allow_registration', False)
+        },
+        'zap': {
+            'plans': {
+                'total': total_plans,
+                'active': active_plans,
+                'default_name': default_plan.name if default_plan else 'None',
+                'power_user_count': power_user_plans
+            },
+            'configs': {
+                'total': total_configs,
+                'active': active_configs,
+                'by_mode': {
+                    'local': local_configs,
+                    'remote': remote_configs,
+                    'cloud': cloud_configs,
+                    'auto': auto_configs
+                }
+            }
         }
     }
     
-    return render_template('admin/dashboard.html', 
+    return render_template('admin/dashboard.html',
                          stats=stats, 
                          recent_logs=recent_logs)
 
