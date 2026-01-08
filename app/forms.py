@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField, PasswordField, TextAreaField
-from wtforms.validators import DataRequired, Regexp, Length, NumberRange, Email, EqualTo, ValidationError
+from wtforms.validators import DataRequired, Regexp, Length, NumberRange, Email, EqualTo, ValidationError, Optional
 from wtforms.widgets import CheckboxInput, ListWidget
 
 class MultiCheckboxField(SelectMultipleField):
@@ -549,6 +549,7 @@ class ZapConfigurationForm(FlaskForm):
     docker_image = StringField(
         'Docker Image',
         validators=[
+            Optional(),
             Length(max=200, message='Image name must not exceed 200 characters')
         ],
         render_kw={
@@ -560,6 +561,7 @@ class ZapConfigurationForm(FlaskForm):
     docker_port = IntegerField(
         'Docker Port',
         validators=[
+            Optional(),
             NumberRange(min=1024, max=65535, message='Port must be between 1024 and 65535')
         ],
         render_kw={
@@ -571,6 +573,7 @@ class ZapConfigurationForm(FlaskForm):
     docker_memory_limit = StringField(
         'Memory Limit',
         validators=[
+            Optional(),
             Length(max=20, message='Memory limit must not exceed 20 characters')
         ],
         render_kw={
@@ -589,6 +592,7 @@ class ZapConfigurationForm(FlaskForm):
     remote_url = StringField(
         'ZAP Server URL',
         validators=[
+            Optional(),
             Length(max=500, message='URL must not exceed 500 characters')
         ],
         render_kw={
@@ -600,6 +604,7 @@ class ZapConfigurationForm(FlaskForm):
     remote_api_key = StringField(
         'API Key',
         validators=[
+            Optional(),
             Length(max=200, message='API key must not exceed 200 characters')
         ],
         render_kw={
@@ -612,6 +617,7 @@ class ZapConfigurationForm(FlaskForm):
     remote_timeout = IntegerField(
         'Connection Timeout (seconds)',
         validators=[
+            Optional(),
             NumberRange(min=5, max=300, message='Timeout must be between 5 and 300 seconds')
         ],
         render_kw={
@@ -640,6 +646,7 @@ class ZapConfigurationForm(FlaskForm):
     cloud_region = StringField(
         'Region',
         validators=[
+            Optional(),
             Length(max=50, message='Region must not exceed 50 characters')
         ],
         render_kw={
@@ -651,6 +658,7 @@ class ZapConfigurationForm(FlaskForm):
     cloud_instance_type = StringField(
         'Instance Type',
         validators=[
+            Optional(),
             Length(max=50, message='Instance type must not exceed 50 characters')
         ],
         render_kw={
@@ -662,6 +670,7 @@ class ZapConfigurationForm(FlaskForm):
     cloud_access_key = StringField(
         'Access Key',
         validators=[
+            Optional(),
             Length(max=200, message='Access key must not exceed 200 characters')
         ],
         render_kw={
@@ -674,6 +683,7 @@ class ZapConfigurationForm(FlaskForm):
     cloud_secret_key = StringField(
         'Secret Key',
         validators=[
+            Optional(),
             Length(max=200, message='Secret key must not exceed 200 characters')
         ],
         render_kw={

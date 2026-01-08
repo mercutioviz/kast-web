@@ -119,18 +119,23 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         # Handle ZAP configuration if ZAP plugin is selected
         zap_plan_file = None
         zap_plan_fd = None
+        zap_config_to_use = None
         
         if plugins and 'zap' in plugins:
             from app.models import ZapAutomationPlan, ZapConfiguration
             from app.encryption import decrypt_json
+            import shutil
             
-            current_app.logger.info("ZAP plugin selected - configuring ZAP execution")
+            current_app.logger.info("="*80)
+            current_app.logger.info("ZAP PLUGIN CONFIGURATION")
+            current_app.logger.info("="*80)
             
             # 1. Handle custom ZAP automation plan
+            plan = None
             if scan.zap_plan_id:
                 plan = db.session.get(ZapAutomationPlan, scan.zap_plan_id)
                 if plan:
-                    current_app.logger.info(f"Using custom ZAP plan: {plan.name} (ID: {plan.id})")
+                    current_app.logger.info(f"Custom ZAP plan: {plan.name} (ID: {plan.id})")
                     
                     # Write plan YAML to temporary file
                     zap_plan_fd, zap_plan_file = tempfile.mkstemp(
@@ -144,6 +149,12 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
                         zap_plan_fd = None  # Mark as handled
                         
                         current_app.logger.info(f"Created temp ZAP plan file: {zap_plan_file}")
+                        
+                        # Copy plan file to output directory for permanent reference
+                        output_plan_path = output_dir / 'zap_automation_plan.yaml'
+                        shutil.copy(zap_plan_file, output_plan_path)
+                        current_app.logger.info(f"Copied ZAP plan to output directory: {output_plan_path}")
+                        
                     except Exception as e:
                         current_app.logger.error(f"Error writing ZAP plan file: {e}")
                         if zap_plan_fd:
@@ -154,21 +165,43 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
                 else:
                     current_app.logger.warning(f"ZAP plan ID {scan.zap_plan_id} not found")
             else:
-                current_app.logger.info("Using default ZAP automation plan from /opt/kast/kast/config/zap_config.yaml")
+                current_app.logger.info("Using default ZAP automation plan from KAST config")
             
-            # 2. Handle ZAP execution configuration
+            # 2. Handle ZAP execution configuration - ALWAYS ensure a config is selected
             if scan.zap_config_id:
-                config = db.session.get(ZapConfiguration, scan.zap_config_id)
-                if config:
-                    current_app.logger.info(f"Using ZAP config: {config.name} ({config.execution_mode})")
-                    
-                    # Store execution mode for tracking
-                    scan.zap_execution_mode = config.execution_mode
-                    db.session.commit()
+                zap_config_to_use = db.session.get(ZapConfiguration, scan.zap_config_id)
+                if zap_config_to_use:
+                    if not zap_config_to_use.is_active:
+                        current_app.logger.warning(f"Selected ZAP config '{zap_config_to_use.name}' is not active!")
+                    current_app.logger.info(f"Using specified ZAP config: {zap_config_to_use.name} (ID: {zap_config_to_use.id})")
                 else:
                     current_app.logger.warning(f"ZAP config ID {scan.zap_config_id} not found")
-            else:
-                current_app.logger.info("Using default ZAP execution configuration")
+            
+            # If no config specified or config not found, auto-select default
+            if not zap_config_to_use:
+                zap_config_to_use = ZapConfiguration.query.filter_by(
+                    is_default=True,
+                    is_active=True
+                ).first()
+                
+                if zap_config_to_use:
+                    current_app.logger.info(f"Auto-selected default ZAP config: {zap_config_to_use.name} (ID: {zap_config_to_use.id})")
+                    # Update scan record with auto-selected config
+                    scan.zap_config_id = zap_config_to_use.id
+                else:
+                    current_app.logger.error("No default ZAP configuration found! ZAP execution may fail.")
+            
+            # Log comprehensive ZAP configuration details
+            if zap_config_to_use:
+                current_app.logger.info(f"ZAP Execution Mode: {zap_config_to_use.execution_mode}")
+                current_app.logger.info(f"ZAP Plan: {plan.name if plan else 'Default from KAST config'}")
+                current_app.logger.info(f"ZAP Plan File: {zap_plan_file if zap_plan_file else 'Using KAST default'}")
+                
+                # Store execution mode for tracking
+                scan.zap_execution_mode = zap_config_to_use.execution_mode
+            
+            db.session.commit()
+            current_app.logger.info("="*80)
         
         # Build command
         kast_cli = current_app.config['KAST_CLI_PATH']
@@ -178,64 +211,115 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         if config_file_path:
             cmd.extend(['--config', config_file_path])
             current_app.logger.info(f"Added --config argument: {config_file_path}")
+            
+            # Copy config file to output directory for permanent reference
+            import shutil
+            output_config_path = output_dir / 'kast_config.yaml'
+            shutil.copy(config_file_path, output_config_path)
+            current_app.logger.info(f"Copied config file to output directory: {output_config_path}")
         
         # Add ZAP configuration via --set flags if ZAP is selected
-        if plugins and 'zap' in plugins:
-            # Add custom automation plan if we created the temp file
-            if zap_plan_file:
-                cmd.extend(['--set', f'plugins.zap.automation_plan={zap_plan_file}'])
-                current_app.logger.info(f"Added ZAP automation plan via --set: {zap_plan_file}")
+        if plugins and 'zap' in plugins and zap_config_to_use:
+            current_app.logger.info("="*80)
+            current_app.logger.info("APPLYING ZAP CONFIGURATION TO KAST COMMAND")
+            current_app.logger.info("="*80)
             
-            # Add ZAP execution configuration if specified
-            if scan.zap_config_id:
-                from app.models import ZapConfiguration
-                
-                config = db.session.get(ZapConfiguration, scan.zap_config_id)
-                if config:
-                    # Add execution mode
-                    cmd.extend(['--set', f'plugins.zap.execution_mode={config.execution_mode}'])
-                    current_app.logger.info(f"Added ZAP execution mode: {config.execution_mode}")
+            # Track all ZAP --set arguments for summary logging
+            zap_set_args = []
+            
+            # Apply execution mode and mode-specific configuration
+            config = zap_config_to_use
+            from app.encryption import decrypt_json
+            
+            # ALWAYS add execution_mode first (matches working syntax order)
+            cmd.extend(['--set', f'zap.execution_mode={config.execution_mode}'])
+            zap_set_args.append(f'zap.execution_mode={config.execution_mode}')
+            current_app.logger.info(f"[1] --set zap.execution_mode={config.execution_mode}")
+            
+            # Handle LOCAL mode configuration
+            if config.execution_mode == 'local' and config.local_config_encrypted:
+                try:
+                    local_config = decrypt_json(config.local_config_encrypted)
+                    arg_num = len(zap_set_args) + 1
                     
-                    # Add mode-specific configuration
-                    if config.execution_mode == 'local' and config.local_config_encrypted:
-                        try:
-                            local_config = decrypt_json(config.local_config_encrypted)
-                            
-                            if 'docker_image' in local_config and local_config['docker_image']:
-                                cmd.extend(['--set', f'plugins.zap.docker.image={local_config["docker_image"]}'])
-                            
-                            if 'docker_port' in local_config and local_config['docker_port']:
-                                cmd.extend(['--set', f'plugins.zap.docker.port={local_config["docker_port"]}'])
-                            
-                            if 'memory_limit' in local_config and local_config['memory_limit']:
-                                cmd.extend(['--set', f'plugins.zap.docker.memory={local_config["memory_limit"]}'])
-                            
-                            if 'auto_remove' in local_config:
-                                cmd.extend(['--set', f'plugins.zap.docker.auto_remove={str(local_config["auto_remove"]).lower()}'])
-                            
-                            current_app.logger.info(f"Added ZAP Docker configuration settings")
-                        except Exception as e:
-                            current_app.logger.error(f"Error decrypting ZAP local config: {e}")
+                    if 'docker_image' in local_config and local_config['docker_image']:
+                        arg = f'zap.local.docker_image={local_config["docker_image"]}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
                     
-                    elif config.execution_mode == 'remote' and config.remote_config_encrypted:
-                        try:
-                            remote_config = decrypt_json(config.remote_config_encrypted)
-                            
-                            if 'url' in remote_config and remote_config['url']:
-                                cmd.extend(['--set', f'plugins.zap.remote.url={remote_config["url"]}'])
-                            
-                            if 'api_key' in remote_config and remote_config['api_key']:
-                                cmd.extend(['--set', f'plugins.zap.remote.api_key={remote_config["api_key"]}'])
-                            
-                            if 'timeout' in remote_config and remote_config['timeout']:
-                                cmd.extend(['--set', f'plugins.zap.remote.timeout={remote_config["timeout"]}'])
-                            
-                            if 'verify_ssl' in remote_config:
-                                cmd.extend(['--set', f'plugins.zap.remote.verify_ssl={str(remote_config["verify_ssl"]).lower()}'])
-                            
-                            current_app.logger.info(f"Added ZAP remote configuration settings")
-                        except Exception as e:
-                            current_app.logger.error(f"Error decrypting ZAP remote config: {e}")
+                    if 'docker_port' in local_config and local_config['docker_port']:
+                        arg = f'zap.local.api_port={local_config["docker_port"]}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
+                    
+                    if 'auto_remove' in local_config:
+                        arg = f'zap.local.cleanup_on_completion={str(local_config["auto_remove"]).lower()}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
+                    
+                    current_app.logger.info(f"Applied {len(zap_set_args) - 1} ZAP local configuration argument(s)")
+                except Exception as e:
+                    current_app.logger.error(f"Error decrypting ZAP local config: {e}")
+            
+            # Handle REMOTE mode configuration
+            elif config.execution_mode == 'remote' and config.remote_config_encrypted:
+                try:
+                    remote_config = decrypt_json(config.remote_config_encrypted)
+                    arg_num = len(zap_set_args) + 1
+                    
+                    if 'zap_url' in remote_config and remote_config['zap_url']:
+                        arg = f'zap.remote.api_url={remote_config["zap_url"]}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
+                    
+                    if 'api_key' in remote_config and remote_config['api_key']:
+                        arg = f'zap.remote.api_key={remote_config["api_key"]}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set zap.remote.api_key=***hidden***")
+                        arg_num += 1
+                    
+                    if 'timeout' in remote_config and remote_config['timeout']:
+                        arg = f'zap.remote.timeout_seconds={remote_config["timeout"]}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
+                    
+                    if 'verify_ssl' in remote_config:
+                        arg = f'zap.remote.verify_ssl={str(remote_config["verify_ssl"]).lower()}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
+                    
+                    current_app.logger.info(f"Applied {len(zap_set_args) - 1} ZAP remote configuration argument(s)")
+                except Exception as e:
+                    current_app.logger.error(f"Error decrypting ZAP remote config: {e}")
+            
+            # Add custom automation plan LAST (matches working syntax order)
+            if zap_plan_file:
+                arg = f'zap.zap_config.automation_plan={zap_plan_file}'
+                cmd.extend(['--set', arg])
+                zap_set_args.append(arg)
+                current_app.logger.info(f"[{len(zap_set_args)}] --set {arg}")
+            
+            # Log summary of all ZAP --set arguments
+            current_app.logger.info("="*80)
+            current_app.logger.info(f"SUMMARY: Added {len(zap_set_args)} ZAP --set argument(s):")
+            for i, arg in enumerate(zap_set_args, 1):
+                # Hide API key in summary
+                display_arg = arg if 'api_key' not in arg else arg.split('=')[0] + '=***hidden***'
+                current_app.logger.info(f"  [{i}] --set {display_arg}")
+            current_app.logger.info("="*80)
         
         # Add config overrides if specified (power users/admins only)
         if scan.config_overrides:
@@ -268,6 +352,11 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         current_app.logger.info(f"Full command to execute: {' '.join(cmd)}")
         current_app.logger.info(f"Command list: {cmd}")
+        
+        # Store the actual command that was executed for display/debugging
+        scan.actual_cli_command = ' '.join(cmd)
+        db.session.commit()
+        current_app.logger.info("Stored actual CLI command in database")
         
         # ============================================================
         # DEBUGGING: Capture file system state BEFORE execution

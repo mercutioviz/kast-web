@@ -8,6 +8,10 @@ import subprocess
 import re
 from typing import Tuple, Dict, List, Any, Optional
 
+# Standard container name for all ZAP operations
+# Using a single container for all configs simplifies management
+KAST_ZAP_CONTAINER_NAME = "kast-zap-local"
+
 
 def validate_plan_yaml(yaml_content: str) -> Tuple[bool, Optional[str], Optional[Dict]]:
     """
@@ -404,10 +408,11 @@ def get_config_statistics(config_id: int) -> Dict[str, Any]:
 def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, str, str]:
     """
     Start a ZAP Docker container for local mode
+    Note: Uses a single shared container (KAST_ZAP_CONTAINER_NAME) regardless of config_id
     
     Args:
         config: Local configuration dictionary
-        config_id: Configuration ID for container naming
+        config_id: Configuration ID (retained for API compatibility but not used for naming)
         
     Returns:
         Tuple of (success, message, docker_command)
@@ -415,11 +420,11 @@ def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, s
     docker_cmd_str = ""  # Track command for error reporting
     
     try:
-        container_name = f"kast-zap-{config_id}"
+        container_name = KAST_ZAP_CONTAINER_NAME
         image = config.get('docker_image', 'ghcr.io/zaproxy/zaproxy:stable')
         port = config.get('port', 8080)
         memory = config.get('memory_limit', '2g')
-        api_key = 'kast-zap-api-key'
+        api_key = 'kast-local'  # Match the API key used in remote mode
         
         # Check if container already exists
         check_cmd = ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Names}}']
@@ -453,7 +458,7 @@ def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, s
         else:
             pull_message = None
         
-        # Build docker run command
+        # Build docker run command with proper API access configuration
         docker_cmd = [
             'docker', 'run', '-d',
             '--name', container_name,
@@ -463,7 +468,9 @@ def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, s
             'zap.sh', '-daemon',
             '-host', '0.0.0.0',
             '-port', '8080',
-            '-config', f'api.key={api_key}'
+            '-config', f'api.key={api_key}',
+            '-config', 'api.addrs.addr.name=.*',
+            '-config', 'api.addrs.addr.regex=true'
         ]
         docker_cmd_str = ' '.join(docker_cmd)
         
@@ -496,15 +503,16 @@ def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, s
 def stop_zap_container(config_id: int) -> Tuple[bool, str, str]:
     """
     Stop a running ZAP Docker container
+    Note: Uses a single shared container (KAST_ZAP_CONTAINER_NAME) regardless of config_id
     
     Args:
-        config_id: Configuration ID for container naming
+        config_id: Configuration ID (retained for API compatibility but not used for naming)
         
     Returns:
         Tuple of (success, message, docker_command)
     """
     try:
-        container_name = f"kast-zap-{config_id}"
+        container_name = KAST_ZAP_CONTAINER_NAME
         
         # Check if container is running
         check_cmd = ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}']
@@ -533,15 +541,16 @@ def stop_zap_container(config_id: int) -> Tuple[bool, str, str]:
 def remove_zap_container(config_id: int) -> Tuple[bool, str, str]:
     """
     Remove a ZAP Docker container (stops first if running)
+    Note: Uses a single shared container (KAST_ZAP_CONTAINER_NAME) regardless of config_id
     
     Args:
-        config_id: Configuration ID for container naming
+        config_id: Configuration ID (retained for API compatibility but not used for naming)
         
     Returns:
         Tuple of (success, message, docker_command)
     """
     try:
-        container_name = f"kast-zap-{config_id}"
+        container_name = KAST_ZAP_CONTAINER_NAME
         
         # Check if container exists
         check_cmd = ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Names}}']
@@ -570,16 +579,17 @@ def remove_zap_container(config_id: int) -> Tuple[bool, str, str]:
 def get_container_status(config_id: int) -> Tuple[str, str, str]:
     """
     Get the status of a ZAP Docker container
+    Note: Uses a single shared container (KAST_ZAP_CONTAINER_NAME) regardless of config_id
     
     Args:
-        config_id: Configuration ID for container naming
+        config_id: Configuration ID (retained for API compatibility but not used for naming)
         
     Returns:
         Tuple of (status, message, docker_command)
         status can be: 'running', 'stopped', 'not_found'
     """
     try:
-        container_name = f"kast-zap-{config_id}"
+        container_name = KAST_ZAP_CONTAINER_NAME
         
         # Check if container exists and is running
         running_cmd = ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Status}}']
@@ -610,16 +620,17 @@ def get_container_status(config_id: int) -> Tuple[str, str, str]:
 def get_container_logs(config_id: int, tail: int = 100) -> Tuple[bool, str, str]:
     """
     Get logs from a ZAP Docker container
+    Note: Uses a single shared container (KAST_ZAP_CONTAINER_NAME) regardless of config_id
     
     Args:
-        config_id: Configuration ID for container naming
+        config_id: Configuration ID (retained for API compatibility but not used for naming)
         tail: Number of lines to show from end of logs
         
     Returns:
         Tuple of (success, logs_or_error_message, docker_command)
     """
     try:
-        container_name = f"kast-zap-{config_id}"
+        container_name = KAST_ZAP_CONTAINER_NAME
         
         # Get container logs
         logs_cmd = ['docker', 'logs', '--tail', str(tail), container_name]

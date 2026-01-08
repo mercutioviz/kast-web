@@ -96,6 +96,9 @@ class Scan(db.Model):
     zap_config_id = db.Column(db.Integer, db.ForeignKey('zap_configurations.id'))
     zap_execution_mode = db.Column(db.String(20))  # Track which mode was actually used
     
+    # CLI command logging
+    actual_cli_command = db.Column(db.Text)  # The actual command executed (with all --set args)
+    
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
     config_profile = db.relationship('ScanConfigProfile', backref='scans')

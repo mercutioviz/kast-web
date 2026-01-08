@@ -9,7 +9,10 @@ from flask_admin import Admin, AdminIndexView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.form import rules
 from wtforms import PasswordField
-from app.models import User, Scan, ScanResult, AuditLog, ScanShare, ReportLogo, SystemSettings
+from app.models import (
+    User, Scan, ScanResult, AuditLog, ScanShare, ReportLogo, SystemSettings,
+    ScanConfigProfile, ZapAutomationPlan, ZapConfiguration, ZapScanProgress
+)
 from datetime import datetime
 import json
 
@@ -228,6 +231,115 @@ class SystemSettingsModelView(SecureModelView):
     )
 
 
+class ScanConfigProfileModelView(SecureModelView):
+    """Scan configuration profile table view"""
+    
+    column_list = ['id', 'name', 'created_by', 'allow_standard_users', 'is_system_default', 'created_at', 'updated_at']
+    column_searchable_list = ['name', 'description']
+    column_filters = ['created_by', 'allow_standard_users', 'is_system_default', 'created_at']
+    column_sortable_list = ['id', 'name', 'created_by', 'allow_standard_users', 'is_system_default', 'created_at', 'updated_at']
+    column_default_sort = ('name', False)
+    
+    form_excluded_columns = ['creator', 'scans']
+    
+    column_descriptions = {
+        'name': 'Profile name (must be unique)',
+        'allow_standard_users': 'Whether standard users can use this profile',
+        'is_system_default': 'Whether this is the system default profile',
+        'config_yaml': 'YAML configuration content'
+    }
+
+
+class ZapAutomationPlanModelView(SecureModelView):
+    """ZAP automation plan table view"""
+    
+    column_list = ['id', 'name', 'created_by', 'is_system_default', 'allow_power_users', 'is_draft', 'usage_count', 'created_at']
+    column_searchable_list = ['name', 'description']
+    column_filters = ['created_by', 'is_system_default', 'allow_power_users', 'is_draft', 'created_at']
+    column_sortable_list = ['id', 'name', 'created_by', 'is_system_default', 'usage_count', 'created_at', 'updated_at']
+    column_default_sort = ('name', False)
+    
+    form_excluded_columns = ['creator', 'approver', 'scans']
+    
+    column_descriptions = {
+        'name': 'Plan name (must be unique)',
+        'is_system_default': 'Whether this is the default plan',
+        'allow_power_users': 'Whether power users can use this plan',
+        'is_draft': 'Draft plans require admin approval',
+        'plan_yaml': 'ZAP automation framework YAML configuration',
+        'usage_count': 'Number of times this plan has been used'
+    }
+    
+    column_formatters = dict(
+        SecureModelView.column_formatters,
+        approved_at=lambda v, c, m, p: m.approved_at.strftime('%Y-%m-%d %H:%M:%S') if m.approved_at else '',
+        last_used_at=lambda v, c, m, p: m.last_used_at.strftime('%Y-%m-%d %H:%M:%S') if m.last_used_at else '',
+    )
+
+
+class ZapConfigurationModelView(SecureModelView):
+    """ZAP configuration table view"""
+    
+    column_list = ['id', 'name', 'execution_mode', 'is_active', 'is_default', 'created_by', 'created_at', 'last_used_at']
+    column_searchable_list = ['name', 'description']
+    column_filters = ['execution_mode', 'is_active', 'is_default', 'created_by', 'created_at']
+    column_sortable_list = ['id', 'name', 'execution_mode', 'is_active', 'is_default', 'created_at', 'updated_at']
+    column_default_sort = ('name', False)
+    
+    form_excluded_columns = ['creator', 'scans', 'local_config_encrypted', 'remote_config_encrypted', 'cloud_config_encrypted']
+    
+    column_descriptions = {
+        'name': 'Configuration name (must be unique)',
+        'execution_mode': 'Mode: local, remote, cloud, or auto',
+        'is_active': 'Whether this configuration is active/enabled',
+        'is_default': 'Whether this is the default configuration',
+        'local_config_encrypted': 'Encrypted Docker/local settings (JSON)',
+        'remote_config_encrypted': 'Encrypted remote ZAP settings (JSON)',
+        'cloud_config_encrypted': 'Encrypted cloud provider settings (JSON)'
+    }
+    
+    # Don't show encrypted config fields in list view
+    column_exclude_list = ['local_config_encrypted', 'remote_config_encrypted', 'cloud_config_encrypted']
+    
+    column_formatters = dict(
+        SecureModelView.column_formatters,
+        last_used_at=lambda v, c, m, p: m.last_used_at.strftime('%Y-%m-%d %H:%M:%S') if m.last_used_at else '',
+    )
+
+
+class ZapScanProgressModelView(SecureModelView):
+    """ZAP scan progress table view - read only"""
+    
+    can_create = False
+    can_edit = False
+    can_delete = False
+    
+    column_list = ['id', 'scan_id', 'plan_id', 'status', 'total_alerts', 'spider_percent', 'active_scan_percent', 'started_at', 'completed_at']
+    column_searchable_list = ['plan_id']
+    column_filters = ['scan_id', 'status', 'started_at', 'completed_at']
+    column_sortable_list = ['id', 'scan_id', 'status', 'total_alerts', 'started_at', 'completed_at']
+    column_default_sort = ('started_at', True)
+    
+    form_excluded_columns = ['scan']
+    
+    column_descriptions = {
+        'plan_id': 'ZAP automation plan ID',
+        'status': 'pending, running, completed, or failed',
+        'spider_percent': 'Spider progress percentage (0-100)',
+        'active_scan_percent': 'Active scan progress percentage (0-100)',
+        'passive_scan_queue': 'Number of passive scan items in queue',
+        'total_alerts': 'Total number of alerts found',
+        'raw_snapshot': 'Full JSON snapshot for debugging'
+    }
+    
+    column_formatters = dict(
+        SecureModelView.column_formatters,
+        started_at=lambda v, c, m, p: m.started_at.strftime('%Y-%m-%d %H:%M:%S') if m.started_at else '',
+        last_updated=lambda v, c, m, p: m.last_updated.strftime('%Y-%m-%d %H:%M:%S') if m.last_updated else '',
+        completed_at=lambda v, c, m, p: m.completed_at.strftime('%Y-%m-%d %H:%M:%S') if m.completed_at else '',
+    )
+
+
 def init_admin(app, db):
     """Initialize Flask-Admin with the app"""
     
@@ -252,6 +364,10 @@ def init_admin(app, db):
     admin.add_view(AuditLogModelView(AuditLog, db.session, name='Audit Logs', category='Core Tables'))
     admin.add_view(ScanShareModelView(ScanShare, db.session, name='Scan Shares', category='Features'))
     admin.add_view(ReportLogoModelView(ReportLogo, db.session, name='Report Logos', category='Features'))
+    admin.add_view(ScanConfigProfileModelView(ScanConfigProfile, db.session, name='Config Profiles', category='Configuration'))
     admin.add_view(SystemSettingsModelView(SystemSettings, db.session, name='System Settings', category='Configuration'))
+    admin.add_view(ZapAutomationPlanModelView(ZapAutomationPlan, db.session, name='ZAP Plans', category='ZAP Integration'))
+    admin.add_view(ZapConfigurationModelView(ZapConfiguration, db.session, name='ZAP Configurations', category='ZAP Integration'))
+    admin.add_view(ZapScanProgressModelView(ZapScanProgress, db.session, name='ZAP Scan Progress', category='ZAP Integration'))
     
     return admin

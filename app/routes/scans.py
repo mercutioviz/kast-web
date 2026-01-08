@@ -190,7 +190,11 @@ def detail(scan_id):
     
     # Generate CLI command for display
     from flask import current_app
-    cli_command = scan.get_cli_command(current_app.config['KAST_CLI_PATH'])
+    # Use actual command if available (includes all --set args), otherwise generate it
+    if scan.actual_cli_command:
+        cli_command = scan.actual_cli_command
+    else:
+        cli_command = scan.get_cli_command(current_app.config['KAST_CLI_PATH'])
     
     return render_template(
         'scan_detail.html',
