@@ -116,6 +116,60 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             else:
                 current_app.logger.warning(f"Config profile ID {scan.config_profile_id} not found")
         
+        # Handle ZAP configuration if ZAP plugin is selected
+        zap_plan_file = None
+        zap_plan_fd = None
+        
+        if plugins and 'zap' in plugins:
+            from app.models import ZapAutomationPlan, ZapConfiguration
+            from app.encryption import decrypt_json
+            
+            current_app.logger.info("ZAP plugin selected - configuring ZAP execution")
+            
+            # 1. Handle custom ZAP automation plan
+            if scan.zap_plan_id:
+                plan = db.session.get(ZapAutomationPlan, scan.zap_plan_id)
+                if plan:
+                    current_app.logger.info(f"Using custom ZAP plan: {plan.name} (ID: {plan.id})")
+                    
+                    # Write plan YAML to temporary file
+                    zap_plan_fd, zap_plan_file = tempfile.mkstemp(
+                        suffix='.yaml',
+                        prefix='zap_automation_'
+                    )
+                    
+                    try:
+                        with os.fdopen(zap_plan_fd, 'w') as f:
+                            f.write(plan.plan_yaml)
+                        zap_plan_fd = None  # Mark as handled
+                        
+                        current_app.logger.info(f"Created temp ZAP plan file: {zap_plan_file}")
+                    except Exception as e:
+                        current_app.logger.error(f"Error writing ZAP plan file: {e}")
+                        if zap_plan_fd:
+                            os.close(zap_plan_fd)
+                        if zap_plan_file and os.path.exists(zap_plan_file):
+                            os.unlink(zap_plan_file)
+                        zap_plan_file = None
+                else:
+                    current_app.logger.warning(f"ZAP plan ID {scan.zap_plan_id} not found")
+            else:
+                current_app.logger.info("Using default ZAP automation plan from /opt/kast/kast/config/zap_config.yaml")
+            
+            # 2. Handle ZAP execution configuration
+            if scan.zap_config_id:
+                config = db.session.get(ZapConfiguration, scan.zap_config_id)
+                if config:
+                    current_app.logger.info(f"Using ZAP config: {config.name} ({config.execution_mode})")
+                    
+                    # Store execution mode for tracking
+                    scan.zap_execution_mode = config.execution_mode
+                    db.session.commit()
+                else:
+                    current_app.logger.warning(f"ZAP config ID {scan.zap_config_id} not found")
+            else:
+                current_app.logger.info("Using default ZAP execution configuration")
+        
         # Build command
         kast_cli = current_app.config['KAST_CLI_PATH']
         cmd = [kast_cli, '-t', target, '-m', scan_mode, '--format', 'both']
@@ -124,6 +178,64 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         if config_file_path:
             cmd.extend(['--config', config_file_path])
             current_app.logger.info(f"Added --config argument: {config_file_path}")
+        
+        # Add ZAP configuration via --set flags if ZAP is selected
+        if plugins and 'zap' in plugins:
+            # Add custom automation plan if we created the temp file
+            if zap_plan_file:
+                cmd.extend(['--set', f'plugins.zap.automation_plan={zap_plan_file}'])
+                current_app.logger.info(f"Added ZAP automation plan via --set: {zap_plan_file}")
+            
+            # Add ZAP execution configuration if specified
+            if scan.zap_config_id:
+                from app.models import ZapConfiguration
+                
+                config = db.session.get(ZapConfiguration, scan.zap_config_id)
+                if config:
+                    # Add execution mode
+                    cmd.extend(['--set', f'plugins.zap.execution_mode={config.execution_mode}'])
+                    current_app.logger.info(f"Added ZAP execution mode: {config.execution_mode}")
+                    
+                    # Add mode-specific configuration
+                    if config.execution_mode == 'local' and config.local_config_encrypted:
+                        try:
+                            local_config = decrypt_json(config.local_config_encrypted)
+                            
+                            if 'docker_image' in local_config and local_config['docker_image']:
+                                cmd.extend(['--set', f'plugins.zap.docker.image={local_config["docker_image"]}'])
+                            
+                            if 'docker_port' in local_config and local_config['docker_port']:
+                                cmd.extend(['--set', f'plugins.zap.docker.port={local_config["docker_port"]}'])
+                            
+                            if 'memory_limit' in local_config and local_config['memory_limit']:
+                                cmd.extend(['--set', f'plugins.zap.docker.memory={local_config["memory_limit"]}'])
+                            
+                            if 'auto_remove' in local_config:
+                                cmd.extend(['--set', f'plugins.zap.docker.auto_remove={str(local_config["auto_remove"]).lower()}'])
+                            
+                            current_app.logger.info(f"Added ZAP Docker configuration settings")
+                        except Exception as e:
+                            current_app.logger.error(f"Error decrypting ZAP local config: {e}")
+                    
+                    elif config.execution_mode == 'remote' and config.remote_config_encrypted:
+                        try:
+                            remote_config = decrypt_json(config.remote_config_encrypted)
+                            
+                            if 'url' in remote_config and remote_config['url']:
+                                cmd.extend(['--set', f'plugins.zap.remote.url={remote_config["url"]}'])
+                            
+                            if 'api_key' in remote_config and remote_config['api_key']:
+                                cmd.extend(['--set', f'plugins.zap.remote.api_key={remote_config["api_key"]}'])
+                            
+                            if 'timeout' in remote_config and remote_config['timeout']:
+                                cmd.extend(['--set', f'plugins.zap.remote.timeout={remote_config["timeout"]}'])
+                            
+                            if 'verify_ssl' in remote_config:
+                                cmd.extend(['--set', f'plugins.zap.remote.verify_ssl={str(remote_config["verify_ssl"]).lower()}'])
+                            
+                            current_app.logger.info(f"Added ZAP remote configuration settings")
+                        except Exception as e:
+                            current_app.logger.error(f"Error decrypting ZAP remote config: {e}")
         
         # Add config overrides if specified (power users/admins only)
         if scan.config_overrides:
@@ -351,6 +463,14 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
                 current_app.logger.info(f"Cleaned up temporary config file: {config_file_path}")
             except Exception as e:
                 current_app.logger.warning(f"Could not delete temporary config file: {e}")
+        
+        # Clean up temporary ZAP plan file if it was created
+        if zap_plan_file and os.path.exists(zap_plan_file):
+            try:
+                os.unlink(zap_plan_file)
+                current_app.logger.info(f"Cleaned up temporary ZAP plan file: {zap_plan_file}")
+            except Exception as e:
+                current_app.logger.warning(f"Could not delete temporary ZAP plan file: {e}")
 
 
 def parse_scan_results(scan_id, output_dir):

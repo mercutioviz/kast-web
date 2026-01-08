@@ -102,6 +102,27 @@ class ScanConfigForm(FlaskForm):
         }
     )
     
+    # ZAP-specific configuration (optional, shown only when ZAP is selected)
+    zap_plan_id = SelectField(
+        'ZAP Automation Plan',
+        coerce=int,
+        choices=[],  # Populated dynamically based on user role
+        render_kw={
+            'class': 'form-select',
+            'data-plugin': 'zap'  # For conditional display via JavaScript
+        }
+    )
+    
+    zap_config_id = SelectField(
+        'ZAP Execution Configuration',
+        coerce=int,
+        choices=[],  # Populated dynamically from ZapConfiguration
+        render_kw={
+            'class': 'form-select',
+            'data-plugin': 'zap'  # For conditional display via JavaScript
+        }
+    )
+    
     submit = SubmitField('Start Scan', render_kw={'class': 'btn btn-primary btn-lg'})
 
 

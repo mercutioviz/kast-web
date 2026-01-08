@@ -129,6 +129,38 @@
                                             title="Test Connection">
                                         <i class="fas fa-check-circle"></i>
                                     </button>
+                                    {% if config.execution_mode == 'local' %}
+                                    <button type="button"
+                                            class="btn btn-outline-secondary container-status-btn"
+                                            data-config-id="{{ config.id }}"
+                                            title="Container Status">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-outline-success start-container-btn"
+                                            data-config-id="{{ config.id }}"
+                                            title="Start Container">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-outline-warning stop-container-btn"
+                                            data-config-id="{{ config.id }}"
+                                            title="Stop Container">
+                                        <i class="fas fa-stop"></i>
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-outline-danger remove-container-btn"
+                                            data-config-id="{{ config.id }}"
+                                            title="Remove Container">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-outline-info logs-btn"
+                                            data-config-id="{{ config.id }}"
+                                            title="View Logs">
+                                        <i class="fas fa-file-alt"></i>
+                                    </button>
+                                    {% endif %}
                                     {% if not config.is_default %}
                                     <form method="post" action="{{ url_for('zap_admin.config_set_default', config_id=config.id) }}" style="display: inline;">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -210,18 +242,71 @@
     </div>
 </div>
 
+<!-- Container Action Modal -->
+<div class="modal fade" id="containerActionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="containerActionTitle">Container Action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="containerActionBody">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Processing...</span>
+                    </div>
+                    <p class="mt-2">Processing request...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Container Logs Modal -->
+<div class="modal fade" id="containerLogsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Container Logs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="containerLogsBody">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading logs...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const testButtons = document.querySelectorAll('.test-config-btn');
-    const modal = new bootstrap.Modal(document.getElementById('testResultModal'));
-    const modalBody = document.getElementById('testResultBody');
+    const testModal = new bootstrap.Modal(document.getElementById('testResultModal'));
+    const testModalBody = document.getElementById('testResultBody');
     
+    const actionModal = new bootstrap.Modal(document.getElementById('containerActionModal'));
+    const actionModalTitle = document.getElementById('containerActionTitle');
+    const actionModalBody = document.getElementById('containerActionBody');
+    
+    const logsModal = new bootstrap.Modal(document.getElementById('containerLogsModal'));
+    const logsModalBody = document.getElementById('containerLogsBody');
+    
+    // Test configuration
     testButtons.forEach(button => {
         button.addEventListener('click', function() {
             const configId = this.dataset.configId;
             
-            // Show modal with loading state
-            modalBody.innerHTML = `
+            testModalBody.innerHTML = `
                 <div class="text-center">
                     <div class="spinner-border text-primary" role="status">
                         <span class="visually-hidden">Testing...</span>
@@ -229,9 +314,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     <p class="mt-2">Testing configuration...</p>
                 </div>
             `;
-            modal.show();
+            testModal.show();
             
-            // Send test request
             fetch('/admin/zap/configs/' + configId + '/test', {
                 method: 'POST',
                 headers: {
@@ -241,14 +325,14 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json().then(data => ({status: response.status, data: data})))
             .then(({status, data}) => {
                 if (status === 200) {
-                    modalBody.innerHTML = `
+                    testModalBody.innerHTML = `
                         <div class="alert alert-success">
                             <i class="fas fa-check-circle fa-2x mb-2"></i>
                             <p class="mb-0">${data.message}</p>
                         </div>
                     `;
                 } else {
-                    modalBody.innerHTML = `
+                    testModalBody.innerHTML = `
                         <div class="alert alert-danger">
                             <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
                             <p class="mb-0">${data.message}</p>
@@ -257,10 +341,266 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(error => {
-                modalBody.innerHTML = `
+                testModalBody.innerHTML = `
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
                         <p class="mb-0">Test failed: ${error.message}</p>
+                    </div>
+                `;
+            });
+        });
+    });
+    
+    // Container status
+    document.querySelectorAll('.container-status-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const configId = this.dataset.configId;
+            actionModalTitle.textContent = 'Container Status';
+            actionModalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Checking...</span>
+                    </div>
+                    <p class="mt-2">Checking container status...</p>
+                </div>
+            `;
+            actionModal.show();
+            
+            fetch('/admin/zap/configs/' + configId + '/container-status')
+            .then(response => response.json())
+            .then(data => {
+                let alertClass = 'info';
+                let icon = 'info-circle';
+                if (data.status === 'running') {
+                    alertClass = 'success';
+                    icon = 'check-circle';
+                } else if (data.status === 'stopped') {
+                    alertClass = 'warning';
+                    icon = 'pause-circle';
+                } else if (data.status === 'not_found') {
+                    alertClass = 'secondary';
+                    icon = 'question-circle';
+                }
+                
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-${alertClass}">
+                        <i class="fas fa-${icon} fa-2x mb-2"></i>
+                        <p class="mb-0"><strong>Status:</strong> ${data.status}</p>
+                        <p class="mb-0">${data.message}</p>
+                    </div>
+                    <div class="mt-3">
+                        <h6>Docker Command:</h6>
+                        <pre class="bg-dark text-light p-2 rounded"><code class="text-light">${data.command}</code></pre>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p class="mb-0">Error: ${error.message}</p>
+                    </div>
+                `;
+            });
+        });
+    });
+    
+    // Start container
+    document.querySelectorAll('.start-container-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            if (!confirm('Start ZAP container for this configuration?')) return;
+            
+            const configId = this.dataset.configId;
+            actionModalTitle.textContent = 'Start Container';
+            actionModalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Starting...</span>
+                    </div>
+                    <p class="mt-2">Starting container...</p>
+                </div>
+            `;
+            actionModal.show();
+            
+            fetch('/admin/zap/configs/' + configId + '/start-container', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                }
+            })
+            .then(response => response.json().then(data => ({status: response.status, data: data})))
+            .then(({status, data}) => {
+                const alertClass = status === 200 ? 'success' : 'danger';
+                const icon = status === 200 ? 'check-circle' : 'exclamation-triangle';
+                
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-${alertClass}">
+                        <i class="fas fa-${icon} fa-2x mb-2"></i>
+                        <p class="mb-0">${data.message}</p>
+                    </div>
+                    <div class="mt-3">
+                        <h6>Docker Command Executed:</h6>
+                        <pre class="bg-dark text-light p-2 rounded"><code class="text-light">${data.command}</code></pre>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p class="mb-0">Error: ${error.message}</p>
+                    </div>
+                `;
+            });
+        });
+    });
+    
+    // Stop container
+    document.querySelectorAll('.stop-container-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            if (!confirm('Stop ZAP container for this configuration?')) return;
+            
+            const configId = this.dataset.configId;
+            actionModalTitle.textContent = 'Stop Container';
+            actionModalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-warning" role="status">
+                        <span class="visually-hidden">Stopping...</span>
+                    </div>
+                    <p class="mt-2">Stopping container...</p>
+                </div>
+            `;
+            actionModal.show();
+            
+            fetch('/admin/zap/configs/' + configId + '/stop-container', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                }
+            })
+            .then(response => response.json().then(data => ({status: response.status, data: data})))
+            .then(({status, data}) => {
+                const alertClass = status === 200 ? 'success' : 'danger';
+                const icon = status === 200 ? 'check-circle' : 'exclamation-triangle';
+                
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-${alertClass}">
+                        <i class="fas fa-${icon} fa-2x mb-2"></i>
+                        <p class="mb-0">${data.message}</p>
+                    </div>
+                    <div class="mt-3">
+                        <h6>Docker Command Executed:</h6>
+                        <pre class="bg-dark text-light p-2 rounded"><code>${data.command}</code></pre>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p class="mb-0">Error: ${error.message}</p>
+                    </div>
+                `;
+            });
+        });
+    });
+    
+    // Remove container
+    document.querySelectorAll('.remove-container-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            if (!confirm('Remove ZAP container for this configuration? This will stop and delete the container.')) return;
+            
+            const configId = this.dataset.configId;
+            actionModalTitle.textContent = 'Remove Container';
+            actionModalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-danger" role="status">
+                        <span class="visually-hidden">Removing...</span>
+                    </div>
+                    <p class="mt-2">Removing container...</p>
+                </div>
+            `;
+            actionModal.show();
+            
+            fetch('/admin/zap/configs/' + configId + '/remove-container', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                }
+            })
+            .then(response => response.json().then(data => ({status: response.status, data: data})))
+            .then(({status, data}) => {
+                const alertClass = status === 200 ? 'success' : 'danger';
+                const icon = status === 200 ? 'check-circle' : 'exclamation-triangle';
+                
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-${alertClass}">
+                        <i class="fas fa-${icon} fa-2x mb-2"></i>
+                        <p class="mb-0">${data.message}</p>
+                    </div>
+                    <div class="mt-3">
+                        <h6>Docker Command Executed:</h6>
+                        <pre class="bg-dark text-light p-2 rounded"><code>${data.command}</code></pre>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                actionModalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p class="mb-0">Error: ${error.message}</p>
+                    </div>
+                `;
+            });
+        });
+    });
+    
+    // View logs
+    document.querySelectorAll('.logs-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const configId = this.dataset.configId;
+            logsModalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-info" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading container logs...</p>
+                </div>
+            `;
+            logsModal.show();
+            
+            fetch('/admin/zap/configs/' + configId + '/container-logs')
+            .then(response => response.json().then(data => ({status: response.status, data: data})))
+            .then(({status, data}) => {
+                if (status === 200) {
+                    logsModalBody.innerHTML = `
+                        <div class="mb-3">
+                            <h6>Docker Command:</h6>
+                            <pre class="bg-dark text-light p-2 rounded"><code class="text-light">${data.command}</code></pre>
+                        </div>
+                        <div>
+                            <h6>Container Logs (last 100 lines):</h6>
+                            <pre class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto;"><code class="text-light">${data.logs}</code></pre>
+                        </div>
+                    `;
+                } else {
+                    logsModalBody.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                            <p class="mb-0">${data.message}</p>
+                        </div>
+                        <div class="mt-3">
+                            <h6>Docker Command:</h6>
+                            <pre class="bg-dark text-light p-2 rounded"><code class="text-light">${data.command}</code></pre>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                logsModalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                        <p class="mb-0">Error: ${error.message}</p>
                     </div>
                 `;
             });

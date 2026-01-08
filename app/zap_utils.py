@@ -367,6 +367,21 @@ def get_config_statistics(config_id: int) -> Dict[str, Any]:
         Scan.started_at >= thirty_days_ago
     ).count()
     
+    # Success rate
+    completed = Scan.query.filter(
+        Scan.zap_config_id == config_id,
+        Scan.status == 'completed'
+    ).count()
+    
+    failed = Scan.query.filter(
+        Scan.zap_config_id == config_id,
+        Scan.status == 'failed'
+    ).count()
+    
+    success_rate = 0
+    if total_scans > 0:
+        success_rate = (completed / total_scans) * 100
+    
     # Last used
     last_scan = Scan.query.filter_by(zap_config_id=config_id).order_by(
         Scan.started_at.desc()
@@ -379,8 +394,251 @@ def get_config_statistics(config_id: int) -> Dict[str, Any]:
     return {
         'total_scans': total_scans,
         'recent_scans': recent_scans,
+        'completed': completed,
+        'failed': failed,
+        'success_rate': round(success_rate, 1),
         'last_used': last_used
     }
+
+
+def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, str, str]:
+    """
+    Start a ZAP Docker container for local mode
+    
+    Args:
+        config: Local configuration dictionary
+        config_id: Configuration ID for container naming
+        
+    Returns:
+        Tuple of (success, message, docker_command)
+    """
+    docker_cmd_str = ""  # Track command for error reporting
+    
+    try:
+        container_name = f"kast-zap-{config_id}"
+        image = config.get('docker_image', 'ghcr.io/zaproxy/zaproxy:stable')
+        port = config.get('port', 8080)
+        memory = config.get('memory_limit', '2g')
+        api_key = 'kast-zap-api-key'
+        
+        # Check if container already exists
+        check_cmd = ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Names}}']
+        result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
+        
+        if result.stdout.strip() == container_name:
+            # Container exists, check if running
+            status_cmd = ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}']
+            status_result = subprocess.run(status_cmd, capture_output=True, text=True, timeout=5)
+            
+            if status_result.stdout.strip() == container_name:
+                return False, f"Container '{container_name}' is already running", ' '.join(check_cmd)
+            
+            # Container exists but not running, start it
+            start_cmd = ['docker', 'start', container_name]
+            docker_cmd_str = ' '.join(start_cmd)
+            result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                return True, f"Started existing container '{container_name}'", docker_cmd_str
+            else:
+                return False, f"Failed to start container: {result.stderr}", docker_cmd_str
+        
+        # Check if image exists locally
+        image_check_cmd = ['docker', 'images', '-q', image]
+        image_result = subprocess.run(image_check_cmd, capture_output=True, text=True, timeout=5)
+        
+        if not image_result.stdout.strip():
+            # Image needs to be pulled - this will take time
+            pull_message = f"Image '{image}' not found locally. Pulling from registry (this may take 2-5 minutes)..."
+        else:
+            pull_message = None
+        
+        # Build docker run command
+        docker_cmd = [
+            'docker', 'run', '-d',
+            '--name', container_name,
+            '-p', f'{port}:8080',
+            '--memory', memory,
+            image,
+            'zap.sh', '-daemon',
+            '-host', '0.0.0.0',
+            '-port', '8080',
+            '-config', f'api.key={api_key}'
+        ]
+        docker_cmd_str = ' '.join(docker_cmd)
+        
+        # Use longer timeout to allow for image pulling (180 seconds = 3 minutes)
+        result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=180)
+        
+        if result.returncode == 0:
+            container_id = result.stdout.strip()[:12]
+            success_msg = f"Started new container '{container_name}' (ID: {container_id})"
+            if pull_message:
+                success_msg = f"{pull_message}\n{success_msg}"
+            return True, success_msg, docker_cmd_str
+        else:
+            error_msg = f"Failed to start container: {result.stderr}"
+            if result.stdout:
+                error_msg += f"\nStdout: {result.stdout}"
+            return False, error_msg, docker_cmd_str
+        
+    except subprocess.TimeoutExpired:
+        timeout_msg = "Docker command timed out after 180 seconds. "
+        timeout_msg += "This usually happens when pulling a large image. "
+        timeout_msg += f"Try manually pulling the image first: docker pull {image}"
+        return False, timeout_msg, docker_cmd_str if docker_cmd_str else "docker run (command not captured)"
+    except FileNotFoundError:
+        return False, "Docker command not found. Is Docker installed?", docker_cmd_str if docker_cmd_str else "docker"
+    except Exception as e:
+        return False, f"Error starting container: {str(e)}", docker_cmd_str if docker_cmd_str else "docker run (error before command built)"
+
+
+def stop_zap_container(config_id: int) -> Tuple[bool, str, str]:
+    """
+    Stop a running ZAP Docker container
+    
+    Args:
+        config_id: Configuration ID for container naming
+        
+    Returns:
+        Tuple of (success, message, docker_command)
+    """
+    try:
+        container_name = f"kast-zap-{config_id}"
+        
+        # Check if container is running
+        check_cmd = ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}']
+        result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
+        
+        if result.stdout.strip() != container_name:
+            return False, f"Container '{container_name}' is not running", ' '.join(check_cmd)
+        
+        # Stop the container
+        stop_cmd = ['docker', 'stop', container_name]
+        result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            return True, f"Stopped container '{container_name}'", ' '.join(stop_cmd)
+        else:
+            return False, f"Failed to stop container: {result.stderr}", ' '.join(stop_cmd)
+        
+    except subprocess.TimeoutExpired:
+        return False, "Docker command timed out", "docker stop ..."
+    except FileNotFoundError:
+        return False, "Docker command not found", "docker"
+    except Exception as e:
+        return False, f"Error stopping container: {str(e)}", "docker stop ..."
+
+
+def remove_zap_container(config_id: int) -> Tuple[bool, str, str]:
+    """
+    Remove a ZAP Docker container (stops first if running)
+    
+    Args:
+        config_id: Configuration ID for container naming
+        
+    Returns:
+        Tuple of (success, message, docker_command)
+    """
+    try:
+        container_name = f"kast-zap-{config_id}"
+        
+        # Check if container exists
+        check_cmd = ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Names}}']
+        result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=5)
+        
+        if result.stdout.strip() != container_name:
+            return False, f"Container '{container_name}' does not exist", ' '.join(check_cmd)
+        
+        # Force remove the container (stops if running)
+        rm_cmd = ['docker', 'rm', '-f', container_name]
+        result = subprocess.run(rm_cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            return True, f"Removed container '{container_name}'", ' '.join(rm_cmd)
+        else:
+            return False, f"Failed to remove container: {result.stderr}", ' '.join(rm_cmd)
+        
+    except subprocess.TimeoutExpired:
+        return False, "Docker command timed out", "docker rm ..."
+    except FileNotFoundError:
+        return False, "Docker command not found", "docker"
+    except Exception as e:
+        return False, f"Error removing container: {str(e)}", "docker rm ..."
+
+
+def get_container_status(config_id: int) -> Tuple[str, str, str]:
+    """
+    Get the status of a ZAP Docker container
+    
+    Args:
+        config_id: Configuration ID for container naming
+        
+    Returns:
+        Tuple of (status, message, docker_command)
+        status can be: 'running', 'stopped', 'not_found'
+    """
+    try:
+        container_name = f"kast-zap-{config_id}"
+        
+        # Check if container exists and is running
+        running_cmd = ['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Status}}']
+        result = subprocess.run(running_cmd, capture_output=True, text=True, timeout=5)
+        
+        if result.stdout.strip():
+            status_text = result.stdout.strip()
+            return 'running', f"Container is running ({status_text})", ' '.join(running_cmd)
+        
+        # Check if container exists but is stopped
+        all_cmd = ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Status}}']
+        result = subprocess.run(all_cmd, capture_output=True, text=True, timeout=5)
+        
+        if result.stdout.strip():
+            status_text = result.stdout.strip()
+            return 'stopped', f"Container exists but is not running ({status_text})", ' '.join(all_cmd)
+        
+        return 'not_found', f"Container '{container_name}' not found", ' '.join(all_cmd)
+        
+    except subprocess.TimeoutExpired:
+        return 'error', "Docker command timed out", "docker ps ..."
+    except FileNotFoundError:
+        return 'error', "Docker command not found", "docker"
+    except Exception as e:
+        return 'error', f"Error checking status: {str(e)}", "docker ps ..."
+
+
+def get_container_logs(config_id: int, tail: int = 100) -> Tuple[bool, str, str]:
+    """
+    Get logs from a ZAP Docker container
+    
+    Args:
+        config_id: Configuration ID for container naming
+        tail: Number of lines to show from end of logs
+        
+    Returns:
+        Tuple of (success, logs_or_error_message, docker_command)
+    """
+    try:
+        container_name = f"kast-zap-{config_id}"
+        
+        # Get container logs
+        logs_cmd = ['docker', 'logs', '--tail', str(tail), container_name]
+        result = subprocess.run(logs_cmd, capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            logs = result.stdout if result.stdout else result.stderr
+            if not logs:
+                logs = "(No logs available)"
+            return True, logs, ' '.join(logs_cmd)
+        else:
+            return False, f"Failed to get logs: {result.stderr}", ' '.join(logs_cmd)
+        
+    except subprocess.TimeoutExpired:
+        return False, "Docker command timed out", "docker logs ..."
+    except FileNotFoundError:
+        return False, "Docker command not found", "docker"
+    except Exception as e:
+        return False, f"Error getting logs: {str(e)}", "docker logs ..."
 
 
 def extract_plan_summary(yaml_content: str) -> Dict[str, Any]:

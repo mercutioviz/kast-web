@@ -608,3 +608,237 @@ def config_test(config_id):
             
     except Exception as e:
         return jsonify({'success': False, 'message': f'Test error: {str(e)}'}), 400
+
+
+@bp.route('/configs/<int:config_id>/start-container', methods=['POST'])
+@login_required
+@admin_required
+def config_start_container(config_id):
+    """Start ZAP Docker container for a local configuration"""
+    
+    config = ZapConfiguration.query.get_or_404(config_id)
+    
+    # Only allow for local mode
+    if config.execution_mode != 'local':
+        return jsonify({
+            'success': False,
+            'message': f'Container management only available for local mode (current: {config.execution_mode})',
+            'command': ''
+        }), 400
+    
+    try:
+        from app.zap_utils import start_zap_container
+        
+        success, message, docker_command = start_zap_container(config.local_config, config_id)
+        
+        # Log the action
+        AuditLog.log(
+            user_id=current_user.id,
+            action='zap_container_started' if success else 'zap_container_start_failed',
+            resource_type='zap_config',
+            resource_id=config.id,
+            details=f'Started ZAP container for: {config.name} - {message}'
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'command': docker_command
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': message,
+                'command': docker_command
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'command': ''
+        }), 500
+
+
+@bp.route('/configs/<int:config_id>/stop-container', methods=['POST'])
+@login_required
+@admin_required
+def config_stop_container(config_id):
+    """Stop ZAP Docker container for a local configuration"""
+    
+    config = ZapConfiguration.query.get_or_404(config_id)
+    
+    # Only allow for local mode
+    if config.execution_mode != 'local':
+        return jsonify({
+            'success': False,
+            'message': f'Container management only available for local mode (current: {config.execution_mode})',
+            'command': ''
+        }), 400
+    
+    try:
+        from app.zap_utils import stop_zap_container
+        
+        success, message, docker_command = stop_zap_container(config_id)
+        
+        # Log the action
+        AuditLog.log(
+            user_id=current_user.id,
+            action='zap_container_stopped' if success else 'zap_container_stop_failed',
+            resource_type='zap_config',
+            resource_id=config.id,
+            details=f'Stopped ZAP container for: {config.name} - {message}'
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'command': docker_command
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': message,
+                'command': docker_command
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'command': ''
+        }), 500
+
+
+@bp.route('/configs/<int:config_id>/remove-container', methods=['POST'])
+@login_required
+@admin_required
+def config_remove_container(config_id):
+    """Remove ZAP Docker container for a local configuration"""
+    
+    config = ZapConfiguration.query.get_or_404(config_id)
+    
+    # Only allow for local mode
+    if config.execution_mode != 'local':
+        return jsonify({
+            'success': False,
+            'message': f'Container management only available for local mode (current: {config.execution_mode})',
+            'command': ''
+        }), 400
+    
+    try:
+        from app.zap_utils import remove_zap_container
+        
+        success, message, docker_command = remove_zap_container(config_id)
+        
+        # Log the action
+        AuditLog.log(
+            user_id=current_user.id,
+            action='zap_container_removed' if success else 'zap_container_remove_failed',
+            resource_type='zap_config',
+            resource_id=config.id,
+            details=f'Removed ZAP container for: {config.name} - {message}'
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'command': docker_command
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': message,
+                'command': docker_command
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'command': ''
+        }), 500
+
+
+@bp.route('/configs/<int:config_id>/container-status', methods=['GET'])
+@login_required
+@admin_required
+def config_container_status(config_id):
+    """Get status of ZAP Docker container for a local configuration"""
+    
+    config = ZapConfiguration.query.get_or_404(config_id)
+    
+    # Only allow for local mode
+    if config.execution_mode != 'local':
+        return jsonify({
+            'status': 'not_applicable',
+            'message': 'Container status only available for local mode',
+            'command': ''
+        })
+    
+    try:
+        from app.zap_utils import get_container_status
+        
+        status, message, docker_command = get_container_status(config_id)
+        
+        return jsonify({
+            'status': status,
+            'message': message,
+            'command': docker_command
+        })
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Error: {str(e)}',
+            'command': ''
+        }), 500
+
+
+@bp.route('/configs/<int:config_id>/container-logs', methods=['GET'])
+@login_required
+@admin_required
+def config_container_logs(config_id):
+    """Get logs from ZAP Docker container for a local configuration"""
+    
+    config = ZapConfiguration.query.get_or_404(config_id)
+    
+    # Only allow for local mode
+    if config.execution_mode != 'local':
+        return jsonify({
+            'success': False,
+            'message': 'Container logs only available for local mode',
+            'logs': '',
+            'command': ''
+        }), 400
+    
+    try:
+        from app.zap_utils import get_container_logs
+        
+        tail = request.args.get('tail', 100, type=int)
+        success, logs_or_error, docker_command = get_container_logs(config_id, tail)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'logs': logs_or_error,
+                'command': docker_command
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': logs_or_error,
+                'logs': '',
+                'command': docker_command
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'logs': '',
+            'command': ''
+        }), 500

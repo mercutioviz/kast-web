@@ -50,6 +50,47 @@ def index():
     if default_profile:
         form.config_profile_id.data = default_profile.id
     
+    # Populate ZAP automation plan choices (admin/power users only)
+    from app.models import ZapAutomationPlan, ZapConfiguration
+    
+    if current_user.is_power_user or current_user.is_admin:
+        # Power users see plans that allow them, admins see all
+        if current_user.is_admin:
+            zap_plans = ZapAutomationPlan.query.filter_by(is_draft=False).order_by(ZapAutomationPlan.name).all()
+        else:
+            zap_plans = ZapAutomationPlan.query.filter_by(is_draft=False, allow_power_users=True).order_by(ZapAutomationPlan.name).all()
+        
+        zap_plan_choices = [(0, 'Use Default ZAP Plan')]
+        for plan in zap_plans:
+            label = plan.name
+            if plan.is_system_default:
+                label += ' (System Default)'
+            zap_plan_choices.append((plan.id, label))
+        form.zap_plan_id.choices = zap_plan_choices
+        
+        # Set default ZAP plan if one exists
+        default_zap_plan = ZapAutomationPlan.query.filter_by(is_system_default=True).first()
+        if default_zap_plan:
+            form.zap_plan_id.data = default_zap_plan.id
+    else:
+        # Standard users can't configure ZAP
+        form.zap_plan_id.choices = [(0, 'Use Default ZAP Plan')]
+    
+    # Populate ZAP execution configuration choices (all users)
+    zap_configs = ZapConfiguration.query.filter_by(is_active=True).order_by(ZapConfiguration.name).all()
+    zap_config_choices = [(0, 'Use Default Configuration')]
+    for config in zap_configs:
+        label = f"{config.name} ({config.execution_mode})"
+        if config.is_default:
+            label += ' (Default)'
+        zap_config_choices.append((config.id, label))
+    form.zap_config_id.choices = zap_config_choices
+    
+    # Set default ZAP config if one exists
+    default_zap_config = ZapConfiguration.query.filter_by(is_default=True).first()
+    if default_zap_config:
+        form.zap_config_id.data = default_zap_config.id
+    
     # Get recent scans for display (user's own scans unless admin)
     if current_user.is_admin:
         recent_scans = Scan.query.order_by(Scan.started_at.desc()).limit(5).all()
@@ -94,6 +135,28 @@ def create_scan():
         profile_choices.append((profile.id, label))
     form.config_profile_id.choices = profile_choices
     
+    # Populate ZAP choices for validation
+    from app.models import ZapAutomationPlan, ZapConfiguration
+    
+    if current_user.is_power_user or current_user.is_admin:
+        if current_user.is_admin:
+            zap_plans = ZapAutomationPlan.query.filter_by(is_draft=False).order_by(ZapAutomationPlan.name).all()
+        else:
+            zap_plans = ZapAutomationPlan.query.filter_by(is_draft=False, allow_power_users=True).order_by(ZapAutomationPlan.name).all()
+        
+        zap_plan_choices = [(0, 'Use Default ZAP Plan')]
+        for plan in zap_plans:
+            zap_plan_choices.append((plan.id, plan.name))
+        form.zap_plan_id.choices = zap_plan_choices
+    else:
+        form.zap_plan_id.choices = [(0, 'Use Default ZAP Plan')]
+    
+    zap_configs = ZapConfiguration.query.filter_by(is_active=True).order_by(ZapConfiguration.name).all()
+    zap_config_choices = [(0, 'Use Default Configuration')]
+    for config in zap_configs:
+        zap_config_choices.append((config.id, f"{config.name} ({config.execution_mode})"))
+    form.zap_config_id.choices = zap_config_choices
+    
     if form.validate_on_submit():
         # Check if user is allowed to run active scans
         if form.scan_mode.data == 'active' and not current_user.can_run_active_scans:
@@ -132,6 +195,34 @@ def create_scan():
         elif form.config_overrides.data and not (current_user.is_power_user or current_user.is_admin):
             flash('Only Power Users and Admins can use configuration overrides.', 'warning')
         
+        # Handle ZAP configuration (0 means use default, so store as None)
+        zap_plan_id = None
+        zap_config_id = None
+        
+        # Only process ZAP fields if ZAP plugin is selected
+        if form.plugins.data and 'zap' in form.plugins.data:
+            # ZAP plan (admin/power users only)
+            if current_user.is_power_user or current_user.is_admin:
+                if form.zap_plan_id.data and form.zap_plan_id.data != 0:
+                    zap_plan_id = form.zap_plan_id.data
+                    
+                    # Validate plan access for power users
+                    if not current_user.is_admin:
+                        plan = ZapAutomationPlan.query.get(zap_plan_id)
+                        if plan and not plan.allow_power_users:
+                            flash('You do not have permission to use this ZAP automation plan.', 'danger')
+                            return redirect(url_for('main.index'))
+            
+            # ZAP execution config (all users)
+            if form.zap_config_id.data and form.zap_config_id.data != 0:
+                zap_config_id = form.zap_config_id.data
+                
+                # Validate config is active
+                config = ZapConfiguration.query.get(zap_config_id)
+                if config and not config.is_active:
+                    flash('The selected ZAP configuration is not active.', 'danger')
+                    return redirect(url_for('main.index'))
+        
         # Create scan record (assign to current user)
         scan = Scan(
             user_id=current_user.id,
@@ -144,6 +235,8 @@ def create_scan():
             logo_id=logo_id,
             config_profile_id=config_profile_id,
             config_overrides=config_overrides,
+            zap_plan_id=zap_plan_id,
+            zap_config_id=zap_config_id,
             status='pending',
             config_json=json.dumps({
                 'target': form.target.data,
@@ -155,7 +248,9 @@ def create_scan():
                 'max_workers': form.max_workers.data,
                 'logo_id': logo_id,
                 'config_profile_id': config_profile_id,
-                'config_overrides': config_overrides
+                'config_overrides': config_overrides,
+                'zap_plan_id': zap_plan_id,
+                'zap_config_id': zap_config_id
             })
         )
         

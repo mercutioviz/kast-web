@@ -146,11 +146,22 @@ code {
     font-size: 87.5%;
 }
 
+/* Override for code inside dark backgrounds */
+.bg-dark code,
+pre.bg-dark code {
+    background-color: transparent;
+    color: inherit;
+}
+
 pre {
     background-color: #f8f9fa;
     padding: 1rem;
     border-radius: 0.25rem;
     overflow-x: auto;
+}
+
+pre.bg-dark {
+    background-color: #212529;
 }
 
 /* Pagination */

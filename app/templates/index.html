@@ -224,6 +224,86 @@
                     </div>
                     {% endif %}
 
+                    <!-- ZAP Configuration (shown when ZAP plugin is selected) -->
+                    <div id="zapConfigSection" style="display: none;">
+                        <div class="card mb-3 border-info">
+                            <div class="card-header bg-info text-white">
+                                <i class="bi bi-shield-check"></i> ZAP Configuration
+                            </div>
+                            <div class="card-body">
+                                {% if current_user.is_power_user or current_user.is_admin %}
+                                <!-- ZAP Automation Plan (Power Users & Admins Only) -->
+                                <div class="mb-3">
+                                    {{ form.zap_plan_id.label(class="form-label fw-bold") }}
+                                    <span class="badge bg-warning text-dark ms-2">Power User</span>
+                                    {{ form.zap_plan_id(class="form-select") }}
+                                    <div class="form-text">
+                                        Select a custom ZAP automation plan or use the default
+                                    </div>
+                                </div>
+                                {% endif %}
+
+                                <!-- ZAP Execution Configuration (All Users) -->
+                                <div class="mb-3">
+                                    {{ form.zap_config_id.label(class="form-label fw-bold") }}
+                                    {{ form.zap_config_id(class="form-select") }}
+                                    <div class="form-text">
+                                        Select how ZAP should be executed (local Docker or remote instance)
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-info mb-0">
+                                    <i class="bi bi-info-circle"></i> <strong>About ZAP:</strong>
+                                    OWASP ZAP (Zed Attack Proxy) is a web application security scanner that finds vulnerabilities.
+                                    It can run locally in Docker or connect to a remote ZAP instance.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                    function updateZapConfigVisibility() {
+                        const zapCheckbox = document.getElementById('plugin_zap');
+                        const zapConfigSection = document.getElementById('zapConfigSection');
+                        
+                        if (zapCheckbox && zapConfigSection) {
+                            // Show ZAP config if ZAP plugin is selected and visible
+                            const zapPluginItem = zapCheckbox.closest('.plugin-item');
+                            const isZapVisible = zapPluginItem && zapPluginItem.style.display !== 'none';
+                            const isZapChecked = zapCheckbox.checked;
+                            
+                            if (isZapVisible && isZapChecked) {
+                                zapConfigSection.style.display = 'block';
+                            } else {
+                                zapConfigSection.style.display = 'none';
+                            }
+                        }
+                    }
+                    
+                    // Add event listener for ZAP checkbox
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const zapCheckbox = document.getElementById('plugin_zap');
+                        if (zapCheckbox) {
+                            zapCheckbox.addEventListener('change', updateZapConfigVisibility);
+                        }
+                        
+                        // Also update when scan mode changes (affects ZAP visibility)
+                        const scanModeSelect = document.getElementById('scan_mode');
+                        if (scanModeSelect) {
+                            // Store original change handler
+                            const originalHandler = scanModeSelect.onchange;
+                            scanModeSelect.onchange = function() {
+                                if (originalHandler) originalHandler.call(this);
+                                // Wait for plugin filtering to complete
+                                setTimeout(updateZapConfigVisibility, 50);
+                            };
+                        }
+                        
+                        // Initial visibility check
+                        updateZapConfigVisibility();
+                    });
+                    </script>
+
                     <!-- Advanced Options -->
                     <div class="card mb-3">
                         <div class="card-header">
