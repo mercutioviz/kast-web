@@ -148,6 +148,12 @@ def get_scan_status(scan_id):
             txt_file = output_dir / f"{plugin}.txt"
             log_file = output_dir / f"{plugin}_plugin.log"
             
+            # Special handling for ZAP plugin - check for progress file
+            zap_progress_file = None
+            if plugin == 'zap':
+                zap_progress_file = output_dir / 'zap_scan_progress.json'
+                logger.debug(f"  Checking ZAP progress file: {zap_progress_file.name} -> exists={zap_progress_file.exists()}")
+            
             logger.debug(f"  Checking processed file: {processed_file.name} -> exists={processed_file.exists()}")
             logger.debug(f"  Checking raw file: {raw_file.name} -> exists={raw_file.exists()}")
             logger.debug(f"  Checking txt file: {txt_file.name} -> exists={txt_file.exists()}")
@@ -164,10 +170,14 @@ def get_scan_status(scan_id):
                     logger.debug(f"  Database data: {db_results[plugin]['findings_count']} findings")
                 else:
                     logger.debug(f"  No database entry found for this plugin yet")
-            elif raw_file.exists() or txt_file.exists() or log_file.exists():
+            elif raw_file.exists() or txt_file.exists() or log_file.exists() or (zap_progress_file and zap_progress_file.exists()):
                 # Plugin in progress - check for any file indicating execution
+                # For ZAP, also check for the progress file
                 plugin_status['status'] = 'in_progress'
-                logger.debug(f"  Status: IN_PROGRESS (found intermediate files)")
+                if zap_progress_file and zap_progress_file.exists():
+                    logger.debug(f"  Status: IN_PROGRESS (ZAP progress file found)")
+                else:
+                    logger.debug(f"  Status: IN_PROGRESS (found intermediate files)")
             else:
                 # Status remains 'pending'
                 logger.debug(f"  Status: PENDING (no files found)")
@@ -188,6 +198,92 @@ def get_scan_status(scan_id):
         'results': plugin_statuses,
         'results_count': len(plugin_statuses)
     }
+    
+    # Check for ZAP progress data
+    zap_progress_data = None
+    if 'zap' in plugin_list and output_dir and output_dir.exists():
+        logger.debug("Checking for ZAP progress data...")
+        
+        # Look for progress file (during scan) or final progress file (after completion)
+        progress_file = output_dir / 'zap_scan_progress.json'
+        final_progress_file = output_dir / 'zap_scan_final_progress.json'
+        
+        zap_progress_file = None
+        if progress_file.exists():
+            zap_progress_file = progress_file
+            logger.debug(f"Found active ZAP progress file: {progress_file}")
+        elif final_progress_file.exists():
+            zap_progress_file = final_progress_file
+            logger.debug(f"Found final ZAP progress file: {final_progress_file}")
+        
+        if zap_progress_file:
+            try:
+                with open(zap_progress_file, 'r') as f:
+                    zap_data = json.load(f)
+                
+                # Extract current phase from job_updates
+                current_phase = "Unknown"
+                job_updates = zap_data.get('job_updates', [])
+                if job_updates:
+                    last_update = job_updates[-1]
+                    if 'spider' in last_update.lower():
+                        if 'finished' in last_update.lower():
+                            current_phase = "Spider Complete"
+                        else:
+                            current_phase = "Spider"
+                    elif 'activescan' in last_update.lower() or 'active scan' in last_update.lower():
+                        if 'finished' in last_update.lower():
+                            current_phase = "Active Scan Complete"
+                        else:
+                            current_phase = "Active Scan"
+                    elif 'passivescan' in last_update.lower() or 'passive scan' in last_update.lower():
+                        if 'finished' in last_update.lower():
+                            current_phase = "Passive Scan Complete"
+                        else:
+                            current_phase = "Passive Scan"
+                    else:
+                        current_phase = "Initializing"
+                
+                # Build progress data
+                progress = zap_data.get('progress', {})
+                alerts = zap_data.get('alerts', {})
+                by_risk = alerts.get('by_risk', {}).get('alertsSummary', {})
+                
+                zap_progress_data = {
+                    'available': True,
+                    'scan_started': zap_data.get('scan_started'),
+                    'last_updated': zap_data.get('last_updated'),
+                    'elapsed_seconds': zap_data.get('elapsed_seconds', 0),
+                    'status': zap_data.get('status', 'unknown'),
+                    'progress': {
+                        'spider_percent': progress.get('spider_percent', 0),
+                        'active_scan_percent': progress.get('active_scan_percent', 0),
+                        'passive_scan_queue': progress.get('passive_scan_queue', 0)
+                    },
+                    'alerts': {
+                        'total': alerts.get('total', 0),
+                        'High': by_risk.get('High', 0),
+                        'Medium': by_risk.get('Medium', 0),
+                        'Low': by_risk.get('Low', 0),
+                        'Informational': by_risk.get('Informational', 0)
+                    },
+                    'job_updates': job_updates,
+                    'current_phase': current_phase,
+                    'warnings': zap_data.get('warnings', []),
+                    'errors': zap_data.get('errors', [])
+                }
+                
+                logger.info(f"ZAP progress data parsed: phase={current_phase}, elapsed={zap_progress_data['elapsed_seconds']}s, alerts={zap_progress_data['alerts']['total']}")
+                
+            except Exception as e:
+                logger.error(f"Error parsing ZAP progress file: {e}")
+                zap_progress_data = {'available': False, 'error': str(e)}
+        else:
+            logger.debug("No ZAP progress file found")
+    
+    # Add ZAP progress to response if available
+    if zap_progress_data:
+        response['zap_progress'] = zap_progress_data
     
     # Log summary of response
     status_summary = {}

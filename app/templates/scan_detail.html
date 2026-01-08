@@ -90,6 +90,8 @@ function updatePluginResults(results) {
         
         let statusBadge = 'bg-secondary';
         let statusText = 'Pending';
+        let statusClass = '';
+        let clickable = false;
         
         if (result.status === 'completed') {
             statusBadge = 'bg-success';
@@ -97,6 +99,11 @@ function updatePluginResults(results) {
         } else if (result.status === 'in_progress') {
             statusBadge = 'bg-primary';
             statusText = 'In Progress';
+            // Make ZAP badge clickable if in progress
+            if (result.plugin_name === 'zap') {
+                clickable = true;
+                statusClass = 'zap-progress-badge';
+            }
         } else if (result.status === 'pending') {
             statusBadge = 'bg-secondary';
             statusText = 'Pending';
@@ -110,9 +117,17 @@ function updatePluginResults(results) {
         
         const executedTime = result.executed_at ? new Date(result.executed_at).toLocaleTimeString() : 'N/A';
         
+        // Create badge with optional click handler
+        const badgeHTML = clickable 
+            ? `<span class="badge ${statusBadge} ${statusClass}" style="cursor: pointer;" onclick="showZapProgress()" title="Click for detailed progress">
+                <span class="spinner-grow spinner-grow-sm me-1" role="status" aria-hidden="true"></span>
+                ${statusText}
+               </span>`
+            : `<span class="badge ${statusBadge}">${statusText}</span>`;
+        
         row.innerHTML = `
             <td><strong>${result.plugin_name}</strong></td>
-            <td><span class="badge ${statusBadge}">${statusText}</span></td>
+            <td>${badgeHTML}</td>
             <td>${result.findings_count > 0 ? `<span class="badge bg-info">${result.findings_count}</span>` : '<span class="text-muted">0</span>'}</td>
             <td><small>${executedTime}</small></td>
         `;
@@ -211,6 +226,223 @@ function copyCLICommand() {
         document.body.removeChild(textArea);
     }
 }
+
+// ZAP Progress Modal Functions
+let zapProgressModal = null;
+let zapProgressUpdateInterval = null;
+let latestZapProgressData = null;
+
+function showZapProgress() {
+    // Initialize modal if not already done
+    if (!zapProgressModal) {
+        zapProgressModal = new bootstrap.Modal(document.getElementById('zapProgressModal'));
+    }
+    
+    // Show modal
+    zapProgressModal.show();
+    
+    // Load initial progress data
+    updateZapProgressModal();
+    
+    // Set up auto-refresh while modal is open (every 3 seconds)
+    zapProgressUpdateInterval = setInterval(updateZapProgressModal, 3000);
+}
+
+function updateZapProgressModal() {
+    fetch(`/api/scans/${scanId}/status`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.zap_progress && data.zap_progress.available) {
+                latestZapProgressData = data.zap_progress;
+                renderZapProgressContent(data.zap_progress);
+            } else {
+                // No ZAP progress data available
+                document.getElementById('zapProgressContent').innerHTML = `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> ZAP progress data is not yet available.
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching ZAP progress:', error);
+            document.getElementById('zapProgressContent').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> Error loading ZAP progress data.
+                </div>
+            `;
+        });
+}
+
+function renderZapProgressContent(zap) {
+    const elapsed = formatDuration(zap.elapsed_seconds);
+    const spiderPercent = zap.progress.spider_percent;
+    const activeScanPercent = zap.progress.active_scan_percent;
+    const passiveQueue = zap.progress.passive_scan_queue;
+    
+    // Build progress bars
+    const spiderBar = `
+        <div class="progress mb-2" style="height: 25px;">
+            <div class="progress-bar ${spiderPercent === 100 ? 'bg-success' : 'bg-primary progress-bar-striped progress-bar-animated'}" 
+                 role="progressbar" 
+                 style="width: ${spiderPercent}%"
+                 aria-valuenow="${spiderPercent}" 
+                 aria-valuemin="0" 
+                 aria-valuemax="100">
+                ${spiderPercent}%
+            </div>
+        </div>
+    `;
+    
+    const activeScanBar = `
+        <div class="progress mb-2" style="height: 25px;">
+            <div class="progress-bar ${activeScanPercent === 100 ? 'bg-success' : 'bg-primary progress-bar-striped progress-bar-animated'}" 
+                 role="progressbar" 
+                 style="width: ${activeScanPercent}%"
+                 aria-valuenow="${activeScanPercent}" 
+                 aria-valuemin="0" 
+                 aria-valuemax="100">
+                ${activeScanPercent}%
+            </div>
+        </div>
+    `;
+    
+    // Build job history
+    let jobHistory = '';
+    zap.job_updates.forEach((job, index) => {
+        const isLast = index === zap.job_updates.length - 1;
+        const isComplete = job.toLowerCase().includes('finished') || job.toLowerCase().includes('completed');
+        const icon = isComplete ? '✓' : (isLast ? '⏳' : '✓');
+        const className = isComplete ? 'text-success' : (isLast ? 'text-primary' : 'text-success');
+        
+        jobHistory += `<li class="${className}"><small>${icon} ${job}</small></li>`;
+    });
+    
+    // Build warnings and errors
+    let warningsHtml = '';
+    if (zap.warnings && zap.warnings.length > 0) {
+        warningsHtml = `
+            <div class="alert alert-warning">
+                <strong><i class="bi bi-exclamation-triangle"></i> Warnings:</strong>
+                <ul class="mb-0 mt-2">
+                    ${zap.warnings.map(w => `<li><small>${w}</small></li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    let errorsHtml = '';
+    if (zap.errors && zap.errors.length > 0) {
+        errorsHtml = `
+            <div class="alert alert-danger">
+                <strong><i class="bi bi-x-circle"></i> Errors:</strong>
+                <ul class="mb-0 mt-2">
+                    ${zap.errors.map(e => `<li><small>${e}</small></li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+    
+    const content = `
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>Elapsed Time:</strong>
+                <span class="badge bg-info">${elapsed}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <strong>Current Phase:</strong>
+                <span class="badge bg-primary">${zap.current_phase}</span>
+            </div>
+        </div>
+        
+        <hr>
+        
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <strong>Spider Phase:</strong>
+                <small class="text-muted">${spiderPercent === 100 ? 'Complete' : 'In Progress'}</small>
+            </div>
+            ${spiderBar}
+        </div>
+        
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <strong>Active Scan:</strong>
+                <small class="text-muted">${activeScanPercent === 100 ? 'Complete' : activeScanPercent > 0 ? 'In Progress' : 'Pending'}</small>
+            </div>
+            ${activeScanBar}
+        </div>
+        
+        ${passiveQueue > 0 ? `
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong>Passive Scan Queue:</strong>
+                <span class="badge bg-secondary">${passiveQueue} items</span>
+            </div>
+        </div>
+        ` : ''}
+        
+        <hr>
+        
+        <div class="mb-3">
+            <strong>Findings Discovered:</strong>
+            <div class="row mt-2">
+                <div class="col-6 mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>Total:</span>
+                        <span class="badge bg-secondary">${zap.alerts.total}</span>
+                    </div>
+                </div>
+                <div class="col-6 mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>High:</span>
+                        <span class="badge bg-danger">${zap.alerts.High}</span>
+                    </div>
+                </div>
+                <div class="col-6 mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>Medium:</span>
+                        <span class="badge bg-warning">${zap.alerts.Medium}</span>
+                    </div>
+                </div>
+                <div class="col-6 mb-2">
+                    <div class="d-flex justify-content-between">
+                        <span>Low:</span>
+                        <span class="badge bg-info">${zap.alerts.Low}</span>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="d-flex justify-content-between">
+                        <span>Informational:</span>
+                        <span class="badge bg-secondary">${zap.alerts.Informational}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <hr>
+        
+        <div class="mb-3">
+            <strong>Job History:</strong>
+            <ul class="list-unstyled mt-2 mb-0">
+                ${jobHistory}
+            </ul>
+        </div>
+        
+        ${warningsHtml}
+        ${errorsHtml}
+    `;
+    
+    document.getElementById('zapProgressContent').innerHTML = content;
+}
+
+// Stop ZAP progress updates when modal is closed
+document.getElementById('zapProgressModal').addEventListener('hidden.bs.modal', function() {
+    if (zapProgressUpdateInterval) {
+        clearInterval(zapProgressUpdateInterval);
+        zapProgressUpdateInterval = null;
+    }
+});
 
 // Initialize Bootstrap tooltips
 document.addEventListener('DOMContentLoaded', function() {
@@ -793,6 +1025,28 @@ document.getElementById('shareModal').addEventListener('show.bs.modal', function
 });
 </script>
 {% endif %}
+
+<!-- ZAP Progress Modal -->
+<div class="modal fade" id="zapProgressModal" tabindex="-1" aria-labelledby="zapProgressModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="zapProgressModalLabel">
+                    <i class="bi bi-activity"></i> ZAP Scan Progress
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="zapProgressContent">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading ZAP progress data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Email Modal -->
 {% if scan.status == 'completed' and report_path %}

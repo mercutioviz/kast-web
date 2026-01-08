@@ -506,6 +506,10 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             # Parse results and extract plugin errors
             parse_scan_results(scan_id, output_dir)
             
+            # Preserve ZAP progress data if it exists
+            if plugins and 'zap' in plugins:
+                preserve_zap_final_progress(output_dir)
+            
             return {
                 'success': True,
                 'output_dir': str(output_dir),
@@ -687,6 +691,32 @@ def extract_plugin_error(plugin_data, disposition):
         error_msg = error_msg[:997] + "..."
     
     return error_msg
+
+
+def preserve_zap_final_progress(output_dir):
+    """
+    Preserve ZAP progress data by copying it to a final version
+    
+    Args:
+        output_dir: Path to scan output directory
+    """
+    from flask import current_app
+    import shutil
+    
+    try:
+        output_path = Path(output_dir)
+        progress_file = output_path / 'zap_scan_progress.json'
+        final_progress_file = output_path / 'zap_scan_final_progress.json'
+        
+        if progress_file.exists():
+            # Copy progress file to final version for historical reference
+            shutil.copy(progress_file, final_progress_file)
+            current_app.logger.info(f"Preserved ZAP final progress: {final_progress_file}")
+        else:
+            current_app.logger.debug("No ZAP progress file found to preserve")
+    
+    except Exception as e:
+        current_app.logger.error(f"Error preserving ZAP final progress: {e}")
 
 
 def parse_plugin_logs(execution_log_path, output_dir):
