@@ -595,6 +595,53 @@ configure_security_tool_configs() {
     log "Config directories: /var/www/.config/katana, /var/www/.config/subfinder"
 }
 
+configure_docker_access() {
+    print_header "Docker Access Configuration"
+    
+    # Check if Docker is installed
+    if ! command -v docker &>/dev/null; then
+        print_info "Docker not detected - skipping Docker group configuration"
+        log "Docker not installed, skipping docker group membership"
+        return 0
+    fi
+    
+    print_success "Docker detected on system"
+    
+    # Check if docker group exists
+    if ! getent group docker > /dev/null 2>&1; then
+        print_warning "Docker is installed but 'docker' group does not exist"
+        WARNINGS+=("Docker group not found. This is unusual - Docker may need reinstallation")
+        log "Docker group does not exist, skipping group membership"
+        return 0
+    fi
+    
+    print_success "Docker group exists"
+    
+    # Check if www-data is already in docker group
+    if id -nG www-data | grep -qw docker; then
+        print_success "www-data user already in 'docker' group"
+        log "www-data already member of docker group"
+        return 0
+    fi
+    
+    # Add www-data to docker group
+    print_info "Adding www-data user to docker group..."
+    if usermod -aG docker www-data >> "$LOG_FILE" 2>&1; then
+        print_success "Added www-data to 'docker' group"
+        log "Successfully added www-data to docker group"
+        
+        print_info "Note: Service restart required for group membership to take effect"
+        WARNINGS+=("www-data added to docker group - kast-celery service will be restarted during installation")
+    else
+        print_error "Failed to add www-data to docker group"
+        WARNINGS+=("Could not add www-data to docker group. Docker-based scanning may not work.")
+        log "ERROR: Failed to add www-data to docker group"
+        return 1
+    fi
+    
+    print_success "Docker access configured for www-data (Celery worker)"
+}
+
 check_disk_space() {
     print_header "Disk Space Check"
     
@@ -1816,6 +1863,21 @@ generate_report() {
         echo -e ""
     fi
     
+    # Display Docker configuration status
+    if command -v docker &>/dev/null; then
+        echo -e "  ${BOLD}Docker Integration:${NC}"
+        if id -nG www-data | grep -qw docker; then
+            echo -e "    • Docker detected:    ${GREEN}YES${NC}"
+            echo -e "    • www-data in docker group: ${GREEN}YES${NC}"
+            echo -e "    • Celery worker can use Docker containers for scanning"
+        else
+            echo -e "    • Docker detected:    ${GREEN}YES${NC}"
+            echo -e "    • www-data in docker group: ${YELLOW}NO${NC}"
+            echo -e "    • Run installer again to configure Docker access"
+        fi
+        echo -e ""
+    fi
+    
     echo -e "\n${CYAN}${BOLD}Getting Started:${NC}"
     echo -e "  ${BOLD}Important:${NC} Celery worker must be running for scans to work!"
     echo -e "  The Celery worker processes scan tasks asynchronously in the background."
@@ -1880,6 +1942,7 @@ main() {
     check_kast_cli
     configure_kast_permissions
     configure_security_tool_configs
+    configure_docker_access
     
     # Collect all user inputs upfront (interactive mode only)
     collect_user_inputs
