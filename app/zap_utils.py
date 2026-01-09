@@ -244,42 +244,369 @@ def test_remote_connection(config: Dict[str, Any]) -> Tuple[bool, str]:
         return False, f"Connection error: {str(e)}"
 
 
+def check_terraform_installed() -> Tuple[bool, str, str]:
+    """
+    Check if Terraform is installed
+    
+    Returns:
+        Tuple of (is_installed, version_string, error_message)
+    """
+    try:
+        result = subprocess.run(
+            ['terraform', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            # Extract version from first line (e.g., "Terraform v1.5.0")
+            version = result.stdout.split('\n')[0].strip()
+            return True, version, ""
+        return False, "", "Terraform command failed"
+    except subprocess.TimeoutExpired:
+        return False, "", "Terraform command timed out"
+    except FileNotFoundError:
+        return False, "", "Terraform not found in PATH"
+    except Exception as e:
+        return False, "", str(e)
+
+
+def check_aws_cli_installed() -> Tuple[bool, str, str]:
+    """
+    Check if AWS CLI is installed
+    
+    Returns:
+        Tuple of (is_installed, version_string, error_message)
+    """
+    try:
+        result = subprocess.run(
+            ['aws', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            # AWS CLI outputs to stderr, version format: "aws-cli/2.x.x Python/3.x.x..."
+            version = result.stderr.strip() if result.stderr else result.stdout.strip()
+            return True, version, ""
+        return False, "", "AWS CLI command failed"
+    except subprocess.TimeoutExpired:
+        return False, "", "AWS CLI command timed out"
+    except FileNotFoundError:
+        return False, "", "AWS CLI not found in PATH"
+    except Exception as e:
+        return False, "", str(e)
+
+
+def check_azure_cli_installed() -> Tuple[bool, str, str]:
+    """
+    Check if Azure CLI is installed
+    
+    Returns:
+        Tuple of (is_installed, version_string, error_message)
+    """
+    try:
+        result = subprocess.run(
+            ['az', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            # Extract version from output (first line usually contains azure-cli x.x.x)
+            lines = result.stdout.split('\n')
+            version = lines[0].strip() if lines else "Azure CLI"
+            return True, version, ""
+        return False, "", "Azure CLI command failed"
+    except subprocess.TimeoutExpired:
+        return False, "", "Azure CLI command timed out"
+    except FileNotFoundError:
+        return False, "", "Azure CLI not found in PATH"
+    except Exception as e:
+        return False, "", str(e)
+
+
+def check_gcloud_cli_installed() -> Tuple[bool, str, str]:
+    """
+    Check if Google Cloud CLI is installed
+    
+    Returns:
+        Tuple of (is_installed, version_string, error_message)
+    """
+    try:
+        result = subprocess.run(
+            ['gcloud', '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            # Extract version from first line (e.g., "Google Cloud SDK x.x.x")
+            lines = result.stdout.split('\n')
+            version = lines[0].strip() if lines else "Google Cloud SDK"
+            return True, version, ""
+        return False, "", "gcloud command failed"
+    except subprocess.TimeoutExpired:
+        return False, "", "gcloud command timed out"
+    except FileNotFoundError:
+        return False, "", "gcloud not found in PATH"
+    except Exception as e:
+        return False, "", str(e)
+
+
+def get_cloud_tools_status() -> Dict[str, Any]:
+    """
+    Get status of all cloud-related tools
+    
+    Returns:
+        Dictionary with status of Terraform and cloud provider CLIs
+    """
+    status = {}
+    
+    # Check Terraform (required for all providers)
+    tf_installed, tf_version, tf_error = check_terraform_installed()
+    status['terraform'] = {
+        'installed': tf_installed,
+        'version': tf_version if tf_installed else None,
+        'error': tf_error if not tf_installed else None,
+        'install_url': 'https://www.terraform.io/downloads',
+        'install_cmd_ubuntu': 'wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list && sudo apt update && sudo apt install terraform'
+    }
+    
+    # Check AWS CLI
+    aws_installed, aws_version, aws_error = check_aws_cli_installed()
+    status['aws'] = {
+        'installed': aws_installed,
+        'version': aws_version if aws_installed else None,
+        'error': aws_error if not aws_installed else None,
+        'install_url': 'https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html',
+        'install_cmd_ubuntu': 'curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install'
+    }
+    
+    # Check Azure CLI
+    az_installed, az_version, az_error = check_azure_cli_installed()
+    status['azure'] = {
+        'installed': az_installed,
+        'version': az_version if az_installed else None,
+        'error': az_error if not az_installed else None,
+        'install_url': 'https://docs.microsoft.com/en-us/cli/azure/install-azure-cli',
+        'install_cmd_ubuntu': 'curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash'
+    }
+    
+    # Check Google Cloud CLI
+    gcloud_installed, gcloud_version, gcloud_error = check_gcloud_cli_installed()
+    status['gcp'] = {
+        'installed': gcloud_installed,
+        'version': gcloud_version if gcloud_installed else None,
+        'error': gcloud_error if not gcloud_installed else None,
+        'install_url': 'https://cloud.google.com/sdk/docs/install',
+        'install_cmd_ubuntu': 'curl https://sdk.cloud.google.com | bash && exec -l $SHELL && gcloud init'
+    }
+    
+    return status
+
+
 def test_cloud_config(config: Dict[str, Any]) -> Tuple[bool, str]:
     """
-    Test cloud provider configuration
+    Test cloud provider configuration with tool detection and authentication testing
     
     Args:
         config: Cloud configuration dictionary
         
     Returns:
-        Tuple of (success, message)
+        Tuple of (success, detailed_message)
     """
-    provider = config.get('provider', '')
+    provider = config.get('provider', '').lower()
     
     if not provider:
-        return False, "Cloud provider not specified"
+        return False, "⚠️ Cloud provider not specified"
     
-    # Basic validation
-    required_fields = {
-        'aws': ['region', 'access_key', 'secret_key'],
-        'azure': ['region', 'subscription_id', 'client_id', 'client_secret'],
-        'gcp': ['region', 'project_id', 'credentials']
-    }
+    if provider not in ['aws', 'azure', 'gcp']:
+        return False, f"⚠️ Unsupported cloud provider: {provider}"
     
-    if provider not in required_fields:
-        return False, f"Unsupported cloud provider: {provider}"
+    messages = []
+    has_critical_errors = False
     
-    missing = []
-    for field in required_fields[provider]:
-        if not config.get(field):
-            missing.append(field)
+    # Step 1: Check Terraform (required for ALL cloud providers)
+    tf_installed, tf_version, tf_error = check_terraform_installed()
+    if not tf_installed:
+        messages.append("⚠️ Terraform is not installed (required for all cloud providers)")
+        messages.append(f"   Install: wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg")
+        messages.append(f"   Then: echo \"deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list")
+        messages.append(f"   Finally: sudo apt update && sudo apt install terraform")
+        messages.append(f"   Or visit: https://www.terraform.io/downloads")
+    else:
+        messages.append(f"✅ Terraform installed: {tf_version}")
     
-    if missing:
-        return False, f"Missing required fields: {', '.join(missing)}"
+    # Step 2: Check provider-specific CLI and authentication
+    if provider == 'aws':
+        # Check required fields
+        required_fields = ['region', 'access_key', 'secret_key']
+        missing = [f for f in required_fields if not config.get(f)]
+        if missing:
+            has_critical_errors = True
+            messages.append(f"❌ Missing required fields: {', '.join(missing)}")
+        
+        # Check AWS CLI
+        cli_installed, cli_version, cli_error = check_aws_cli_installed()
+        if not cli_installed:
+            messages.append("⚠️ AWS CLI is not installed")
+            messages.append("   Install: curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"awscliv2.zip\"")
+            messages.append("   Then: unzip awscliv2.zip && sudo ./aws/install")
+            messages.append("   Or visit: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html")
+        else:
+            messages.append(f"✅ AWS CLI installed: {cli_version}")
+            
+            # Attempt authentication test if credentials provided
+            if not missing:
+                try:
+                    import os
+                    env = os.environ.copy()
+                    env['AWS_ACCESS_KEY_ID'] = config.get('access_key', '')
+                    env['AWS_SECRET_ACCESS_KEY'] = config.get('secret_key', '')
+                    env['AWS_DEFAULT_REGION'] = config.get('region', 'us-east-1')
+                    
+                    auth_result = subprocess.run(
+                        ['aws', 'sts', 'get-caller-identity'],
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    if auth_result.returncode == 0:
+                        # Parse caller identity to show account
+                        try:
+                            import json
+                            identity = json.loads(auth_result.stdout)
+                            account = identity.get('Account', 'Unknown')
+                            arn = identity.get('Arn', 'Unknown')
+                            messages.append(f"✅ AWS authentication successful!")
+                            messages.append(f"   Account: {account}")
+                            messages.append(f"   Identity: {arn}")
+                        except:
+                            messages.append("✅ AWS authentication successful!")
+                    else:
+                        error_msg = auth_result.stderr.strip()[:200]
+                        messages.append(f"⚠️ AWS authentication failed: {error_msg}")
+                        messages.append("   Check your access key and secret key")
+                except Exception as e:
+                    messages.append(f"⚠️ AWS authentication test failed: {str(e)}")
     
-    # Note: Full cloud provider testing requires SDK libraries and actual API calls
-    # This is a basic configuration validation
-    return True, f"Cloud configuration appears valid for {provider.upper()}. Note: Actual cloud connectivity not tested."
+    elif provider == 'azure':
+        # Check required fields
+        required_fields = ['region', 'subscription_id', 'client_id', 'client_secret', 'tenant_id']
+        missing = [f for f in required_fields if not config.get(f)]
+        if missing:
+            has_critical_errors = True
+            messages.append(f"❌ Missing required fields: {', '.join(missing)}")
+        
+        # Check Azure CLI
+        cli_installed, cli_version, cli_error = check_azure_cli_installed()
+        if not cli_installed:
+            messages.append("⚠️ Azure CLI is not installed")
+            messages.append("   Install: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash")
+            messages.append("   Or visit: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli")
+        else:
+            messages.append(f"✅ Azure CLI installed: {cli_version}")
+            
+            # Attempt authentication test if credentials provided
+            if not missing:
+                try:
+                    import os
+                    env = os.environ.copy()
+                    env['AZURE_CLIENT_ID'] = config.get('client_id', '')
+                    env['AZURE_CLIENT_SECRET'] = config.get('client_secret', '')
+                    env['AZURE_TENANT_ID'] = config.get('tenant_id', '')
+                    
+                    # Login with service principal
+                    auth_result = subprocess.run(
+                        ['az', 'login', '--service-principal',
+                         '-u', config.get('client_id', ''),
+                         '-p', config.get('client_secret', ''),
+                         '--tenant', config.get('tenant_id', '')],
+                        capture_output=True,
+                        text=True,
+                        timeout=15
+                    )
+                    
+                    if auth_result.returncode == 0:
+                        messages.append("✅ Azure authentication successful!")
+                        messages.append(f"   Subscription: {config.get('subscription_id', 'Unknown')}")
+                        # Logout to clean up
+                        subprocess.run(['az', 'logout'], capture_output=True, timeout=5)
+                    else:
+                        error_msg = auth_result.stderr.strip()[:200]
+                        messages.append(f"⚠️ Azure authentication failed: {error_msg}")
+                        messages.append("   Check your service principal credentials")
+                except Exception as e:
+                    messages.append(f"⚠️ Azure authentication test failed: {str(e)}")
+    
+    elif provider == 'gcp':
+        # Check required fields
+        required_fields = ['region', 'project_id', 'credentials']
+        missing = [f for f in required_fields if not config.get(f)]
+        if missing:
+            has_critical_errors = True
+            messages.append(f"❌ Missing required fields: {', '.join(missing)}")
+        
+        # Check gcloud CLI
+        cli_installed, cli_version, cli_error = check_gcloud_cli_installed()
+        if not cli_installed:
+            messages.append("⚠️ Google Cloud CLI is not installed")
+            messages.append("   Install: curl https://sdk.cloud.google.com | bash")
+            messages.append("   Then: exec -l $SHELL && gcloud init")
+            messages.append("   Or visit: https://cloud.google.com/sdk/docs/install")
+        else:
+            messages.append(f"✅ Google Cloud CLI installed: {cli_version}")
+            
+            # Attempt authentication test if credentials provided
+            if not missing:
+                try:
+                    import tempfile
+                    import json
+                    import os
+                    
+                    # GCP credentials should be a JSON string
+                    credentials = config.get('credentials', '')
+                    
+                    # Write credentials to temp file
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                        f.write(credentials)
+                        creds_file = f.name
+                    
+                    try:
+                        env = os.environ.copy()
+                        env['GOOGLE_APPLICATION_CREDENTIALS'] = creds_file
+                        
+                        # Try to list projects as auth test
+                        auth_result = subprocess.run(
+                            ['gcloud', 'projects', 'list', '--limit=1',
+                             f'--project={config.get("project_id", "")}'],
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            timeout=15
+                        )
+                        
+                        if auth_result.returncode == 0:
+                            messages.append("✅ GCP authentication successful!")
+                            messages.append(f"   Project: {config.get('project_id', 'Unknown')}")
+                        else:
+                            error_msg = auth_result.stderr.strip()[:200]
+                            messages.append(f"⚠️ GCP authentication failed: {error_msg}")
+                            messages.append("   Check your service account credentials")
+                    finally:
+                        # Clean up temp file
+                        os.unlink(creds_file)
+                except Exception as e:
+                    messages.append(f"⚠️ GCP authentication test failed: {str(e)}")
+    
+    # Determine overall success
+    # Success if no critical errors (missing tools are warnings, not errors)
+    success = not has_critical_errors
+    
+    return success, "\n".join(messages)
 
 
 def get_plan_statistics(plan_id: int) -> Dict[str, Any]:

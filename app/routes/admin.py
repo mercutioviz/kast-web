@@ -902,6 +902,14 @@ def system_info():
     # KAST CLI Information
     info['kast_cli'] = get_kast_cli_info()
     
+    # Cloud Tools Information (only if cloud configs exist)
+    has_cloud_configs = ZapConfiguration.query.filter_by(execution_mode='cloud').count() > 0
+    if has_cloud_configs:
+        from app.zap_utils import get_cloud_tools_status
+        info['cloud_tools'] = get_cloud_tools_status()
+    else:
+        info['cloud_tools'] = None
+    
     # Database Information (masked)
     db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
     if db_url:

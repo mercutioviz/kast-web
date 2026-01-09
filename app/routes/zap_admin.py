@@ -842,3 +842,35 @@ def config_container_logs(config_id):
             'logs': '',
             'command': ''
         }), 500
+
+
+@bp.route('/check-cloud-tools', methods=['GET'])
+@login_required
+@admin_required
+def check_cloud_tools():
+    """AJAX endpoint to check cloud tool availability"""
+    
+    from app.zap_utils import get_cloud_tools_status
+    
+    try:
+        status = get_cloud_tools_status()
+        
+        # Log the check
+        AuditLog.log(
+            user_id=current_user.id,
+            action='zap_cloud_tools_checked',
+            resource_type='zap_config',
+            resource_id=None,
+            details='Checked cloud tools availability'
+        )
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'terraform': {'installed': False, 'error': 'Failed to check'},
+            'aws': {'installed': False, 'error': 'Failed to check'},
+            'azure': {'installed': False, 'error': 'Failed to check'},
+            'gcp': {'installed': False, 'error': 'Failed to check'}
+        }), 500

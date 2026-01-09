@@ -561,6 +561,163 @@
         </div>
     </div>
 
+    <!-- Cloud Tools (ZAP) Information -->
+    {% if info.cloud_tools %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#cloudToolsInfo">
+                <i class="bi bi-cloud me-2"></i> Cloud Tools (ZAP Deployments)
+            </button>
+        </h2>
+        <div id="cloudToolsInfo" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
+            <div class="accordion-body">
+                <div class="alert alert-info mb-3">
+                    <i class="bi bi-info-circle"></i> 
+                    These tools are required for deploying ZAP instances on cloud providers (AWS, Azure, GCP).
+                    See <a href="{{ url_for('static', filename='../docs/ZAP_CLOUD_TOOLS_SETUP.md') }}" target="_blank">Cloud Tools Setup Guide</a> for installation instructions.
+                </div>
+
+                <!-- Terraform (Required for ALL providers) -->
+                <div class="card mb-3 {% if info.cloud_tools.terraform.installed %}border-success{% else %}border-warning{% endif %}">
+                    <div class="card-header {% if info.cloud_tools.terraform.installed %}bg-success text-white{% else %}bg-warning{% endif %}">
+                        <h6 class="mb-0">
+                            <i class="bi bi-box-seam"></i> Terraform 
+                            <span class="badge {% if info.cloud_tools.terraform.installed %}bg-light text-success{% else %}bg-dark{% endif %} ms-2">
+                                Required for ALL cloud providers
+                            </span>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        {% if info.cloud_tools.terraform.installed %}
+                            <p class="mb-2">
+                                <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                <strong>Installed:</strong> <code>{{ info.cloud_tools.terraform.version }}</code>
+                            </p>
+                        {% else %}
+                            <p class="mb-2">
+                                <i class="bi bi-x-circle-fill text-danger me-2"></i>
+                                <strong>Not Found</strong>
+                                {% if info.cloud_tools.terraform.error %}
+                                    <small class="text-muted d-block ms-4">{{ info.cloud_tools.terraform.error }}</small>
+                                {% endif %}
+                            </p>
+                            <div class="alert alert-warning mb-0">
+                                <strong>Installation Required:</strong>
+                                <pre class="mb-2 mt-2 bg-light p-2 rounded"><code>{{ info.cloud_tools.terraform.install_cmd_ubuntu }}</code></pre>
+                                <small>Or visit: <a href="{{ info.cloud_tools.terraform.install_url }}" target="_blank">{{ info.cloud_tools.terraform.install_url }}</a></small>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- AWS CLI -->
+                <div class="card mb-3 {% if info.cloud_tools.aws.installed %}border-success{% else %}border-secondary{% endif %}">
+                    <div class="card-header {% if info.cloud_tools.aws.installed %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        <h6 class="mb-0">
+                            <i class="bi bi-cloud"></i> AWS CLI
+                            <span class="badge bg-dark ms-2">For AWS deployments</span>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        {% if info.cloud_tools.aws.installed %}
+                            <p class="mb-0">
+                                <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                <strong>Installed:</strong> <code>{{ info.cloud_tools.aws.version }}</code>
+                            </p>
+                        {% else %}
+                            <p class="mb-2">
+                                <i class="bi bi-x-circle-fill text-warning me-2"></i>
+                                <strong>Not Found</strong>
+                                {% if info.cloud_tools.aws.error %}
+                                    <small class="text-muted d-block ms-4">{{ info.cloud_tools.aws.error }}</small>
+                                {% endif %}
+                            </p>
+                            <details>
+                                <summary class="text-primary" style="cursor: pointer;">Show installation instructions</summary>
+                                <div class="mt-2">
+                                    <pre class="mb-2 bg-light p-2 rounded"><code>{{ info.cloud_tools.aws.install_cmd_ubuntu }}</code></pre>
+                                    <small>Or visit: <a href="{{ info.cloud_tools.aws.install_url }}" target="_blank">{{ info.cloud_tools.aws.install_url }}</a></small>
+                                </div>
+                            </details>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Azure CLI -->
+                <div class="card mb-3 {% if info.cloud_tools.azure.installed %}border-success{% else %}border-secondary{% endif %}">
+                    <div class="card-header {% if info.cloud_tools.azure.installed %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        <h6 class="mb-0">
+                            <i class="bi bi-cloud"></i> Azure CLI
+                            <span class="badge bg-dark ms-2">For Azure deployments</span>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        {% if info.cloud_tools.azure.installed %}
+                            <p class="mb-0">
+                                <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                <strong>Installed:</strong> <code>{{ info.cloud_tools.azure.version }}</code>
+                            </p>
+                        {% else %}
+                            <p class="mb-2">
+                                <i class="bi bi-x-circle-fill text-warning me-2"></i>
+                                <strong>Not Found</strong>
+                                {% if info.cloud_tools.azure.error %}
+                                    <small class="text-muted d-block ms-4">{{ info.cloud_tools.azure.error }}</small>
+                                {% endif %}
+                            </p>
+                            <details>
+                                <summary class="text-primary" style="cursor: pointer;">Show installation instructions</summary>
+                                <div class="mt-2">
+                                    <pre class="mb-2 bg-light p-2 rounded"><code>{{ info.cloud_tools.azure.install_cmd_ubuntu }}</code></pre>
+                                    <small>Or visit: <a href="{{ info.cloud_tools.azure.install_url }}" target="_blank">{{ info.cloud_tools.azure.install_url }}</a></small>
+                                </div>
+                            </details>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Google Cloud CLI -->
+                <div class="card mb-3 {% if info.cloud_tools.gcp.installed %}border-success{% else %}border-secondary{% endif %}">
+                    <div class="card-header {% if info.cloud_tools.gcp.installed %}bg-success text-white{% else %}bg-secondary text-white{% endif %}">
+                        <h6 class="mb-0">
+                            <i class="bi bi-cloud"></i> Google Cloud CLI (gcloud)
+                            <span class="badge bg-dark ms-2">For GCP deployments</span>
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        {% if info.cloud_tools.gcp.installed %}
+                            <p class="mb-0">
+                                <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                <strong>Installed:</strong> <code>{{ info.cloud_tools.gcp.version }}</code>
+                            </p>
+                        {% else %}
+                            <p class="mb-2">
+                                <i class="bi bi-x-circle-fill text-warning me-2"></i>
+                                <strong>Not Found</strong>
+                                {% if info.cloud_tools.gcp.error %}
+                                    <small class="text-muted d-block ms-4">{{ info.cloud_tools.gcp.error }}</small>
+                                {% endif %}
+                            </p>
+                            <details>
+                                <summary class="text-primary" style="cursor: pointer;">Show installation instructions</summary>
+                                <div class="mt-2">
+                                    <pre class="mb-2 bg-light p-2 rounded"><code>{{ info.cloud_tools.gcp.install_cmd_ubuntu }}</code></pre>
+                                    <small>Or visit: <a href="{{ info.cloud_tools.gcp.install_url }}" target="_blank">{{ info.cloud_tools.gcp.install_url }}</a></small>
+                                </div>
+                            </details>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="alert alert-secondary mb-0">
+                    <strong>Note:</strong> Cloud tools are only checked when cloud ZAP configurations exist. 
+                    Authentication is tested when creating/editing cloud configurations in the admin panel.
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- KAST CLI Information -->
     <div class="accordion-item">
         <h2 class="accordion-header">

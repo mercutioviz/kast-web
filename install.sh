@@ -992,12 +992,74 @@ setup_application() {
     
     print_success "Python dependencies installed"
     
-    # Generate secret key
-    SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-    
-    # Create .env file
-    print_info "Creating configuration file..."
-    cat > "$INSTALL_DIR/.env" << EOF
+    # Handle .env file creation/preservation
+    if [[ "$UPGRADE_MODE" == "yes" ]]; then
+        # Upgrade mode: Preserve existing .env file from backup
+        print_info "Checking for existing .env file to preserve..."
+        
+        # Find the most recent backup directory
+        LATEST_BACKUP=$(ls -td ${BACKUP_BASE_DIR}-* 2>/dev/null | head -1)
+        
+        if [[ -n "$LATEST_BACKUP" ]] && [[ -f "$LATEST_BACKUP/.env" ]]; then
+            print_info "Found existing .env file in backup: $LATEST_BACKUP/.env"
+            
+            # Extract critical values from backup .env
+            source "$LATEST_BACKUP/.env" 2>/dev/null || true
+            EXISTING_SECRET_KEY="$SECRET_KEY"
+            EXISTING_DATABASE_URL="$DATABASE_URL"
+            EXISTING_CELERY_BROKER="$CELERY_BROKER_URL"
+            EXISTING_CELERY_BACKEND="$CELERY_RESULT_BACKEND"
+            EXISTING_KAST_CLI="$KAST_CLI_PATH"
+            EXISTING_RESULTS_DIR="$KAST_RESULTS_DIR"
+            
+            # Validate that we have critical settings
+            if [[ -n "$EXISTING_SECRET_KEY" ]]; then
+                print_success "Preserving existing SECRET_KEY (critical for decrypting ZAP configs)"
+                SECRET_KEY="$EXISTING_SECRET_KEY"
+            else
+                print_warning "No SECRET_KEY found in backup, generating new one"
+                SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            fi
+            
+            # Preserve other settings if they exist, otherwise use defaults
+            [[ -z "$EXISTING_DATABASE_URL" ]] && EXISTING_DATABASE_URL="$DATABASE_URL"
+            [[ -z "$EXISTING_CELERY_BROKER" ]] && EXISTING_CELERY_BROKER="redis://localhost:6379/0"
+            [[ -z "$EXISTING_CELERY_BACKEND" ]] && EXISTING_CELERY_BACKEND="redis://localhost:6379/0"
+            [[ -z "$EXISTING_KAST_CLI" ]] && EXISTING_KAST_CLI="$KAST_CLI_PATH"
+            [[ -z "$EXISTING_RESULTS_DIR" ]] && EXISTING_RESULTS_DIR="/var/lib/kast-web/results"
+            
+            # Create .env file with preserved values
+            print_info "Creating configuration file with preserved settings..."
+            cat > "$INSTALL_DIR/.env" << EOF
+# KAST-Web Configuration
+# Upgraded: $(date)
+# Note: SECRET_KEY and other settings preserved from previous installation
+
+FLASK_ENV=production
+SECRET_KEY=$SECRET_KEY
+
+# Database Configuration
+DATABASE_URL=$EXISTING_DATABASE_URL
+
+# Celery Configuration
+CELERY_BROKER_URL=$EXISTING_CELERY_BROKER
+CELERY_RESULT_BACKEND=$EXISTING_CELERY_BACKEND
+
+# KAST CLI Configuration
+KAST_CLI_PATH=$EXISTING_KAST_CLI
+KAST_RESULTS_DIR=$EXISTING_RESULTS_DIR
+EOF
+            
+            chmod 600 "$INSTALL_DIR/.env"
+            chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/.env"
+            print_success "Configuration file created with preserved settings"
+            log "Preserved existing SECRET_KEY and configuration from backup"
+        else
+            print_warning "No backup .env found, creating new configuration"
+            SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            
+            # Create new .env file
+            cat > "$INSTALL_DIR/.env" << EOF
 # KAST-Web Configuration
 # Generated: $(date)
 
@@ -1015,10 +1077,41 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 KAST_CLI_PATH=$KAST_CLI_PATH
 KAST_RESULTS_DIR=/var/lib/kast-web/results
 EOF
-    
-    chmod 600 "$INSTALL_DIR/.env"
-    chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/.env"
-    print_success "Configuration file created"
+            
+            chmod 600 "$INSTALL_DIR/.env"
+            chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/.env"
+            print_success "Configuration file created"
+        fi
+    else
+        # Fresh install: Generate new SECRET_KEY
+        print_info "Fresh installation - generating new SECRET_KEY..."
+        SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        
+        # Create .env file
+        print_info "Creating configuration file..."
+        cat > "$INSTALL_DIR/.env" << EOF
+# KAST-Web Configuration
+# Generated: $(date)
+
+FLASK_ENV=production
+SECRET_KEY=$SECRET_KEY
+
+# Database Configuration
+DATABASE_URL=$DATABASE_URL
+
+# Celery Configuration
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+
+# KAST CLI Configuration
+KAST_CLI_PATH=$KAST_CLI_PATH
+KAST_RESULTS_DIR=/var/lib/kast-web/results
+EOF
+        
+        chmod 600 "$INSTALL_DIR/.env"
+        chown $SERVICE_USER:$SERVICE_USER "$INSTALL_DIR/.env"
+        print_success "Configuration file created"
+    fi
     
     # Verify and fix ownership of all application files
     print_info "Verifying file ownership..."
