@@ -79,23 +79,39 @@
                     <div class="card-body">
                         <div class="mb-3">
                             {{ form.docker_image.label(class="form-label") }}
-                            {{ form.docker_image(class="form-control") }}
+                            {{ form.docker_image(class="form-control", id="docker-image-input") }}
                             <small class="form-text text-muted">Default: ghcr.io/zaproxy/zaproxy:stable</small>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 {{ form.docker_port.label(class="form-label") }}
-                                {{ form.docker_port(class="form-control") }}
+                                {{ form.docker_port(class="form-control", id="docker-port-input") }}
                             </div>
                             <div class="col-md-6 mb-3">
                                 {{ form.docker_memory_limit.label(class="form-label") }}
-                                {{ form.docker_memory_limit(class="form-control") }}
+                                {{ form.docker_memory_limit(class="form-control", id="docker-memory-input") }}
                                 <small class="form-text text-muted">e.g., 2g, 512m</small>
                             </div>
                         </div>
-                        <div class="form-check">
+                        <div class="form-check mb-3">
                             {{ form.docker_auto_remove(class="form-check-input") }}
                             {{ form.docker_auto_remove.label(class="form-check-label") }}
+                        </div>
+
+                        <!-- Docker Command Preview -->
+                        <div class="alert alert-secondary mb-0">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="mb-0">
+                                    <i class="fas fa-terminal"></i> <strong>Docker Command Preview</strong>
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-docker-cmd-btn" title="Copy to clipboard">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+                            <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 300px; overflow-x: auto;"><code id="docker-command-preview">Loading...</code></pre>
+                            <small class="text-muted d-block mt-2">
+                                <i class="fas fa-info-circle"></i> This is the exact command that will be executed when starting the container
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -108,11 +124,11 @@
                     <div class="card-body">
                         <div class="mb-3">
                             {{ form.remote_url.label(class="form-label") }}
-                            {{ form.remote_url(class="form-control", placeholder="http://zap.example.com:8080") }}
+                            {{ form.remote_url(class="form-control", placeholder="http://zap.example.com:8080", id="remote-url-input") }}
                         </div>
                         <div class="mb-3">
                             {{ form.remote_api_key.label(class="form-label") }}
-                            {{ form.remote_api_key(class="form-control", placeholder="Enter API key" + (" or leave blank to keep existing" if mode == 'edit' else "")) }}
+                            {{ form.remote_api_key(class="form-control", placeholder="Enter API key" + (" or leave blank to keep existing" if mode == 'edit' else ""), id="remote-apikey-input") }}
                             {% if mode == 'edit' %}
                             <small class="form-text text-muted">Leave blank to keep existing API key</small>
                             {% endif %}
@@ -120,15 +136,31 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 {{ form.remote_timeout.label(class="form-label") }}
-                                {{ form.remote_timeout(class="form-control") }}
+                                {{ form.remote_timeout(class="form-control", id="remote-timeout-input") }}
                                 <small class="form-text text-muted">Seconds</small>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-check mt-4">
-                                    {{ form.remote_verify_ssl(class="form-check-input") }}
+                                    {{ form.remote_verify_ssl(class="form-check-input", id="remote-verify-ssl-input") }}
                                     {{ form.remote_verify_ssl.label(class="form-check-label") }}
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Remote Connection Preview -->
+                        <div class="alert alert-secondary mb-0 mt-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="mb-0">
+                                    <i class="fas fa-plug"></i> <strong>Connection Details</strong>
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-remote-details-btn" title="Copy to clipboard">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+                            <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 300px; overflow-x: auto;"><code id="remote-connection-preview">Loading...</code></pre>
+                            <small class="text-muted d-block mt-2">
+                                <i class="fas fa-info-circle"></i> Example API endpoint that will be used to communicate with the remote ZAP instance
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -310,6 +342,22 @@
                             {{ form.cloud_auto_terminate.label(class="form-check-label") }}
                             <small class="form-text text-muted d-block">Recommended to prevent lingering cloud resources</small>
                         </div>
+
+                        <!-- Cloud Deployment Command Preview -->
+                        <div class="alert alert-secondary mb-0 mt-4" id="cloud-preview-container">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="mb-0">
+                                    <i class="fas fa-cloud"></i> <strong>Cloud Deployment Commands Preview</strong>
+                                </label>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-cloud-cmd-btn" title="Copy to clipboard">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
+                            <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 400px; overflow-x: auto;"><code id="cloud-command-preview">Loading...</code></pre>
+                            <small class="text-muted d-block mt-2">
+                                <i class="fas fa-info-circle"></i> These are example commands for manual cloud deployment. KAST uses Terraform for automated deployment.
+                            </small>
+                        </div>
                     </div>
                 </div>
 
@@ -396,6 +444,185 @@ document.addEventListener('DOMContentLoaded', function() {
     const cidrValidationFeedback = document.getElementById('cidr-validation-feedback');
     const detectMyIpBtn = document.getElementById('detect-my-ip-btn');
     const addCommonCidrsBtn = document.getElementById('add-common-cidrs-btn');
+    
+    // Docker command preview elements
+    const dockerImageInput = document.getElementById('docker-image-input');
+    const dockerPortInput = document.getElementById('docker-port-input');
+    const dockerMemoryInput = document.getElementById('docker-memory-input');
+    const dockerCommandPreview = document.getElementById('docker-command-preview');
+    const copyDockerCmdBtn = document.getElementById('copy-docker-cmd-btn');
+    
+    // Remote connection preview elements
+    const remoteUrlInput = document.getElementById('remote-url-input');
+    const remoteApiKeyInput = document.getElementById('remote-apikey-input');
+    const remoteTimeoutInput = document.getElementById('remote-timeout-input');
+    const remoteVerifySslInput = document.getElementById('remote-verify-ssl-input');
+    const remoteConnectionPreview = document.getElementById('remote-connection-preview');
+    const copyRemoteDetailsBtn = document.getElementById('copy-remote-details-btn');
+    
+    // Build Docker command preview
+    function buildDockerCommand() {
+        const image = dockerImageInput?.value || 'ghcr.io/zaproxy/zaproxy:stable';
+        const port = dockerPortInput?.value || '8080';
+        const memory = dockerMemoryInput?.value || '2g';
+        const containerName = 'kast-zap-local';
+        const apiKey = 'kast-local';
+        
+        const command = `docker run -d \\
+  --name ${containerName} \\
+  -p ${port}:8080 \\
+  --memory ${memory} \\
+  ${image} \\
+  zap.sh -daemon \\
+  -host 0.0.0.0 \\
+  -port 8080 \\
+  -config api.key=${apiKey} \\
+  -config api.addrs.addr.name=.* \\
+  -config api.addrs.addr.regex=true \\
+  -config api.filexfer=true`;
+        
+        return command;
+    }
+    
+    // Update Docker command preview
+    function updateDockerCommandPreview() {
+        if (dockerCommandPreview) {
+            dockerCommandPreview.textContent = buildDockerCommand();
+        }
+    }
+    
+    // Copy Docker command to clipboard
+    async function copyDockerCommand() {
+        const command = buildDockerCommand();
+        
+        try {
+            await navigator.clipboard.writeText(command);
+            
+            // Visual feedback
+            const originalHtml = copyDockerCmdBtn.innerHTML;
+            copyDockerCmdBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            copyDockerCmdBtn.classList.remove('btn-outline-secondary');
+            copyDockerCmdBtn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                copyDockerCmdBtn.innerHTML = originalHtml;
+                copyDockerCmdBtn.classList.remove('btn-success');
+                copyDockerCmdBtn.classList.add('btn-outline-secondary');
+            }, 2000);
+        } catch (err) {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = command;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                copyDockerCmdBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            } catch (err) {
+                copyDockerCmdBtn.innerHTML = '<i class="fas fa-times"></i> Failed';
+            }
+            
+            document.body.removeChild(textarea);
+            
+            setTimeout(() => {
+                copyDockerCmdBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+            }, 2000);
+        }
+    }
+    
+    // Build remote connection details preview
+    function buildRemoteConnectionDetails() {
+        const url = remoteUrlInput?.value || 'http://zap.example.com:8080';
+        const apiKey = remoteApiKeyInput?.value || '[API Key from configuration]';
+        const timeout = remoteTimeoutInput?.value || '30';
+        const verifySsl = remoteVerifySslInput?.checked !== false;
+        
+        // Ensure URL has trailing slash
+        const baseUrl = url.endsWith('/') ? url : url + '/';
+        
+        const details = `# ZAP Remote Connection Configuration
+# ========================================
+
+Base URL: ${baseUrl}
+API Key: ${apiKey === '' ? '[Keep existing]' : (apiKey.length > 20 ? apiKey.substring(0, 10) + '...' + apiKey.substring(apiKey.length - 5) : apiKey)}
+Timeout: ${timeout} seconds
+SSL Verification: ${verifySsl ? 'Enabled' : 'Disabled'}
+
+# Example API Endpoints
+# ========================================
+
+# Get ZAP version:
+${baseUrl}JSON/core/view/version/?apikey=${apiKey === '' ? '[API_KEY]' : apiKey}
+
+# Start spider scan:
+${baseUrl}JSON/spider/action/scan/?apikey=${apiKey === '' ? '[API_KEY]' : apiKey}&url=[TARGET_URL]
+
+# Get spider status:
+${baseUrl}JSON/spider/view/status/?apikey=${apiKey === '' ? '[API_KEY]' : apiKey}
+
+# Start active scan:
+${baseUrl}JSON/ascan/action/scan/?apikey=${apiKey === '' ? '[API_KEY]' : apiKey}&url=[TARGET_URL]
+
+# Get active scan status:
+${baseUrl}JSON/ascan/view/status/?apikey=${apiKey === '' ? '[API_KEY]' : apiKey}
+
+# File transfer (upload automation plan):
+${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : apiKey}`;
+        
+        return details;
+    }
+    
+    // Update remote connection preview
+    function updateRemoteConnectionPreview() {
+        if (remoteConnectionPreview) {
+            remoteConnectionPreview.textContent = buildRemoteConnectionDetails();
+        }
+    }
+    
+    // Copy remote connection details to clipboard
+    async function copyRemoteDetails() {
+        const details = buildRemoteConnectionDetails();
+        
+        try {
+            await navigator.clipboard.writeText(details);
+            
+            // Visual feedback
+            const originalHtml = copyRemoteDetailsBtn.innerHTML;
+            copyRemoteDetailsBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            copyRemoteDetailsBtn.classList.remove('btn-outline-secondary');
+            copyRemoteDetailsBtn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                copyRemoteDetailsBtn.innerHTML = originalHtml;
+                copyRemoteDetailsBtn.classList.remove('btn-success');
+                copyRemoteDetailsBtn.classList.add('btn-outline-secondary');
+            }, 2000);
+        } catch (err) {
+            // Fallback for older browsers
+            const textarea = document.createElement('textarea');
+            textarea.value = details;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                copyRemoteDetailsBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            } catch (err) {
+                copyRemoteDetailsBtn.innerHTML = '<i class="fas fa-times"></i> Failed';
+            }
+            
+            document.body.removeChild(textarea);
+            
+            setTimeout(() => {
+                copyRemoteDetailsBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+            }, 2000);
+        }
+    }
     
     // Update execution mode visibility
     function updateModeVisibility() {
@@ -577,17 +804,360 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Event listeners
-    modeSelect.addEventListener('change', updateModeVisibility);
-    cloudProviderSelect.addEventListener('change', updateCloudProviderVisibility);
+    modeSelect.addEventListener('change', () => {
+        updateModeVisibility();
+        updateDockerCommandPreview();
+        updateRemoteConnectionPreview();
+        updateCloudCommandPreview();
+    });
+    cloudProviderSelect.addEventListener('change', () => {
+        updateCloudProviderVisibility();
+        updateCloudCommandPreview();
+    });
     gcpRegionSelect.addEventListener('change', updateGcpZone);
     cidrTextarea.addEventListener('blur', normalizeCidrs);
     cidrTextarea.addEventListener('input', validateCidrs);
     detectMyIpBtn.addEventListener('click', detectMyIp);
     addCommonCidrsBtn.addEventListener('click', addCommonCidrs);
     
-    // Set initial visibility
+    // Docker command preview event listeners
+    if (dockerImageInput) {
+        dockerImageInput.addEventListener('input', updateDockerCommandPreview);
+    }
+    if (dockerPortInput) {
+        dockerPortInput.addEventListener('input', updateDockerCommandPreview);
+    }
+    if (dockerMemoryInput) {
+        dockerMemoryInput.addEventListener('input', updateDockerCommandPreview);
+    }
+    if (copyDockerCmdBtn) {
+        copyDockerCmdBtn.addEventListener('click', copyDockerCommand);
+    }
+    
+    // Remote connection preview event listeners
+    if (remoteUrlInput) {
+        remoteUrlInput.addEventListener('input', updateRemoteConnectionPreview);
+    }
+    if (remoteApiKeyInput) {
+        remoteApiKeyInput.addEventListener('input', updateRemoteConnectionPreview);
+    }
+    if (remoteTimeoutInput) {
+        remoteTimeoutInput.addEventListener('input', updateRemoteConnectionPreview);
+    }
+    if (remoteVerifySslInput) {
+        remoteVerifySslInput.addEventListener('change', updateRemoteConnectionPreview);
+    }
+    if (copyRemoteDetailsBtn) {
+        copyRemoteDetailsBtn.addEventListener('click', copyRemoteDetails);
+    }
+    
+    // Cloud command preview elements and functions
+    const cloudCommandPreview = document.getElementById('cloud-command-preview');
+    const copyCloudCmdBtn = document.getElementById('copy-cloud-cmd-btn');
+    
+    // Build cloud deployment command preview
+    function buildCloudDeploymentCommand() {
+        const provider = cloudProviderSelect?.value || 'aws';
+        const cidrs = cidrTextarea?.value.trim().split('\n').filter(line => line.trim() && !line.startsWith('#')) || [];
+        
+        if (provider === 'aws') {
+            return buildAWSCommand(cidrs);
+        } else if (provider === 'azure') {
+            return buildAzureCommand(cidrs);
+        } else if (provider === 'gcp') {
+            return buildGCPCommand(cidrs);
+        }
+        
+        return '# Select a cloud provider to see deployment commands';
+    }
+    
+    function buildAWSCommand(cidrs) {
+        const region = document.getElementById('aws_region')?.value || 'us-east-1';
+        const instanceType = document.getElementById('aws_instance_type')?.value || 't3.medium';
+        const spotPrice = document.getElementById('aws_spot_max_price')?.value || '';
+        
+        const cidrDisplay = cidrs.slice(0, 3).join(', ') || '0.0.0.0/0';
+        const cidrSuffix = cidrs.length > 3 ? ` (+${cidrs.length - 3} more)` : '';
+        
+        let cmd = `# AWS ZAP Deployment Commands
+# ================================
+
+# 1. Set AWS credentials
+export AWS_DEFAULT_REGION="${region}"
+
+# 2. Create security group
+aws ec2 create-security-group \\
+  --group-name kast-zap-sg \\
+  --description "KAST ZAP instance" \\
+  --region ${region}
+
+# 3. Authorize inbound traffic
+# Allowed CIDRs: ${cidrDisplay}${cidrSuffix}
+`;
+        
+        if (cidrs.length > 0) {
+            cidrs.forEach(cidr => {
+                cmd += `aws ec2 authorize-security-group-ingress \\
+  --group-name kast-zap-sg --protocol tcp --port 8080 --cidr ${cidr}
+`;
+            });
+        } else {
+            cmd += `# WARNING: No CIDRs specified - instance will be open to internet!\n`;
+        }
+        
+        cmd += `\n# 4. Launch EC2 instance`;
+        
+        if (spotPrice) {
+            cmd += ` (Spot: $${spotPrice}/hr)\n# (See full command in zap_utils.py)`;
+        } else {
+            cmd += ` (On-Demand)\naws ec2 run-instances \\
+  --image-id ami-xxxxxxxxx \\
+  --instance-type ${instanceType} \\
+  --security-groups kast-zap-sg \\
+  --region ${region}`;
+        }
+        
+        cmd += `\n\n# 5. Get instance IP and access ZAP
+# ZAP will be at: http://[INSTANCE_IP]:8080
+# API Key: kast-cloud`;
+        
+        return cmd;
+    }
+    
+    function buildAzureCommand(cidrs) {
+        const region = document.getElementById('azure_region')?.value || 'eastus';
+        const vmSize = document.getElementById('azure_vm_size')?.value || 'Standard_B2s';
+        const spotEnabled = document.getElementById('azure_spot_enabled')?.checked || false;
+        
+        const cidrDisplay = cidrs.slice(0, 3).join(', ') || '0.0.0.0/0';
+        const cidrSuffix = cidrs.length > 3 ? ` (+${cidrs.length - 3} more)` : '';
+        
+        let cmd = `# Azure ZAP Deployment Commands
+# =================================
+
+# 1. Login and set subscription
+az login
+az account set --subscription [subscription_id]
+
+# 2. Create resource group
+az group create --name kast-zap-rg --location ${region}
+
+# 3. Create NSG and rules
+# Allowed CIDRs: ${cidrDisplay}${cidrSuffix}
+az network nsg create --resource-group kast-zap-rg --name kast-zap-nsg
+
+`;
+        
+        if (cidrs.length > 0) {
+            cidrs.forEach((cidr, i) => {
+                cmd += `az network nsg rule create --nsg-name kast-zap-nsg \\
+  --name Allow-${i} --priority ${100 + i} --source-address-prefixes ${cidr}
+`;
+            });
+        }
+        
+        cmd += `\n# 4. Create VM${spotEnabled ? ' (Spot instance)' : ''}
+az vm create --resource-group kast-zap-rg --name kast-zap-vm \\
+  --location ${region} --size ${vmSize}${spotEnabled ? ' --priority Spot' : ''}
+
+# 5. Access ZAP at: http://[VM_IP]:8080
+# API Key: kast-cloud`;
+        
+        return cmd;
+    }
+    
+    function buildGCPCommand(cidrs) {
+        const region = document.getElementById('gcp_region')?.value || 'us-central1';
+        const zone = document.getElementById('gcp_zone')?.value || 'us-central1-a';
+        const machineType = document.getElementById('gcp_machine_type')?.value || 'n1-standard-2';
+        const projectId = document.getElementById('gcp_project_id')?.value || '[project-id]';
+        const preemptible = document.getElementById('gcp_preemptible')?.checked || false;
+        
+        const cidrList = cidrs.join(',') || '0.0.0.0/0';
+        const cidrDisplay = cidrs.slice(0, 3).join(', ') || '0.0.0.0/0';
+        const cidrSuffix = cidrs.length > 3 ? ` (+${cidrs.length - 3} more)` : '';
+        
+        let cmd = `# GCP ZAP Deployment Commands
+# ================================
+
+# 1. Set project
+gcloud config set project ${projectId}
+
+# 2. Create firewall rule
+# Allowed CIDRs: ${cidrDisplay}${cidrSuffix}
+gcloud compute firewall-rules create kast-zap-allow \\
+  --direction=INGRESS --action=ALLOW --rules=tcp:8080 \\
+  --source-ranges=${cidrList} --target-tags=kast-zap
+
+# 3. Create instance${preemptible ? ' (Preemptible)' : ''}
+gcloud compute instances create kast-zap-vm \\
+  --project=${projectId} --zone=${zone} \\
+  --machine-type=${machineType} --tags=kast-zap${preemptible ? ' --preemptible' : ''}
+
+# 4. Access ZAP at: http://[INSTANCE_IP]:8080
+# API Key: kast-cloud`;
+        
+        return cmd;
+    }
+    
+    // Update cloud command preview
+    function updateCloudCommandPreview() {
+        // Only update if cloud config is visible and elements exist
+        if (!cloudCommandPreview || !cloudConfig) return;
+        if (cloudConfig.style.display === 'none') return;
+        
+        cloudCommandPreview.textContent = buildCloudDeploymentCommand();
+    }
+    
+    // Copy cloud command to clipboard
+    async function copyCloudCommand() {
+        const command = buildCloudDeploymentCommand();
+        
+        try {
+            await navigator.clipboard.writeText(command);
+            
+            const originalHtml = copyCloudCmdBtn.innerHTML;
+            copyCloudCmdBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            copyCloudCmdBtn.classList.remove('btn-outline-secondary');
+            copyCloudCmdBtn.classList.add('btn-success');
+            
+            setTimeout(() => {
+                copyCloudCmdBtn.innerHTML = originalHtml;
+                copyCloudCmdBtn.classList.remove('btn-success');
+                copyCloudCmdBtn.classList.add('btn-outline-secondary');
+            }, 2000);
+        } catch (err) {
+            const textarea = document.createElement('textarea');
+            textarea.value = command;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                copyCloudCmdBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            } catch (err) {
+                copyCloudCmdBtn.innerHTML = '<i class="fas fa-times"></i> Failed';
+            }
+            
+            document.body.removeChild(textarea);
+            
+            setTimeout(() => {
+                copyCloudCmdBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+            }, 2000);
+        }
+    }
+    
+    // Cloud command preview event listeners
+    if (cloudProviderSelect) {
+        cloudProviderSelect.addEventListener('change', updateCloudCommandPreview);
+    }
+    if (cidrTextarea) {
+        cidrTextarea.addEventListener('input', updateCloudCommandPreview);
+    }
+    if (copyCloudCmdBtn) {
+        copyCloudCmdBtn.addEventListener('click', copyCloudCommand);
+    }
+    
+    // Add listeners for all cloud provider fields
+    const cloudInputs = [
+        'aws_region', 'aws_instance_type', 'aws_spot_max_price',
+        'azure_region', 'azure_vm_size', 'azure_spot_enabled',
+        'gcp_region', 'gcp_zone', 'gcp_machine_type', 'gcp_project_id', 'gcp_preemptible'
+    ];
+    
+    cloudInputs.forEach(inputId => {
+        const element = document.getElementById(inputId);
+        if (element) {
+            if (element.type === 'checkbox') {
+                element.addEventListener('change', updateCloudCommandPreview);
+            } else {
+                element.addEventListener('input', updateCloudCommandPreview);
+            }
+        }
+    });
+    
+    // Set initial visibility and previews
     updateModeVisibility();
     validateCidrs();
+    
+    // Update previews based on current mode - use setTimeout to ensure DOM is ready
+    setTimeout(() => {
+        const initialMode = modeSelect.value;
+        if (initialMode === 'local') {
+            updateDockerCommandPreview();
+        } else if (initialMode === 'remote') {
+            updateRemoteConnectionPreview();
+        } else if (initialMode === 'cloud') {
+            updateCloudCommandPreview();
+        }
+    }, 100);
+    
+    // Function to create the cloud preview HTML structure
+    function createCloudPreviewSection() {
+        const previewHtml = `
+            <div class="alert alert-secondary mb-0 mt-4" id="cloud-preview-container">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="mb-0">
+                        <i class="fas fa-cloud"></i> <strong>Cloud Deployment Commands Preview</strong>
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-cloud-cmd-btn" title="Copy to clipboard">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+                <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 400px; overflow-x: auto;"><code id="cloud-command-preview">Loading...</code></pre>
+                <small class="text-muted d-block mt-2">
+                    <i class="fas fa-info-circle"></i> These are example commands for manual cloud deployment. KAST uses Terraform for automated deployment.
+                </small>
+            </div>
+        `;
+        return previewHtml;
+    }
+    
+    // Add MutationObserver to detect and prevent unwanted removal
+    const cloudPreviewObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' && cloudConfig.style.display === 'block') {
+                // Check if the preview container was removed
+                const previewContainer = document.getElementById('cloud-preview-container');
+                
+                if (!previewContainer && mutation.removedNodes.length > 0) {
+                    console.warn('Cloud preview was removed unexpectedly, reconstructing...');
+                    
+                    // Find the cloud-config card-body to append to
+                    const cloudCardBody = cloudConfig.querySelector('.card-body');
+                    
+                    if (cloudCardBody) {
+                        // Insert the preview HTML at the end of the card body
+                        cloudCardBody.insertAdjacentHTML('beforeend', createCloudPreviewSection());
+                        
+                        // Re-attach event listener to the new copy button
+                        const newCopyBtn = document.getElementById('copy-cloud-cmd-btn');
+                        if (newCopyBtn) {
+                            newCopyBtn.addEventListener('click', copyCloudCommand);
+                        }
+                        
+                        // Update the preview content
+                        const newPreview = document.getElementById('cloud-command-preview');
+                        if (newPreview) {
+                            newPreview.textContent = buildCloudDeploymentCommand();
+                        }
+                        
+                        console.log('Cloud preview successfully reconstructed');
+                    }
+                }
+            }
+        });
+    });
+    
+    // Observe the cloud-config div for changes
+    if (cloudConfig) {
+        cloudPreviewObserver.observe(cloudConfig, {
+            childList: true,
+            subtree: true
+        });
+    }
 });
 </script>
 {% endblock %}

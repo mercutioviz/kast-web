@@ -806,7 +806,8 @@ def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, s
             '-port', '8080',
             '-config', f'api.key={api_key}',
             '-config', 'api.addrs.addr.name=.*',
-            '-config', 'api.addrs.addr.regex=true'
+            '-config', 'api.addrs.addr.regex=true',
+            '-config', 'api.filexfer=true'
         ]
         docker_cmd_str = ' '.join(docker_cmd)
         
@@ -1172,3 +1173,368 @@ def get_client_ip_from_request():
     
     # Fallback to remote_addr
     return request.remote_addr
+
+
+def build_cloud_deployment_command(config: Dict[str, Any]) -> str:
+    """
+    Build cloud deployment command preview for different cloud providers
+    
+    Args:
+        config: Cloud configuration dictionary
+        
+    Returns:
+        Multi-line string with deployment commands/instructions
+    """
+    provider = config.get('provider', 'aws').lower()
+    
+    if provider == 'aws':
+        return _build_aws_deployment_command(config)
+    elif provider == 'azure':
+        return _build_azure_deployment_command(config)
+    elif provider == 'gcp':
+        return _build_gcp_deployment_command(config)
+    else:
+        return f"# Unsupported provider: {provider}"
+
+
+def _build_aws_deployment_command(config: Dict[str, Any]) -> str:
+    """Build AWS deployment command"""
+    region = config.get('region', 'us-east-1')
+    instance_type = config.get('instance_type', 't3.medium')
+    ami_id = config.get('ami_id', 'ami-xxxxxxxxx')
+    spot_price = config.get('spot_max_price', '')
+    cidrs = config.get('allowed_cidrs', [])
+    
+    # Format CIDR list for display
+    cidr_display = ', '.join(cidrs[:3]) if cidrs else '0.0.0.0/0'
+    if len(cidrs) > 3:
+        cidr_display += f' (+{len(cidrs)-3} more)'
+    
+    # Build command
+    cmd = f"""# AWS ZAP Deployment Commands
+# ================================
+
+# 1. Set AWS credentials (if not using default CLI profile)
+export AWS_ACCESS_KEY_ID="[access_key]"
+export AWS_SECRET_ACCESS_KEY="[secret_key]"
+export AWS_DEFAULT_REGION="{region}"
+
+# 2. Create security group for ZAP
+aws ec2 create-security-group \\
+  --group-name kast-zap-sg \\
+  --description "Security group for KAST ZAP instance" \\
+  --region {region}
+
+# 3. Authorize inbound traffic from allowed CIDRs
+# Allowed CIDRs: {cidr_display}
+{_format_aws_cidr_rules(cidrs)}
+
+# 4. Launch EC2 instance with ZAP"""
+    
+    if spot_price:
+        cmd += f"""
+# Using Spot Instance (max price: ${spot_price}/hr)
+aws ec2 request-spot-instances \\
+  --spot-price "{spot_price}" \\
+  --instance-count 1 \\
+  --type "one-time" \\
+  --launch-specification '{{
+    "ImageId": "{ami_id}",
+    "InstanceType": "{instance_type}",
+    "SecurityGroups": ["kast-zap-sg"],
+    "UserData": "'"$(cat <<'EOF' | base64 -w 0
+#!/bin/bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+# Start ZAP container
+docker run -d --name zap \\
+  -p 8080:8080 \\
+  ghcr.io/zaproxy/zaproxy:stable \\
+  zap.sh -daemon -host 0.0.0.0 -port 8080 \\
+  -config api.key=kast-cloud \\
+  -config api.addrs.addr.name=.* \\
+  -config api.addrs.addr.regex=true
+EOF
+)"'"
+  }}'"""
+    else:
+        cmd += f"""
+# Using On-Demand Instance
+aws ec2 run-instances \\
+  --image-id {ami_id} \\
+  --instance-type {instance_type} \\
+  --security-groups kast-zap-sg \\
+  --user-data file://zap-userdata.sh \\
+  --region {region} \\
+  --tag-specifications 'ResourceType=instance,Tags=[{{Key=Name,Value=KAST-ZAP}}]'
+
+# Save this as zap-userdata.sh:
+cat > zap-userdata.sh <<'EOF'
+#!/bin/bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+# Start ZAP container
+docker run -d --name zap \\
+  -p 8080:8080 \\
+  ghcr.io/zaproxy/zaproxy:stable \\
+  zap.sh -daemon -host 0.0.0.0 -port 8080 \\
+  -config api.key=kast-cloud \\
+  -config api.addrs.addr.name=.* \\
+  -config api.addrs.addr.regex=true
+EOF"""
+    
+    cmd += f"""
+
+# 5. Get instance public IP
+aws ec2 describe-instances \\
+  --filters "Name=tag:Name,Values=KAST-ZAP" "Name=instance-state-name,Values=running" \\
+  --query 'Reservations[*].Instances[*].[PublicIpAddress]' \\
+  --output text \\
+  --region {region}
+
+# 6. Access ZAP at: http://[INSTANCE_IP]:8080
+# API Key: kast-cloud
+
+# 7. Cleanup (terminate instance when done)
+aws ec2 terminate-instances --instance-ids [INSTANCE_ID] --region {region}"""
+    
+    return cmd
+
+
+def _format_aws_cidr_rules(cidrs: List[str]) -> str:
+    """Format AWS security group rules for CIDRs"""
+    if not cidrs:
+        return '# No CIDR restrictions (WARNING: Open to internet!)'
+    
+    rules = []
+    for cidr in cidrs:
+        rules.append(f"""aws ec2 authorize-security-group-ingress \\
+  --group-name kast-zap-sg \\
+  --protocol tcp \\
+  --port 8080 \\
+  --cidr {cidr}""")
+    
+    return '\n'.join(rules)
+
+
+def _build_azure_deployment_command(config: Dict[str, Any]) -> str:
+    """Build Azure deployment command"""
+    region = config.get('region', 'eastus')
+    vm_size = config.get('vm_size', 'Standard_B2s')
+    cidrs = config.get('allowed_cidrs', [])
+    spot_enabled = config.get('spot_enabled', False)
+    
+    # Format CIDR list for display
+    cidr_display = ', '.join(cidrs[:3]) if cidrs else '0.0.0.0/0'
+    if len(cidrs) > 3:
+        cidr_display += f' (+{len(cidrs)-3} more)'
+    
+    cmd = f"""# Azure ZAP Deployment Commands
+# =================================
+
+# 1. Login to Azure (if not already logged in)
+az login
+
+# 2. Set subscription
+az account set --subscription [subscription_id]
+
+# 3. Create resource group
+az group create \\
+  --name kast-zap-rg \\
+  --location {region}
+
+# 4. Create network security group with rules
+az network nsg create \\
+  --resource-group kast-zap-rg \\
+  --name kast-zap-nsg \\
+  --location {region}
+
+# 5. Add security rules for allowed CIDRs
+# Allowed CIDRs: {cidr_display}
+{_format_azure_nsg_rules(cidrs)}
+
+# 6. Create virtual network
+az network vnet create \\
+  --resource-group kast-zap-rg \\
+  --name kast-zap-vnet \\
+  --subnet-name default \\
+  --location {region}
+
+# 7. Create public IP
+az network public-ip create \\
+  --resource-group kast-zap-rg \\
+  --name kast-zap-ip \\
+  --location {region}
+
+# 8. Create network interface
+az network nic create \\
+  --resource-group kast-zap-rg \\
+  --name kast-zap-nic \\
+  --vnet-name kast-zap-vnet \\
+  --subnet default \\
+  --public-ip-address kast-zap-ip \\
+  --network-security-group kast-zap-nsg \\
+  --location {region}
+
+# 9. Create VM with ZAP"""
+    
+    spot_flag = ' --priority Spot --max-price -1' if spot_enabled else ''
+    
+    cmd += f"""
+az vm create \\
+  --resource-group kast-zap-rg \\
+  --name kast-zap-vm \\
+  --location {region} \\
+  --nics kast-zap-nic \\
+  --image Ubuntu2204 \\
+  --size {vm_size}{spot_flag} \\
+  --admin-username azureuser \\
+  --generate-ssh-keys \\
+  --custom-data zap-cloud-init.txt
+
+# Save this as zap-cloud-init.txt:
+cat > zap-cloud-init.txt <<'EOF'
+#!/bin/bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+# Start ZAP container
+docker run -d --name zap \\
+  -p 8080:8080 \\
+  ghcr.io/zaproxy/zaproxy:stable \\
+  zap.sh -daemon -host 0.0.0.0 -port 8080 \\
+  -config api.key=kast-cloud \\
+  -config api.addrs.addr.name=.* \\
+  -config api.addrs.addr.regex=true
+EOF
+
+# 10. Get VM public IP
+az vm show \\
+  --resource-group kast-zap-rg \\
+  --name kast-zap-vm \\
+  --show-details \\
+  --query publicIps \\
+  --output tsv
+
+# 11. Access ZAP at: http://[VM_IP]:8080
+# API Key: kast-cloud
+
+# 12. Cleanup (delete resource group when done)
+az group delete --name kast-zap-rg --yes --no-wait"""
+    
+    return cmd
+
+
+def _format_azure_nsg_rules(cidrs: List[str]) -> str:
+    """Format Azure NSG rules for CIDRs"""
+    if not cidrs:
+        return '# No CIDR restrictions (WARNING: Open to internet!)'
+    
+    rules = []
+    for i, cidr in enumerate(cidrs, start=100):
+        rules.append(f"""az network nsg rule create \\
+  --resource-group kast-zap-rg \\
+  --nsg-name kast-zap-nsg \\
+  --name AllowZAP-{i} \\
+  --priority {i} \\
+  --source-address-prefixes {cidr} \\
+  --destination-port-ranges 8080 \\
+  --access Allow \\
+  --protocol Tcp""")
+    
+    return '\n\n'.join(rules)
+
+
+def _build_gcp_deployment_command(config: Dict[str, Any]) -> str:
+    """Build GCP deployment command"""
+    region = config.get('region', 'us-central1')
+    zone = config.get('zone', 'us-central1-a')
+    machine_type = config.get('machine_type', 'n1-standard-2')
+    project_id = config.get('project_id', '[project-id]')
+    cidrs = config.get('allowed_cidrs', [])
+    preemptible = config.get('preemptible', False)
+    
+    # Format CIDR list for display
+    cidr_display = ', '.join(cidrs[:3]) if cidrs else '0.0.0.0/0'
+    if len(cidrs) > 3:
+        cidr_display += f' (+{len(cidrs)-3} more)'
+    
+    # Format CIDR list for firewall rule
+    cidr_list = ','.join(cidrs) if cidrs else '0.0.0.0/0'
+    
+    preemptible_flag = ' --preemptible' if preemptible else ''
+    
+    cmd = f"""# GCP ZAP Deployment Commands
+# ================================
+
+# 1. Set GCP project
+gcloud config set project {project_id}
+
+# 2. Create firewall rule for ZAP access
+# Allowed CIDRs: {cidr_display}
+gcloud compute firewall-rules create kast-zap-allow \\
+  --project={project_id} \\
+  --direction=INGRESS \\
+  --priority=1000 \\
+  --network=default \\
+  --action=ALLOW \\
+  --rules=tcp:8080 \\
+  --source-ranges={cidr_list} \\
+  --target-tags=kast-zap
+
+# 3. Create compute instance with ZAP
+gcloud compute instances create kast-zap-vm \\
+  --project={project_id} \\
+  --zone={zone} \\
+  --machine-type={machine_type} \\
+  --network-interface=network-tier=PREMIUM,subnet=default \\
+  --tags=kast-zap{preemptible_flag} \\
+  --image-family=ubuntu-2204-lts \\
+  --image-project=ubuntu-os-cloud \\
+  --boot-disk-size=10GB \\
+  --boot-disk-type=pd-standard \\
+  --metadata=startup-script='#!/bin/bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+
+# Wait for Docker to be ready
+sleep 10
+
+# Start ZAP container
+docker run -d --name zap \\
+  -p 8080:8080 \\
+  --restart unless-stopped \\
+  ghcr.io/zaproxy/zaproxy:stable \\
+  zap.sh -daemon -host 0.0.0.0 -port 8080 \\
+  -config api.key=kast-cloud \\
+  -config api.addrs.addr.name=.* \\
+  -config api.addrs.addr.regex=true
+'
+
+# 4. Get instance external IP
+gcloud compute instances describe kast-zap-vm \\
+  --project={project_id} \\
+  --zone={zone} \\
+  --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
+
+# 5. Access ZAP at: http://[INSTANCE_IP]:8080
+# API Key: kast-cloud
+
+# 6. SSH to instance (if needed)
+gcloud compute ssh kast-zap-vm --project={project_id} --zone={zone}
+
+# 7. Cleanup (delete instance when done)
+gcloud compute instances delete kast-zap-vm \\
+  --project={project_id} \\
+  --zone={zone} \\
+  --quiet
+
+# 8. Delete firewall rule
+gcloud compute firewall-rules delete kast-zap-allow \\
+  --project={project_id} \\
+  --quiet"""
+    
+    return cmd
