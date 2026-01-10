@@ -100,9 +100,21 @@ def index():
     # Pass all plugins with type info to template for dynamic filtering
     plugins_with_types = all_plugins
     
+    # Get actual configuration paths for Quick Info display
+    results_dir = current_app.config.get('KAST_RESULTS_DIR', './kast_results')
+    
+    # Extract database path from SQLALCHEMY_DATABASE_URI
+    db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if db_uri.startswith('sqlite:///'):
+        db_path = db_uri.replace('sqlite:///', '')
+    else:
+        db_path = 'Configured database'
+    
     return render_template('index.html', form=form, recent_scans=recent_scans, 
                          can_run_active=current_user.can_run_active_scans,
-                         plugins_with_types=plugins_with_types)
+                         plugins_with_types=plugins_with_types,
+                         results_dir=results_dir,
+                         db_path=db_path)
 
 @bp.route('/scan/new', methods=['POST'])
 @login_required
