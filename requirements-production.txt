@@ -35,6 +35,7 @@ eventlet==0.36.1
 
 # Security
 cryptography==41.0.7
+requests==2.31.0
 
 # Optional: Production monitoring and error tracking
 # sentry-sdk[flask]==1.39.1
