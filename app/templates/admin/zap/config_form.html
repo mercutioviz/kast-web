@@ -99,7 +99,7 @@
                         </div>
 
                         <!-- Docker Command Preview -->
-                        <div class="alert alert-secondary mb-0">
+                        <div class="alert alert-secondary mb-0" id="docker-preview-container">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <label class="mb-0">
                                     <i class="fas fa-terminal"></i> <strong>Docker Command Preview</strong>
@@ -148,7 +148,7 @@
                         </div>
 
                         <!-- Remote Connection Preview -->
-                        <div class="alert alert-secondary mb-0 mt-3">
+                        <div class="alert alert-secondary mb-0 mt-3" id="remote-preview-container">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <label class="mb-0">
                                     <i class="fas fa-plug"></i> <strong>Connection Details</strong>
@@ -1220,6 +1220,124 @@ gcloud compute instances create kast-zap-vm \\
     // Observe the cloud-config div for changes
     if (cloudConfig) {
         cloudPreviewObserver.observe(cloudConfig, {
+            childList: true,
+            subtree: true
+        });
+    }
+    
+    // Function to create the Docker preview HTML structure
+    function createDockerPreviewSection() {
+        const previewHtml = `
+            <div class="alert alert-secondary mb-0" id="docker-preview-container">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="mb-0">
+                        <i class="fas fa-terminal"></i> <strong>Docker Command Preview</strong>
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-docker-cmd-btn" title="Copy to clipboard">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+                <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 300px; overflow-x: auto;"><code id="docker-command-preview">Loading...</code></pre>
+                <small class="text-muted d-block mt-2">
+                    <i class="fas fa-info-circle"></i> This is the exact command that will be executed when starting the container
+                </small>
+            </div>
+        `;
+        return previewHtml;
+    }
+    
+    // Add MutationObserver for Docker preview
+    const dockerPreviewObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' && localConfig.style.display === 'block') {
+                const previewContainer = document.getElementById('docker-preview-container');
+                
+                if (!previewContainer && mutation.removedNodes.length > 0) {
+                    console.warn('Docker preview was removed unexpectedly, reconstructing...');
+                    
+                    const localCardBody = localConfig.querySelector('.card-body');
+                    
+                    if (localCardBody) {
+                        localCardBody.insertAdjacentHTML('beforeend', createDockerPreviewSection());
+                        
+                        const newCopyBtn = document.getElementById('copy-docker-cmd-btn');
+                        if (newCopyBtn) {
+                            newCopyBtn.addEventListener('click', copyDockerCommand);
+                        }
+                        
+                        const newPreview = document.getElementById('docker-command-preview');
+                        if (newPreview) {
+                            newPreview.textContent = buildDockerCommand();
+                        }
+                        
+                        console.log('Docker preview successfully reconstructed');
+                    }
+                }
+            }
+        });
+    });
+    
+    if (localConfig) {
+        dockerPreviewObserver.observe(localConfig, {
+            childList: true,
+            subtree: true
+        });
+    }
+    
+    // Function to create the Remote preview HTML structure
+    function createRemotePreviewSection() {
+        const previewHtml = `
+            <div class="alert alert-secondary mb-0 mt-3" id="remote-preview-container">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="mb-0">
+                        <i class="fas fa-plug"></i> <strong>Connection Details</strong>
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-remote-details-btn" title="Copy to clipboard">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+                <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 300px; overflow-x: auto;"><code id="remote-connection-preview">Loading...</code></pre>
+                <small class="text-muted d-block mt-2">
+                    <i class="fas fa-info-circle"></i> Example API endpoint that will be used to communicate with the remote ZAP instance
+                </small>
+            </div>
+        `;
+        return previewHtml;
+    }
+    
+    // Add MutationObserver for Remote preview
+    const remotePreviewObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' && remoteConfig.style.display === 'block') {
+                const previewContainer = document.getElementById('remote-preview-container');
+                
+                if (!previewContainer && mutation.removedNodes.length > 0) {
+                    console.warn('Remote preview was removed unexpectedly, reconstructing...');
+                    
+                    const remoteCardBody = remoteConfig.querySelector('.card-body');
+                    
+                    if (remoteCardBody) {
+                        remoteCardBody.insertAdjacentHTML('beforeend', createRemotePreviewSection());
+                        
+                        const newCopyBtn = document.getElementById('copy-remote-details-btn');
+                        if (newCopyBtn) {
+                            newCopyBtn.addEventListener('click', copyRemoteDetails);
+                        }
+                        
+                        const newPreview = document.getElementById('remote-connection-preview');
+                        if (newPreview) {
+                            newPreview.textContent = buildRemoteConnectionDetails();
+                        }
+                        
+                        console.log('Remote preview successfully reconstructed');
+                    }
+                }
+            }
+        });
+    });
+    
+    if (remoteConfig) {
+        remotePreviewObserver.observe(remoteConfig, {
             childList: true,
             subtree: true
         });
