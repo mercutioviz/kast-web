@@ -306,11 +306,20 @@ def check_azure_cli_installed() -> Tuple[bool, str, str]:
         Tuple of (is_installed, version_string, error_message)
     """
     try:
+        import os
+        import tempfile
+        
+        # Set AZURE_CONFIG_DIR to a temp location to avoid permission issues
+        # This ensures the check works even if the user's home .azure directory doesn't exist
+        env = os.environ.copy()
+        env['AZURE_CONFIG_DIR'] = tempfile.gettempdir() + '/azure-cli-check'
+        
         result = subprocess.run(
             ['az', '--version'],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
+            env=env
         )
         if result.returncode == 0:
             # Extract version from output (first line usually contains azure-cli x.x.x)
