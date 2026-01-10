@@ -1048,3 +1048,118 @@ def extract_plan_summary(yaml_content: str) -> Dict[str, Any]:
         pass
     
     return summary
+
+
+def get_server_public_ip() -> Optional[str]:
+    """
+    Get the server's public IP address
+    
+    Uses requests library first, falls back to curl if needed
+    
+    Returns:
+        IP address as string, or None if unable to detect
+    """
+    # Try using requests library first (Python-native, more reliable)
+    try:
+        import requests
+        response = requests.get('https://ipinfo.io/ip', timeout=5)
+        if response.status_code == 200:
+            ip = response.text.strip()
+            # Basic validation
+            if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+                return ip
+    except Exception:
+        pass
+    
+    # Fallback to curl command
+    try:
+        result = subprocess.run(
+            ['/usr/bin/curl', 'ipinfo.io/ip'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            ip = result.stdout.strip()
+            # Basic validation
+            if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', ip):
+                return ip
+    except Exception:
+        pass
+    
+    return None
+
+
+def validate_cidr_list(cidr_list: List[str]) -> Tuple[bool, Optional[str], List[str]]:
+    """
+    Validate a list of CIDR blocks
+    
+    Auto-appends /32 to bare IP addresses
+    Validates both IPv4 and IPv6 CIDR notation
+    
+    Args:
+        cidr_list: List of CIDR strings to validate
+        
+    Returns:
+        Tuple of (is_valid, error_message, normalized_cidr_list)
+    """
+    if not cidr_list:
+        return True, None, []
+    
+    try:
+        import ipaddress
+    except ImportError:
+        return False, "ipaddress library not available", []
+    
+    normalized = []
+    errors = []
+    
+    for i, cidr in enumerate(cidr_list):
+        cidr = cidr.strip()
+        if not cidr:
+            continue
+        
+        try:
+            # Check if it's a bare IP address (IPv4)
+            if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', cidr):
+                # Bare IP, append /32
+                cidr = f"{cidr}/32"
+            
+            # Check if it's a bare IPv6 address
+            elif ':' in cidr and '/' not in cidr:
+                # Bare IPv6, append /128
+                cidr = f"{cidr}/128"
+            
+            # Validate the CIDR notation
+            network = ipaddress.ip_network(cidr, strict=False)
+            normalized.append(str(network))
+            
+        except ValueError as e:
+            errors.append(f"CIDR #{i+1} '{cidr}': {str(e)}")
+    
+    if errors:
+        return False, "; ".join(errors), normalized
+    
+    return True, None, normalized
+
+
+def get_client_ip_from_request():
+    """
+    Get the client's IP address from Flask request headers
+    Useful for "Detect My IP" functionality
+    
+    Returns:
+        IP address as string, or None if unable to detect
+    """
+    from flask import request
+    
+    # Check for common proxy headers
+    if request.headers.get('X-Forwarded-For'):
+        # X-Forwarded-For can contain multiple IPs, take the first one
+        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    
+    if request.headers.get('X-Real-IP'):
+        return request.headers.get('X-Real-IP')
+    
+    # Fallback to remote_addr
+    return request.remote_addr

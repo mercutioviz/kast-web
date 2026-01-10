@@ -817,7 +817,7 @@ main() {
     echo -e "${GREEN}${BOLD}"
     echo "╔═══════════════════════════════════════════════════════╗"
     echo "║                                                       ║"
-    echo "║      KAST-Web Update Completed Successfully!         ║"
+    echo "║      KAST-Web Update Completed Successfully!          ║"
     echo "║                                                       ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo -e "${NC}"

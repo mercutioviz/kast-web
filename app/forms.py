@@ -1,7 +1,12 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField, PasswordField, TextAreaField
+from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField, PasswordField, TextAreaField, FieldList, FormField
 from wtforms.validators import DataRequired, Regexp, Length, NumberRange, Email, EqualTo, ValidationError, Optional
 from wtforms.widgets import CheckboxInput, ListWidget
+from app.cloud_provider_data import (
+    AWS_REGIONS, AWS_INSTANCE_TYPES,
+    AZURE_REGIONS, AZURE_VM_SIZES,
+    GCP_REGIONS, GCP_MACHINE_TYPES
+)
 
 class MultiCheckboxField(SelectMultipleField):
     """Custom field for multiple checkboxes"""
@@ -640,57 +645,240 @@ class ZapConfigurationForm(FlaskForm):
             ('azure', 'Microsoft Azure'),
             ('gcp', 'Google Cloud Platform (GCP)')
         ],
-        render_kw={'class': 'form-select'}
+        render_kw={'class': 'form-select', 'id': 'cloud_provider'}
     )
     
-    cloud_region = StringField(
-        'Region',
+    # CIDR blocks for security group configuration
+    cloud_allowed_cidrs = TextAreaField(
+        'Allowed CIDR Blocks',
         validators=[
             Optional(),
-            Length(max=50, message='Region must not exceed 50 characters')
+            Length(max=2000, message='CIDR blocks must not exceed 2000 characters')
         ],
         render_kw={
-            'placeholder': 'us-east-1',
-            'class': 'form-control'
+            'placeholder': 'One CIDR per line, e.g.:\n192.168.1.0/24\n10.0.0.1/32',
+            'class': 'form-control font-monospace',
+            'rows': 5,
+            'id': 'cloud_allowed_cidrs'
         }
     )
     
-    cloud_instance_type = StringField(
+    # AWS-specific fields
+    aws_region = SelectField(
+        'AWS Region',
+        choices=[('', 'Select Region')] + AWS_REGIONS,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'data-provider': 'aws'}
+    )
+    
+    aws_instance_type = SelectField(
         'Instance Type',
+        choices=[('', 'Select Instance Type')] + AWS_INSTANCE_TYPES,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'data-provider': 'aws'}
+    )
+    
+    aws_ami_id = StringField(
+        'AMI ID (Optional)',
         validators=[
             Optional(),
-            Length(max=50, message='Instance type must not exceed 50 characters')
+            Length(max=100, message='AMI ID must not exceed 100 characters')
         ],
         render_kw={
-            'placeholder': 't3.medium',
-            'class': 'form-control'
+            'placeholder': 'Leave empty for default Ubuntu 22.04 LTS',
+            'class': 'form-control',
+            'data-provider': 'aws'
         }
     )
     
-    cloud_access_key = StringField(
-        'Access Key',
+    aws_spot_max_price = StringField(
+        'Spot Max Price (Optional)',
+        validators=[
+            Optional(),
+            Length(max=20, message='Price must not exceed 20 characters')
+        ],
+        render_kw={
+            'placeholder': 'e.g., 0.10',
+            'class': 'form-control',
+            'data-provider': 'aws'
+        }
+    )
+    
+    aws_access_key = StringField(
+        'Access Key (Optional)',
         validators=[
             Optional(),
             Length(max=200, message='Access key must not exceed 200 characters')
         ],
         render_kw={
-            'placeholder': 'Cloud provider access key',
+            'placeholder': 'Leave empty to use AWS CLI credentials',
             'class': 'form-control',
-            'type': 'password'
+            'type': 'password',
+            'data-provider': 'aws'
         }
     )
     
-    cloud_secret_key = StringField(
-        'Secret Key',
+    aws_secret_key = StringField(
+        'Secret Key (Optional)',
         validators=[
             Optional(),
             Length(max=200, message='Secret key must not exceed 200 characters')
         ],
         render_kw={
-            'placeholder': 'Cloud provider secret key',
+            'placeholder': 'Leave empty to use AWS CLI credentials',
             'class': 'form-control',
-            'type': 'password'
+            'type': 'password',
+            'data-provider': 'aws'
         }
+    )
+    
+    # Azure-specific fields
+    azure_region = SelectField(
+        'Azure Region',
+        choices=[('', 'Select Region')] + AZURE_REGIONS,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'data-provider': 'azure'}
+    )
+    
+    azure_vm_size = SelectField(
+        'VM Size',
+        choices=[('', 'Select VM Size')] + AZURE_VM_SIZES,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'data-provider': 'azure'}
+    )
+    
+    azure_subscription_id = StringField(
+        'Subscription ID',
+        validators=[
+            Optional(),
+            Length(max=100, message='Subscription ID must not exceed 100 characters')
+        ],
+        render_kw={
+            'placeholder': 'Azure subscription ID',
+            'class': 'form-control',
+            'data-provider': 'azure'
+        }
+    )
+    
+    azure_tenant_id = StringField(
+        'Tenant ID',
+        validators=[
+            Optional(),
+            Length(max=100, message='Tenant ID must not exceed 100 characters')
+        ],
+        render_kw={
+            'placeholder': 'Azure tenant ID',
+            'class': 'form-control',
+            'data-provider': 'azure'
+        }
+    )
+    
+    azure_client_id = StringField(
+        'Client ID',
+        validators=[
+            Optional(),
+            Length(max=100, message='Client ID must not exceed 100 characters')
+        ],
+        render_kw={
+            'placeholder': 'Service principal client ID',
+            'class': 'form-control',
+            'data-provider': 'azure'
+        }
+    )
+    
+    azure_client_secret = StringField(
+        'Client Secret',
+        validators=[
+            Optional(),
+            Length(max=200, message='Client secret must not exceed 200 characters')
+        ],
+        render_kw={
+            'placeholder': 'Service principal client secret',
+            'class': 'form-control',
+            'type': 'password',
+            'data-provider': 'azure'
+        }
+    )
+    
+    azure_spot_enabled = BooleanField(
+        'Enable Spot Instance',
+        default=True,
+        render_kw={'class': 'form-check-input', 'data-provider': 'azure'}
+    )
+    
+    # GCP-specific fields
+    gcp_region = SelectField(
+        'GCP Region',
+        choices=[('', 'Select Region')] + GCP_REGIONS,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'data-provider': 'gcp', 'id': 'gcp_region'}
+    )
+    
+    gcp_zone = StringField(
+        'Zone',
+        validators=[
+            Optional(),
+            Length(max=50, message='Zone must not exceed 50 characters')
+        ],
+        render_kw={
+            'placeholder': 'e.g., us-central1-a',
+            'class': 'form-control',
+            'data-provider': 'gcp',
+            'id': 'gcp_zone'
+        }
+    )
+    
+    gcp_machine_type = SelectField(
+        'Machine Type',
+        choices=[('', 'Select Machine Type')] + GCP_MACHINE_TYPES,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'data-provider': 'gcp'}
+    )
+    
+    gcp_project_id = StringField(
+        'Project ID',
+        validators=[
+            Optional(),
+            Length(max=100, message='Project ID must not exceed 100 characters')
+        ],
+        render_kw={
+            'placeholder': 'GCP project ID',
+            'class': 'form-control',
+            'data-provider': 'gcp'
+        }
+    )
+    
+    gcp_credentials_file = StringField(
+        'Service Account Key File Path',
+        validators=[
+            Optional(),
+            Length(max=500, message='File path must not exceed 500 characters')
+        ],
+        render_kw={
+            'placeholder': '/path/to/service-account-key.json',
+            'class': 'form-control',
+            'data-provider': 'gcp'
+        }
+    )
+    
+    gcp_credentials_json = TextAreaField(
+        'Service Account Key JSON (Alternative)',
+        validators=[
+            Optional(),
+            Length(max=10000, message='JSON must not exceed 10000 characters')
+        ],
+        render_kw={
+            'placeholder': 'Paste service account JSON key here (alternative to file path)',
+            'class': 'form-control font-monospace',
+            'rows': 8,
+            'data-provider': 'gcp'
+        }
+    )
+    
+    gcp_preemptible = BooleanField(
+        'Use Preemptible Instance',
+        default=True,
+        render_kw={'class': 'form-check-input', 'data-provider': 'gcp'}
     )
     
     cloud_auto_terminate = BooleanField(

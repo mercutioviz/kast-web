@@ -72,7 +72,7 @@
                 </div>
 
                 <!-- Local Docker Configuration -->
-                <div class="card mb-4" id="local-config" style="display: none;">
+                <div class="card mb-4 mode-config" id="local-config" style="display: none;">
                     <div class="card-header">
                         <h5 class="mb-0"><i class="fas fa-laptop"></i> Local Docker Configuration</h5>
                     </div>
@@ -101,7 +101,7 @@
                 </div>
 
                 <!-- Remote Configuration -->
-                <div class="card mb-4" id="remote-config" style="display: none;">
+                <div class="card mb-4 mode-config" id="remote-config" style="display: none;">
                     <div class="card-header">
                         <h5 class="mb-0"><i class="fas fa-network-wired"></i> Remote ZAP Configuration</h5>
                     </div>
@@ -134,42 +134,181 @@
                 </div>
 
                 <!-- Cloud Configuration -->
-                <div class="card mb-4" id="cloud-config" style="display: none;">
+                <div class="card mb-4 mode-config" id="cloud-config" style="display: none;">
                     <div class="card-header">
                         <h5 class="mb-0"><i class="fas fa-cloud"></i> Cloud Configuration</h5>
                     </div>
                     <div class="card-body">
+                        <!-- Provider Selection -->
                         <div class="mb-3">
                             {{ form.cloud_provider.label(class="form-label") }}
                             {{ form.cloud_provider(class="form-select") }}
+                            <small class="form-text text-muted">Select your cloud provider</small>
                         </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                {{ form.cloud_region.label(class="form-label") }}
-                                {{ form.cloud_region(class="form-control", placeholder="e.g., us-east-1") }}
+
+                        <!-- CIDR Blocks Configuration -->
+                        <div class="mb-4">
+                            <label class="form-label">
+                                <i class="fas fa-shield-alt"></i> Allowed CIDR Blocks
+                                <span class="badge bg-info ms-2">Security Group Configuration</span>
+                            </label>
+                            <p class="small text-muted mb-2">
+                                Specify IP addresses/ranges that can access the ZAP instance. One CIDR per line.
+                            </p>
+                            <div class="d-flex gap-2 mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="detect-my-ip-btn">
+                                    <i class="fas fa-crosshairs"></i> Detect My IP
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="add-common-cidrs-btn">
+                                    <i class="fas fa-plus"></i> Add Common CIDRs
+                                </button>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                {{ form.cloud_instance_type.label(class="form-label") }}
-                                {{ form.cloud_instance_type(class="form-control", placeholder="e.g., t3.medium") }}
+                            {{ form.cloud_allowed_cidrs(class="form-control font-monospace") }}
+                            <small class="form-text text-muted">
+                                Examples: 203.0.113.0/24, 192.0.2.45/32, or 203.0.113.50 (auto-adds /32)
+                            </small>
+                            <div class="mt-2" id="cidr-validation-feedback"></div>
+                        </div>
+
+                        <!-- AWS-specific Configuration -->
+                        <div class="provider-config" id="aws-config" style="display: none;">
+                            <h6 class="border-bottom pb-2 mb-3">
+                                <i class="fab fa-aws"></i> AWS Configuration
+                            </h6>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    {{ form.aws_region.label(class="form-label") }}
+                                    {{ form.aws_region(class="form-select") }}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    {{ form.aws_instance_type.label(class="form-label") }}
+                                    {{ form.aws_instance_type(class="form-select") }}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                {{ form.aws_ami_id.label(class="form-label") }}
+                                {{ form.aws_ami_id(class="form-control") }}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.aws_spot_max_price.label(class="form-label") }}
+                                {{ form.aws_spot_max_price(class="form-control") }}
+                                <small class="form-text text-muted">Leave empty for on-demand pricing</small>
+                            </div>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> <strong>AWS Credentials</strong><br>
+                                By default, KAST will use AWS CLI credentials (<code>~/.aws/credentials</code>). 
+                                You only need to provide keys if you want to use different credentials.
+                            </div>
+                            <div class="mb-3">
+                                {{ form.aws_access_key.label(class="form-label") }}
+                                {{ form.aws_access_key(class="form-control") }}
+                                {% if mode == 'edit' %}
+                                <small class="form-text text-muted">Leave blank to keep existing</small>
+                                {% endif %}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.aws_secret_key.label(class="form-label") }}
+                                {{ form.aws_secret_key(class="form-control") }}
+                                {% if mode == 'edit' %}
+                                <small class="form-text text-muted">Leave blank to keep existing</small>
+                                {% endif %}
                             </div>
                         </div>
-                        <div class="mb-3">
-                            {{ form.cloud_access_key.label(class="form-label") }}
-                            {{ form.cloud_access_key(class="form-control", placeholder="Access key" + (" or leave blank to keep existing" if mode == 'edit' else "")) }}
-                            {% if mode == 'edit' %}
-                            <small class="form-text text-muted">Leave blank to keep existing access key</small>
-                            {% endif %}
+
+                        <!-- Azure-specific Configuration -->
+                        <div class="provider-config" id="azure-config" style="display: none;">
+                            <h6 class="border-bottom pb-2 mb-3">
+                                <i class="fab fa-microsoft"></i> Azure Configuration
+                            </h6>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    {{ form.azure_region.label(class="form-label") }}
+                                    {{ form.azure_region(class="form-select") }}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    {{ form.azure_vm_size.label(class="form-label") }}
+                                    {{ form.azure_vm_size(class="form-select") }}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                {{ form.azure_subscription_id.label(class="form-label") }}
+                                {{ form.azure_subscription_id(class="form-control") }}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.azure_tenant_id.label(class="form-label") }}
+                                {{ form.azure_tenant_id(class="form-control") }}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.azure_client_id.label(class="form-label") }}
+                                {{ form.azure_client_id(class="form-control") }}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.azure_client_secret.label(class="form-label") }}
+                                {{ form.azure_client_secret(class="form-control") }}
+                                {% if mode == 'edit' %}
+                                <small class="form-text text-muted">Leave blank to keep existing</small>
+                                {% endif %}
+                            </div>
+                            <div class="form-check">
+                                {{ form.azure_spot_enabled(class="form-check-input") }}
+                                {{ form.azure_spot_enabled.label(class="form-check-label") }}
+                                <small class="form-text text-muted d-block">Use spot instances for cost savings</small>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            {{ form.cloud_secret_key.label(class="form-label") }}
-                            {{ form.cloud_secret_key(class="form-control", type="password", placeholder="Secret key" + (" or leave blank to keep existing" if mode == 'edit' else "")) }}
-                            {% if mode == 'edit' %}
-                            <small class="form-text text-muted">Leave blank to keep existing secret key</small>
-                            {% endif %}
+
+                        <!-- GCP-specific Configuration -->
+                        <div class="provider-config" id="gcp-config" style="display: none;">
+                            <h6 class="border-bottom pb-2 mb-3">
+                                <i class="fab fa-google"></i> Google Cloud Platform Configuration
+                            </h6>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    {{ form.gcp_region.label(class="form-label") }}
+                                    {{ form.gcp_region(class="form-select") }}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    {{ form.gcp_zone.label(class="form-label") }}
+                                    {{ form.gcp_zone(class="form-control") }}
+                                    <small class="form-text text-muted">Auto-populated based on region</small>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                {{ form.gcp_machine_type.label(class="form-label") }}
+                                {{ form.gcp_machine_type(class="form-select") }}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.gcp_project_id.label(class="form-label") }}
+                                {{ form.gcp_project_id(class="form-control") }}
+                            </div>
+                            
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i> <strong>Service Account Credentials</strong><br>
+                                Provide either a file path to your service account JSON key OR paste the JSON directly below.
+                            </div>
+                            
+                            <div class="mb-3">
+                                {{ form.gcp_credentials_file.label(class="form-label") }}
+                                {{ form.gcp_credentials_file(class="form-control") }}
+                            </div>
+                            <div class="mb-3">
+                                {{ form.gcp_credentials_json.label(class="form-label") }}
+                                {{ form.gcp_credentials_json(class="form-control font-monospace") }}
+                                {% if mode == 'edit' %}
+                                <small class="form-text text-muted">Leave blank to keep existing credentials</small>
+                                {% endif %}
+                            </div>
+                            <div class="form-check">
+                                {{ form.gcp_preemptible(class="form-check-input") }}
+                                {{ form.gcp_preemptible.label(class="form-check-label") }}
+                                <small class="form-text text-muted d-block">Use preemptible instances for cost savings</small>
+                            </div>
                         </div>
-                        <div class="form-check">
+
+                        <!-- Cloud Auto-Terminate -->
+                        <div class="form-check mt-3">
                             {{ form.cloud_auto_terminate(class="form-check-input") }}
                             {{ form.cloud_auto_terminate.label(class="form-check-label") }}
+                            <small class="form-text text-muted d-block">Recommended to prevent lingering cloud resources</small>
                         </div>
                     </div>
                 </div>
@@ -199,10 +338,25 @@
                         <p class="small">Connects to an existing ZAP instance running elsewhere. Useful for dedicated ZAP servers.</p>
 
                         <h6 class="mt-3"><i class="fas fa-cloud"></i> Cloud</h6>
-                        <p class="small">Launches temporary ZAP instances in cloud providers (AWS, GCP, Azure). Requires cloud credentials.</p>
+                        <p class="small">Launches temporary ZAP instances in cloud providers (AWS, GCP, Azure). Requires cloud credentials and Terraform.</p>
 
                         <h6 class="mt-3"><i class="fas fa-magic"></i> Auto</h6>
                         <p class="small">Automatically selects the best available method based on environment.</p>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-shield-alt"></i> CIDR Blocks</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="small mb-2">CIDR blocks define which IP addresses can access your cloud ZAP instance.</p>
+                        <ul class="small mb-0">
+                            <li><strong>Single IP:</strong> <code>203.0.113.50</code> (auto-adds /32)</li>
+                            <li><strong>Subnet:</strong> <code>192.168.1.0/24</code> (256 IPs)</li>
+                            <li><strong>Range:</strong> <code>10.0.0.0/16</code> (65,536 IPs)</li>
+                            <li><strong>Any IP:</strong> <code>0.0.0.0/0</code> (⚠️ Not recommended)</li>
+                        </ul>
                     </div>
                 </div>
 
@@ -215,8 +369,9 @@
                             <li>API keys and credentials are encrypted at rest</li>
                             <li>Sensitive data is never shown in logs</li>
                             <li>Use strong, unique API keys</li>
-                            <li>Restrict network access to ZAP instances</li>
+                            <li>Restrict CIDR blocks to known IPs only</li>
                             <li>Test configurations before production use</li>
+                            <li>Cloud resources auto-terminate after scans</li>
                         </ul>
                     </div>
                 </div>
@@ -231,11 +386,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const localConfig = document.getElementById('local-config');
     const remoteConfig = document.getElementById('remote-config');
     const cloudConfig = document.getElementById('cloud-config');
+    const cloudProviderSelect = document.getElementById('cloud_provider');
+    const awsConfig = document.getElementById('aws-config');
+    const azureConfig = document.getElementById('azure-config');
+    const gcpConfig = document.getElementById('gcp-config');
+    const gcpRegionSelect = document.getElementById('gcp_region');
+    const gcpZoneInput = document.getElementById('gcp_zone');
+    const cidrTextarea = document.getElementById('cloud_allowed_cidrs');
+    const cidrValidationFeedback = document.getElementById('cidr-validation-feedback');
+    const detectMyIpBtn = document.getElementById('detect-my-ip-btn');
+    const addCommonCidrsBtn = document.getElementById('add-common-cidrs-btn');
     
-    function updateVisibility() {
+    // Update execution mode visibility
+    function updateModeVisibility() {
         const mode = modeSelect.value;
         
-        // Hide all
+        // Hide all mode configs
         localConfig.style.display = 'none';
         remoteConfig.style.display = 'none';
         cloudConfig.style.display = 'none';
@@ -247,15 +413,181 @@ document.addEventListener('DOMContentLoaded', function() {
             remoteConfig.style.display = 'block';
         } else if (mode === 'cloud') {
             cloudConfig.style.display = 'block';
+            updateCloudProviderVisibility();
         }
-        // 'auto' mode shows none (uses defaults)
     }
     
-    // Set initial visibility
-    updateVisibility();
+    // Update cloud provider visibility
+    function updateCloudProviderVisibility() {
+        const provider = cloudProviderSelect.value;
+        
+        // Hide all provider configs
+        awsConfig.style.display = 'none';
+        azureConfig.style.display = 'none';
+        gcpConfig.style.display = 'none';
+        
+        // Show relevant provider
+        if (provider === 'aws') {
+            awsConfig.style.display = 'block';
+        } else if (provider === 'azure') {
+            azureConfig.style.display = 'block';
+        } else if (provider === 'gcp') {
+            gcpConfig.style.display = 'block';
+        }
+    }
     
-    // Update on change
-    modeSelect.addEventListener('change', updateVisibility);
+    // Auto-populate GCP zone based on region
+    function updateGcpZone() {
+        const region = gcpRegionSelect.value;
+        if (region && !gcpZoneInput.value) {
+            // Default to zone 'a' for the selected region
+            gcpZoneInput.value = region + '-a';
+        }
+    }
+    
+    // Validate CIDR blocks
+    function validateCidrs() {
+        const cidrs = cidrTextarea.value.trim().split('\n').filter(line => line.trim());
+        
+        if (cidrs.length === 0) {
+            cidrValidationFeedback.innerHTML = '';
+            return;
+        }
+        
+        let validCount = 0;
+        let invalidCidrs = [];
+        
+        // Basic CIDR validation regex (IPv4)
+        const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        
+        cidrs.forEach((cidr, index) => {
+            const trimmedCidr = cidr.trim();
+            if (cidrRegex.test(trimmedCidr)) {
+                // Additional validation for IP octets
+                const parts = trimmedCidr.split('/')[0].split('.');
+                const validOctets = parts.every(octet => parseInt(octet) >= 0 && parseInt(octet) <= 255);
+                
+                if (validOctets) {
+                    validCount++;
+                } else {
+                    invalidCidrs.push(trimmedCidr);
+                }
+            } else {
+                invalidCidrs.push(trimmedCidr);
+            }
+        });
+        
+        if (invalidCidrs.length > 0) {
+            cidrValidationFeedback.innerHTML = `
+                <div class="alert alert-warning alert-sm py-2">
+                    <i class="fas fa-exclamation-triangle"></i> <strong>Invalid CIDRs detected:</strong><br>
+                    <code>${invalidCidrs.join(', ')}</code>
+                </div>
+            `;
+        } else {
+            cidrValidationFeedback.innerHTML = `
+                <div class="alert alert-success alert-sm py-2">
+                    <i class="fas fa-check-circle"></i> ${validCount} valid CIDR block(s)
+                </div>
+            `;
+        }
+    }
+    
+    // Auto-append /32 to bare IP addresses
+    function normalizeCidrs() {
+        const lines = cidrTextarea.value.split('\n');
+        const normalized = lines.map(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return line;
+            
+            // Check if it's a bare IPv4 address (no /suffix)
+            if (/^(\d{1,3}\.){3}\d{1,3}$/.test(trimmed)) {
+                return trimmed + '/32';
+            }
+            return line;
+        });
+        
+        cidrTextarea.value = normalized.join('\n');
+    }
+    
+    // Detect user's IP and add it
+    async function detectMyIp() {
+        detectMyIpBtn.disabled = true;
+        detectMyIpBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Detecting...';
+        
+        try {
+            // Use kast-web's backend to detect IP
+            const response = await fetch('/admin/zap/detect-ip');
+            const data = await response.json();
+            
+            if (data.success && data.ip) {
+                // Add to textarea if not already present
+                const currentCidrs = cidrTextarea.value.trim();
+                const newCidr = data.ip + '/32';
+                
+                if (!currentCidrs.includes(data.ip)) {
+                    cidrTextarea.value = currentCidrs ? currentCidrs + '\n' + newCidr : newCidr;
+                    validateCidrs();
+                    
+                    cidrValidationFeedback.innerHTML = `
+                        <div class="alert alert-success alert-sm py-2">
+                            <i class="fas fa-check-circle"></i> Added your IP: <code>${newCidr}</code>
+                        </div>
+                    `;
+                } else {
+                    cidrValidationFeedback.innerHTML = `
+                        <div class="alert alert-info alert-sm py-2">
+                            <i class="fas fa-info-circle"></i> Your IP <code>${data.ip}</code> is already in the list
+                        </div>
+                    `;
+                }
+            } else {
+                throw new Error(data.error || 'Failed to detect IP');
+            }
+        } catch (error) {
+            cidrValidationFeedback.innerHTML = `
+                <div class="alert alert-danger alert-sm py-2">
+                    <i class="fas fa-exclamation-circle"></i> Could not detect IP: ${error.message}
+                </div>
+            `;
+        } finally {
+            detectMyIpBtn.disabled = false;
+            detectMyIpBtn.innerHTML = '<i class="fas fa-crosshairs"></i> Detect My IP';
+        }
+    }
+    
+    // Add common CIDR ranges
+    function addCommonCidrs() {
+        const commonCidrs = [
+            '# Office Network',
+            '192.168.0.0/16',
+            '',
+            '# VPN Range',
+            '10.0.0.0/8'
+        ].join('\n');
+        
+        const currentCidrs = cidrTextarea.value.trim();
+        cidrTextarea.value = currentCidrs ? currentCidrs + '\n\n' + commonCidrs : commonCidrs;
+        
+        cidrValidationFeedback.innerHTML = `
+            <div class="alert alert-info alert-sm py-2">
+                <i class="fas fa-info-circle"></i> Added common CIDR templates. Edit as needed.
+            </div>
+        `;
+    }
+    
+    // Event listeners
+    modeSelect.addEventListener('change', updateModeVisibility);
+    cloudProviderSelect.addEventListener('change', updateCloudProviderVisibility);
+    gcpRegionSelect.addEventListener('change', updateGcpZone);
+    cidrTextarea.addEventListener('blur', normalizeCidrs);
+    cidrTextarea.addEventListener('input', validateCidrs);
+    detectMyIpBtn.addEventListener('click', detectMyIp);
+    addCommonCidrsBtn.addEventListener('click', addCommonCidrs);
+    
+    // Set initial visibility
+    updateModeVisibility();
+    validateCidrs();
 });
 </script>
 {% endblock %}
