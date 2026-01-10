@@ -61,7 +61,7 @@ fi
 echo -e "${CYAN}${BOLD}"
 echo "╔═══════════════════════════════════════════════════════╗"
 echo "║                                                       ║"
-echo "║     KAST-Web Installation Validation Report          ║"
+echo "║     KAST-Web Installation Validation Report           ║"
 echo "║                                                       ║"
 echo "╚═══════════════════════════════════════════════════════╝"
 echo -e "${NC}\n"
