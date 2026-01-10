@@ -977,21 +977,34 @@ def config_container_logs(config_id):
 @login_required
 @admin_required
 def detect_ip():
-    """Detect client's IP address for CIDR configuration"""
+    """Detect both server and client IP addresses for CIDR configuration"""
     from app.zap_utils import get_server_public_ip, get_client_ip_from_request
     
     try:
-        # Try to get client IP from request
+        # Get server's public IP
+        server_ip = get_server_public_ip()
+        
+        # Get client's IP from request
         client_ip = get_client_ip_from_request()
         
-        # Fallback to server public IP if behind proxy or localhost
-        if not client_ip or client_ip in ['127.0.0.1', 'localhost', '::1']:
-            client_ip = get_server_public_ip()
+        # Handle localhost/loopback addresses
+        if client_ip and client_ip in ['127.0.0.1', 'localhost', '::1']:
+            client_ip = None
         
-        if client_ip:
-            return jsonify({'success': True, 'ip': client_ip})
-        else:
-            return jsonify({'success': False, 'error': 'Could not detect IP address'}), 500
+        # Prepare response
+        response_data = {
+            'success': True,
+            'server_ip': server_ip,
+            'client_ip': client_ip
+        }
+        
+        # Backward compatibility: also return 'ip' field (prefers client IP, falls back to server IP)
+        response_data['ip'] = client_ip if client_ip else server_ip
+        
+        if not server_ip and not client_ip:
+            return jsonify({'success': False, 'error': 'Could not detect any IP address'}), 500
+        
+        return jsonify(response_data)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

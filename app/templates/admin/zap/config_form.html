@@ -674,7 +674,11 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
     
     // Validate CIDR blocks
     function validateCidrs() {
-        const cidrs = cidrTextarea.value.trim().split('\n').filter(line => line.trim());
+        // Filter out blank lines and comment lines (starting with #) - matches backend behavior
+        const cidrs = cidrTextarea.value.trim().split('\n').filter(line => {
+            const trimmed = line.trim();
+            return trimmed && !trimmed.startsWith('#');
+        });
         
         if (cidrs.length === 0) {
             cidrValidationFeedback.innerHTML = '';
@@ -783,6 +787,59 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
         }
     }
     
+    // Auto-populate CIDR blocks with server and client IPs (for new configs only)
+    async function autoPopulateCidrs() {
+        // Only auto-populate if CIDR field is empty
+        if (cidrTextarea.value.trim()) {
+            return;
+        }
+        
+        try {
+            // Fetch both server and client IPs
+            const response = await fetch('/admin/zap/detect-ip');
+            const data = await response.json();
+            
+            if (data.success) {
+                const cidrs = [];
+                
+                // Add server IP if available
+                if (data.server_ip) {
+                    cidrs.push('# KAST-Web Server IP');
+                    cidrs.push(data.server_ip + '/32');
+                }
+                
+                // Add client IP if available and different from server IP
+                if (data.client_ip && data.client_ip !== data.server_ip) {
+                    if (cidrs.length > 0) {
+                        cidrs.push(''); // Blank line separator
+                    }
+                    cidrs.push('# Your Browser IP');
+                    cidrs.push(data.client_ip + '/32');
+                }
+                
+                // Only populate if we have at least one IP
+                if (cidrs.length > 0) {
+                    cidrTextarea.value = cidrs.join('\n');
+                    validateCidrs();
+                    
+                    // Show success message
+                    const ips = [];
+                    if (data.server_ip) ips.push(`Server: <code>${data.server_ip}</code>`);
+                    if (data.client_ip && data.client_ip !== data.server_ip) ips.push(`Browser: <code>${data.client_ip}</code>`);
+                    
+                    cidrValidationFeedback.innerHTML = `
+                        <div class="alert alert-success alert-sm py-2">
+                            <i class="fas fa-check-circle"></i> Auto-populated IP addresses: ${ips.join(', ')}
+                        </div>
+                    `;
+                }
+            }
+        } catch (error) {
+            // Silent fail for auto-population - user can still manually add IPs
+            console.log('Auto-population skipped:', error.message);
+        }
+    }
+    
     // Add common CIDR ranges
     function addCommonCidrs() {
         const commonCidrs = [
@@ -809,6 +866,11 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
         updateDockerCommandPreview();
         updateRemoteConnectionPreview();
         updateCloudCommandPreview();
+        
+        // Auto-populate CIDRs when switching to cloud mode (for new configs only)
+        if (modeSelect.value === 'cloud') {
+            autoPopulateCidrs();
+        }
     });
     cloudProviderSelect.addEventListener('change', () => {
         updateCloudProviderVisibility();
@@ -1091,6 +1153,10 @@ gcloud compute instances create kast-zap-vm \\
             updateRemoteConnectionPreview();
         } else if (initialMode === 'cloud') {
             updateCloudCommandPreview();
+            // Auto-populate CIDRs if this is a new config (create mode)
+            {% if mode == 'create' %}
+            autoPopulateCidrs();
+            {% endif %}
         }
     }, 100);
     
