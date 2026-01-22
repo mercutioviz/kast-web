@@ -359,6 +359,99 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         current_app.logger.info("Stored actual CLI command in database")
         
         # ============================================================
+        # CLOUD CREDENTIALS: Set environment variables for Terraform
+        # ============================================================
+        env = os.environ.copy()  # Start with current environment
+        
+        if plugins and 'zap' in plugins and zap_config_to_use:
+            if zap_config_to_use.execution_mode == 'cloud':
+                current_app.logger.info("="*80)
+                current_app.logger.info("SETTING CLOUD CREDENTIALS AS ENVIRONMENT VARIABLES")
+                current_app.logger.info("="*80)
+                
+                cloud_config = zap_config_to_use.cloud_config
+                provider = cloud_config.get('provider', '').lower()
+                
+                current_app.logger.info(f"Cloud provider: {provider}")
+                
+                if provider == 'aws':
+                    # Set AWS credentials
+                    current_app.logger.info("Setting AWS credentials as environment variables")
+                    
+                    if 'access_key' in cloud_config and cloud_config['access_key']:
+                        env['AWS_ACCESS_KEY_ID'] = cloud_config['access_key']
+                        current_app.logger.info("  ✓ AWS_ACCESS_KEY_ID set")
+                    else:
+                        current_app.logger.warning("  ✗ AWS_ACCESS_KEY_ID not found in cloud config")
+                    
+                    if 'secret_key' in cloud_config and cloud_config['secret_key']:
+                        env['AWS_SECRET_ACCESS_KEY'] = cloud_config['secret_key']
+                        current_app.logger.info("  ✓ AWS_SECRET_ACCESS_KEY set")
+                    else:
+                        current_app.logger.warning("  ✗ AWS_SECRET_ACCESS_KEY not found in cloud config")
+                    
+                    if 'region' in cloud_config and cloud_config['region']:
+                        env['AWS_DEFAULT_REGION'] = cloud_config['region']
+                        current_app.logger.info(f"  ✓ AWS_DEFAULT_REGION set to: {cloud_config['region']}")
+                    else:
+                        # Default to us-east-1 if not specified
+                        env['AWS_DEFAULT_REGION'] = 'us-east-1'
+                        current_app.logger.info("  ✓ AWS_DEFAULT_REGION set to default: us-east-1")
+                    
+                    # Also set AWS_REGION for compatibility
+                    env['AWS_REGION'] = env['AWS_DEFAULT_REGION']
+                    current_app.logger.info(f"  ✓ AWS_REGION set to: {env['AWS_DEFAULT_REGION']}")
+                
+                elif provider == 'azure':
+                    # Set Azure credentials
+                    current_app.logger.info("Setting Azure credentials as environment variables")
+                    
+                    if 'client_id' in cloud_config and cloud_config['client_id']:
+                        env['AZURE_CLIENT_ID'] = cloud_config['client_id']
+                        current_app.logger.info("  ✓ AZURE_CLIENT_ID set")
+                    else:
+                        current_app.logger.warning("  ✗ AZURE_CLIENT_ID not found in cloud config")
+                    
+                    if 'client_secret' in cloud_config and cloud_config['client_secret']:
+                        env['AZURE_CLIENT_SECRET'] = cloud_config['client_secret']
+                        current_app.logger.info("  ✓ AZURE_CLIENT_SECRET set")
+                    else:
+                        current_app.logger.warning("  ✗ AZURE_CLIENT_SECRET not found in cloud config")
+                    
+                    if 'tenant_id' in cloud_config and cloud_config['tenant_id']:
+                        env['AZURE_TENANT_ID'] = cloud_config['tenant_id']
+                        current_app.logger.info("  ✓ AZURE_TENANT_ID set")
+                    else:
+                        current_app.logger.warning("  ✗ AZURE_TENANT_ID not found in cloud config")
+                    
+                    if 'subscription_id' in cloud_config and cloud_config['subscription_id']:
+                        env['AZURE_SUBSCRIPTION_ID'] = cloud_config['subscription_id']
+                        current_app.logger.info("  ✓ AZURE_SUBSCRIPTION_ID set")
+                    else:
+                        current_app.logger.warning("  ✗ AZURE_SUBSCRIPTION_ID not found in cloud config")
+                
+                elif provider == 'gcp':
+                    # Set GCP credentials
+                    current_app.logger.info("Setting GCP credentials as environment variables")
+                    
+                    if 'service_account_key_path' in cloud_config and cloud_config['service_account_key_path']:
+                        env['GOOGLE_APPLICATION_CREDENTIALS'] = cloud_config['service_account_key_path']
+                        current_app.logger.info(f"  ✓ GOOGLE_APPLICATION_CREDENTIALS set to: {cloud_config['service_account_key_path']}")
+                    else:
+                        current_app.logger.warning("  ✗ GOOGLE_APPLICATION_CREDENTIALS not found in cloud config")
+                    
+                    if 'project_id' in cloud_config and cloud_config['project_id']:
+                        env['GOOGLE_CLOUD_PROJECT'] = cloud_config['project_id']
+                        current_app.logger.info(f"  ✓ GOOGLE_CLOUD_PROJECT set to: {cloud_config['project_id']}")
+                    else:
+                        current_app.logger.warning("  ✗ GOOGLE_CLOUD_PROJECT not found in cloud config")
+                
+                else:
+                    current_app.logger.warning(f"Unknown cloud provider: {provider}")
+                
+                current_app.logger.info("="*80)
+        
+        # ============================================================
         # DEBUGGING: Capture file system state BEFORE execution
         # ============================================================
         current_app.logger.info("="*80)
@@ -385,11 +478,13 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         # Execute scan and capture output
         current_app.logger.info(f"Starting subprocess with Popen...")
+        current_app.logger.info(f"Environment variables count: {len(env)}")
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            env=env  # Pass environment with cloud credentials
         )
         
         current_app.logger.info(f"Subprocess PID: {process.pid}")
