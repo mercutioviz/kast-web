@@ -33,7 +33,20 @@ echo "=== KAST-Web Password Reset Wrapper ==="
 echo "Running password reset script as www-data user..."
 echo ""
 
-# Run the script as www-data user
-sudo -u www-data "$PROJECT_DIR/scripts/reset_password.py"
+# Load environment variables from .env file if it exists
+if [ -f "$PROJECT_DIR/.env" ]; then
+    echo "Loading environment from .env file..."
+    # Source the .env file
+    set -a  # Automatically export all variables
+    source "$PROJECT_DIR/.env"
+    set +a
+else
+    echo "⚠ Warning: No .env file found at $PROJECT_DIR/.env"
+    echo "Using default database location from config.py"
+fi
+
+# Run the script as www-data user, preserving environment variables
+# The -E flag preserves environment variables when using sudo
+sudo -E -u www-data "$PROJECT_DIR/scripts/reset_password.py"
 
 exit $?
