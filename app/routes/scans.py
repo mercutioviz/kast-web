@@ -375,8 +375,9 @@ def serve_scan_file(scan_id, filename):
     return send_file(file_path)
 
 @bp.route('/<int:scan_id>/files')
+@bp.route('/<int:scan_id>/files/<path:subpath>')
 @login_required
-def list_files(scan_id):
+def list_files(scan_id, subpath=None):
     """Display directory listing of scan output files"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
@@ -398,15 +399,68 @@ def list_files(scan_id):
         flash('Output directory does not exist', 'warning')
         return redirect(url_for('scans.detail', scan_id=scan_id))
     
-    # Collect all files and directories
+    # Determine the current directory to display
+    if subpath:
+        current_path = output_path / subpath
+    else:
+        current_path = output_path
+    
+    # Security: Prevent directory traversal attacks
+    try:
+        current_path = current_path.resolve()
+        output_path_resolved = output_path.resolve()
+        
+        # Ensure the requested path is within the scan's output directory
+        if not str(current_path).startswith(str(output_path_resolved)):
+            flash('Invalid path requested', 'danger')
+            return redirect(url_for('scans.list_files', scan_id=scan_id))
+    except Exception:
+        flash('Error resolving path', 'danger')
+        return redirect(url_for('scans.list_files', scan_id=scan_id))
+    
+    # Check if the path exists and is a directory
+    if not current_path.exists():
+        flash('Directory does not exist', 'warning')
+        return redirect(url_for('scans.list_files', scan_id=scan_id))
+    
+    if not current_path.is_dir():
+        flash('Path is not a directory', 'warning')
+        return redirect(url_for('scans.list_files', scan_id=scan_id))
+    
+    # Build breadcrumb navigation
+    breadcrumbs = []
+    if subpath:
+        parts = Path(subpath).parts
+        breadcrumb_path = ''
+        for part in parts:
+            if breadcrumb_path:
+                breadcrumb_path = f"{breadcrumb_path}/{part}"
+            else:
+                breadcrumb_path = part
+            breadcrumbs.append({
+                'name': part,
+                'path': breadcrumb_path
+            })
+    
+    # Collect all files and directories in current path
     files = []
     directories = []
     
     try:
-        for item in sorted(output_path.iterdir()):
+        for item in sorted(current_path.iterdir()):
             item_stat = item.stat()
+            
+            # Calculate relative path from output directory
+            try:
+                rel_path = item.relative_to(output_path_resolved)
+                item_path = str(rel_path)
+            except ValueError:
+                # Should not happen due to security check above
+                continue
+            
             item_info = {
                 'name': item.name,
+                'path': item_path,
                 'size': item_stat.st_size if item.is_file() else 0,
                 'modified': item_stat.st_mtime,
                 'is_dir': item.is_dir()
@@ -425,7 +479,9 @@ def list_files(scan_id):
         scan=scan,
         files=files,
         directories=directories,
-        output_dir=scan.output_dir
+        output_dir=scan.output_dir,
+        current_subpath=subpath,
+        breadcrumbs=breadcrumbs
     )
 
 @bp.route('/<int:scan_id>/view-file/<path:filename>')

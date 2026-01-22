@@ -12,6 +12,27 @@
     </div>
 </div>
 
+{% if breadcrumbs %}
+<nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('scans.list_files', scan_id=scan.id) }}">
+                <i class="bi bi-house-door"></i> Output Directory
+            </a>
+        </li>
+        {% for crumb in breadcrumbs %}
+        <li class="breadcrumb-item{% if loop.last %} active{% endif %}"{% if loop.last %} aria-current="page"{% endif %}>
+            {% if loop.last %}
+                {{ crumb.name }}
+            {% else %}
+                <a href="{{ url_for('scans.list_files', scan_id=scan.id, subpath=crumb.path) }}">{{ crumb.name }}</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+</nav>
+{% endif %}
+
 <div class="card shadow mb-4">
     <div class="card-header bg-primary text-white">
         <h5 class="mb-0"><i class="bi bi-info-circle"></i> Directory Information</h5>
@@ -61,7 +82,9 @@
                     <tr>
                         <td>
                             <i class="bi bi-folder-fill text-warning"></i>
-                            <strong>{{ dir.name }}</strong>
+                            <a href="{{ url_for('scans.list_files', scan_id=scan.id, subpath=dir.path) }}" class="text-decoration-none">
+                                <strong>{{ dir.name }}</strong>
+                            </a>
                         </td>
                         <td>
                             <small>{{ dir.modified|int|timestamp_to_datetime }}</small>
@@ -105,7 +128,7 @@
                             {% else %}
                                 <i class="bi bi-file-earmark text-muted"></i>
                             {% endif %}
-                            <a href="{{ url_for('scans.view_file', scan_id=scan.id, filename=file.name) }}" 
+                            <a href="{{ url_for('scans.view_file', scan_id=scan.id, filename=file.path) }}" 
                                target="_blank" 
                                class="text-decoration-none">
                                 <code>{{ file.name }}</code>
