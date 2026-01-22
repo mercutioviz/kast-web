@@ -1,7 +1,9 @@
-#!/usr/bin/env python3
+#!/opt/kast-web/venv/bin/python3
 """
 Script to reset a user's password from the command line
-Usage: python scripts/reset_password.py
+Usage: 
+  As www-data user: sudo -u www-data /opt/kast-web/scripts/reset_password.py
+  Or with wrapper: sudo /opt/kast-web/scripts/reset_password_wrapper.sh
 """
 
 import sys
