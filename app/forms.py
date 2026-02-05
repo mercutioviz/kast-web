@@ -111,6 +111,7 @@ class ScanConfigForm(FlaskForm):
     zap_plan_id = SelectField(
         'ZAP Automation Plan',
         coerce=int,
+        validators=[Optional()],  # Optional since not all users can access this
         choices=[],  # Populated dynamically based on user role
         render_kw={
             'class': 'form-select',
@@ -121,6 +122,7 @@ class ScanConfigForm(FlaskForm):
     zap_config_id = SelectField(
         'ZAP Execution Configuration',
         coerce=int,
+        validators=[Optional()],  # Optional since ZAP plugin may not be selected
         choices=[],  # Populated dynamically from ZapConfiguration
         render_kw={
             'class': 'form-select',

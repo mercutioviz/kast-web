@@ -73,8 +73,9 @@ def index():
         if default_zap_plan:
             form.zap_plan_id.data = default_zap_plan.id
     else:
-        # Standard users can't configure ZAP
+        # Standard users can't configure ZAP - set to default
         form.zap_plan_id.choices = [(0, 'Use Default ZAP Plan')]
+        form.zap_plan_id.data = 0  # Explicitly set to 0 (default)
     
     # Populate ZAP execution configuration choices (all users)
     zap_configs = ZapConfiguration.query.filter_by(is_active=True).order_by(ZapConfiguration.name).all()
@@ -86,10 +87,12 @@ def index():
         zap_config_choices.append((config.id, label))
     form.zap_config_id.choices = zap_config_choices
     
-    # Set default ZAP config if one exists
+    # Set default ZAP config if one exists, otherwise explicitly set to 0
     default_zap_config = ZapConfiguration.query.filter_by(is_default=True).first()
     if default_zap_config:
         form.zap_config_id.data = default_zap_config.id
+    else:
+        form.zap_config_id.data = 0  # Explicitly set to 0 (default)
     
     # Get recent scans for display (user's own scans unless admin)
     if current_user.is_admin:
@@ -215,25 +218,40 @@ def create_scan():
         if form.plugins.data and 'zap' in form.plugins.data:
             # ZAP plan (admin/power users only)
             if current_user.is_power_user or current_user.is_admin:
-                if form.zap_plan_id.data and form.zap_plan_id.data != 0:
-                    zap_plan_id = form.zap_plan_id.data
-                    
-                    # Validate plan access for power users
-                    if not current_user.is_admin:
-                        plan = ZapAutomationPlan.query.get(zap_plan_id)
-                        if plan and not plan.allow_power_users:
-                            flash('You do not have permission to use this ZAP automation plan.', 'danger')
-                            return redirect(url_for('main.index'))
+                # Safely get zap_plan_id, handling None or invalid values
+                try:
+                    if form.zap_plan_id.data and form.zap_plan_id.data != 0:
+                        zap_plan_id = form.zap_plan_id.data
+                        
+                        # Validate plan access for power users
+                        if not current_user.is_admin:
+                            plan = ZapAutomationPlan.query.get(zap_plan_id)
+                            if plan and not plan.allow_power_users:
+                                flash('You do not have permission to use this ZAP automation plan.', 'danger')
+                                return redirect(url_for('main.index'))
+                except (ValueError, TypeError):
+                    # Invalid value, ignore and use default
+                    current_app.logger.warning(f"Invalid zap_plan_id value: {form.zap_plan_id.data}")
+                    zap_plan_id = None
+            else:
+                # Standard users cannot select ZAP plans, always use default
+                zap_plan_id = None
             
             # ZAP execution config (all users)
-            if form.zap_config_id.data and form.zap_config_id.data != 0:
-                zap_config_id = form.zap_config_id.data
-                
-                # Validate config is active
-                config = ZapConfiguration.query.get(zap_config_id)
-                if config and not config.is_active:
-                    flash('The selected ZAP configuration is not active.', 'danger')
-                    return redirect(url_for('main.index'))
+            # Safely get zap_config_id, handling None or invalid values
+            try:
+                if form.zap_config_id.data and form.zap_config_id.data != 0:
+                    zap_config_id = form.zap_config_id.data
+                    
+                    # Validate config is active
+                    config = ZapConfiguration.query.get(zap_config_id)
+                    if config and not config.is_active:
+                        flash('The selected ZAP configuration is not active.', 'danger')
+                        return redirect(url_for('main.index'))
+            except (ValueError, TypeError):
+                # Invalid value, ignore and use default
+                current_app.logger.warning(f"Invalid zap_config_id value: {form.zap_config_id.data}")
+                zap_config_id = None
         
         # Create scan record (assign to current user)
         scan = Scan(
