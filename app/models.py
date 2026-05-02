@@ -615,7 +615,10 @@ class ZapConfiguration(db.Model):
     # Settings
     is_active = db.Column(db.Boolean, default=True)
     is_default = db.Column(db.Boolean, default=False)
-    
+
+    # Phase D: reference to the new cloud credentials table
+    cloud_credential_id = db.Column(db.Integer, db.ForeignKey('cloud_credentials.id'), nullable=True)
+
     # Metadata
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -624,6 +627,7 @@ class ZapConfiguration(db.Model):
     
     # Relationships
     creator = db.relationship('User', backref='created_zap_configs')
+    cloud_credential = db.relationship('CloudCredential', backref='zap_configurations')
     
     def __repr__(self):
         return f'<ZapConfiguration {self.id}: {self.name}>'
@@ -714,6 +718,97 @@ class ZapConfiguration(db.Model):
                     masked[key] = '********'
         
         return masked
+
+
+class CloudCredential(db.Model):
+    """Encrypted cloud-provider credentials (Phase D)."""
+    __tablename__ = 'cloud_credentials'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    provider = db.Column(db.String(20), nullable=False)  # aws, azure, gcp
+    credentials_encrypted = db.Column(db.Text, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+
+    creator = db.relationship('User', backref='cloud_credentials')
+
+    def __repr__(self):
+        return f'<CloudCredential {self.id}: {self.name} ({self.provider})>'
+
+    @property
+    def credentials(self):
+        if self.credentials_encrypted:
+            from app.encryption import decrypt_json
+            return decrypt_json(self.credentials_encrypted)
+        return {}
+
+    @credentials.setter
+    def credentials(self, value):
+        from app.encryption import encrypt_json
+        self.credentials_encrypted = encrypt_json(value)
+
+
+class CloudScan(db.Model):
+    """Tracks provisioned cloud infrastructure for a scan (Phase D)."""
+    __tablename__ = 'cloud_scans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), nullable=False, index=True)
+    cloud_credential_id = db.Column(db.Integer, db.ForeignKey('cloud_credentials.id'), nullable=False)
+    provider = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default='provisioning')
+    # provisioning, provisioned, scan_running, scan_complete, teardown, torn_down, failed
+    zap_url = db.Column(db.String(255))
+    zap_api_key_encrypted = db.Column(db.Text)
+    terraform_state_path = db.Column(db.String(255))
+    error_message = db.Column(db.Text)
+    provisioned_at = db.Column(db.DateTime)
+    torn_down_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+
+    scan = db.relationship('Scan', backref=db.backref('cloud_scan', uselist=False))
+    credential = db.relationship('CloudCredential', backref='cloud_scans')
+
+    def __repr__(self):
+        return f'<CloudScan {self.id}: scan={self.scan_id} status={self.status}>'
+
+    @property
+    def zap_api_key(self):
+        if self.zap_api_key_encrypted:
+            from app.encryption import decrypt_value
+            return decrypt_value(self.zap_api_key_encrypted)
+        return None
+
+    @zap_api_key.setter
+    def zap_api_key(self, value):
+        from app.encryption import encrypt_value
+        self.zap_api_key_encrypted = encrypt_value(value) if value else None
+
+
+class CloudOrphan(db.Model):
+    """Tracks cloud resources that outlived their scan and need cleanup (Phase D)."""
+    __tablename__ = 'cloud_orphans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(20), nullable=False)
+    resource_id = db.Column(db.String(255), nullable=False)
+    resource_type = db.Column(db.String(50), nullable=False)
+    cloud_scan_id = db.Column(db.Integer, db.ForeignKey('cloud_scans.id'), nullable=True)
+    detected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    cleanup_attempts = db.Column(db.Integer, default=0)
+    last_cleanup_attempt = db.Column(db.DateTime)
+    status = db.Column(db.String(20), nullable=False, default='detected')
+    # detected, cleanup_pending, cleaning, cleaned, failed
+    error_message = db.Column(db.Text)
+
+    cloud_scan = db.relationship('CloudScan', backref='orphans')
+
+    def __repr__(self):
+        return f'<CloudOrphan {self.id}: {self.provider}/{self.resource_type}/{self.resource_id}>'
 
 
 class ZapScanProgress(db.Model):
