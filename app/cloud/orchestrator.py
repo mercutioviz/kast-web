@@ -13,7 +13,7 @@ Exceptions raised here bubble up to the Celery task, which marks the Scan
 as failed and ensures teardown is still scheduled.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
 from flask import current_app
@@ -188,7 +188,7 @@ def provision_for_scan(scan_id: int) -> ProvisionResult:
     cloud_scan.zap_url = result["zap_url"]
     cloud_scan.zap_api_key = result["zap_api_key"]
     cloud_scan.terraform_state_path = result["terraform_state_path"]
-    cloud_scan.provisioned_at = datetime.utcnow()
+    cloud_scan.provisioned_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.session.commit()
 
     AuditLog.log(
@@ -252,7 +252,7 @@ def teardown_for_scan(cloud_scan_id: int) -> None:
     if not cloud_scan.terraform_state_path:
         # Provisioning failed before Terraform ran — nothing to destroy
         cloud_scan.status = "torn_down"
-        cloud_scan.torn_down_at = datetime.utcnow()
+        cloud_scan.torn_down_at = datetime.now(timezone.utc).replace(tzinfo=None)
         db.session.commit()
         return
 
@@ -269,7 +269,7 @@ def teardown_for_scan(cloud_scan_id: int) -> None:
         raise CloudTeardownError(str(exc)) from exc
 
     cloud_scan.status = "torn_down"
-    cloud_scan.torn_down_at = datetime.utcnow()
+    cloud_scan.torn_down_at = datetime.now(timezone.utc).replace(tzinfo=None)
     cloud_scan.error_message = None
     db.session.commit()
 
@@ -304,7 +304,7 @@ def cleanup_orphans() -> dict:
     """
     from app.models import CloudScan
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     detected = 0
     scheduled = 0
     errors = []

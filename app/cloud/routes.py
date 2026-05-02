@@ -20,7 +20,7 @@ All admin mutations write an AuditLog entry.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 from flask import Blueprint, jsonify, render_template, redirect, url_for, flash, request
@@ -127,7 +127,7 @@ def api_cloud_orphan_cleanup(orphan_id: int):
         if orphan.cloud_scan_id:
             cloud_teardown_task.delay(orphan.cloud_scan_id)
         orphan.cleanup_attempts = (orphan.cleanup_attempts or 0) + 1
-        orphan.last_cleanup_attempt = datetime.utcnow()
+        orphan.last_cleanup_attempt = datetime.now(timezone.utc).replace(tzinfo=None)
         db.session.commit()
 
         AuditLog.log(
