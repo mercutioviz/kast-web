@@ -813,6 +813,72 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         pass  # Placeholder to keep finally block valid
 
 
+# ---------------------------------------------------------------------------
+# D4 — Cloud lifecycle tasks
+# ---------------------------------------------------------------------------
+
+@celery.task(bind=True)
+def cloud_provision_task(self, scan_id):
+    """Provision cloud infrastructure (Terraform + SSH + ZAP) for a scan.
+
+    Returns dict with keys: success, cloud_scan_id, zap_url, zap_api_key,
+    instance_id on success; success=False and error on failure.
+    """
+    from flask import current_app
+    from app.cloud.orchestrator import (
+        provision_for_scan, CloudProvisionError, CredentialError,
+    )
+
+    current_app.logger.info("[cloud_provision_task] scan_id=%d", scan_id)
+    try:
+        result = provision_for_scan(scan_id)
+        return {"success": True, **result}
+    except (CloudProvisionError, CredentialError, ValueError) as exc:
+        cloud_scan_id = getattr(exc, "cloud_scan_id", None)
+        current_app.logger.error(
+            "[cloud_provision_task] scan %d failed: %s", scan_id, exc
+        )
+        return {"success": False, "error": str(exc), "cloud_scan_id": cloud_scan_id}
+
+
+@celery.task(bind=True)
+def cloud_teardown_task(self, cloud_scan_id):
+    """Tear down cloud infrastructure for a CloudScan row.
+
+    Idempotent; safe to call multiple times. Returns success/error dict.
+    """
+    from flask import current_app
+    from app.cloud.orchestrator import teardown_for_scan, CloudTeardownError
+
+    current_app.logger.info("[cloud_teardown_task] cloud_scan_id=%d", cloud_scan_id)
+    try:
+        teardown_for_scan(cloud_scan_id)
+        return {"success": True}
+    except CloudTeardownError as exc:
+        current_app.logger.error(
+            "[cloud_teardown_task] cloud_scan %d failed: %s", cloud_scan_id, exc
+        )
+        return {"success": False, "error": str(exc)}
+
+
+@celery.task
+def cloud_orphan_cleanup_task():
+    """Detect orphaned cloud resources and dispatch teardown tasks.
+
+    Scheduled by Celery Beat every 15 minutes. Returns detected/scheduled/errors.
+    """
+    from flask import current_app
+    from app.cloud.orchestrator import cleanup_orphans
+
+    current_app.logger.info("[cloud_orphan_cleanup_task] starting orphan scan")
+    result = cleanup_orphans()
+    current_app.logger.info(
+        "[cloud_orphan_cleanup_task] detected=%d scheduled=%d errors=%d",
+        result["detected"], result["scheduled"], len(result["errors"]),
+    )
+    return result
+
+
 def parse_scan_results(scan_id, output_dir):
     """
     Parse scan results from output directory and store in database
