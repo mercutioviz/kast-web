@@ -1,0 +1,37 @@
+[Unit]
+Description=KAST Web Application v2 (Gunicorn)
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+RuntimeDirectory=kast-web2
+WorkingDirectory=/opt/kast-web2
+Environment="PATH=/opt/kast-web2/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/opt/kast-web2/.env
+
+ExecStartPre=/bin/mkdir -p /var/log/kast-web2 /var/run/kast-web2
+ExecStartPre=/bin/chown www-data:www-data /var/log/kast-web2 /var/run/kast-web2
+
+ExecStart=/opt/kast-web2/venv/bin/gunicorn \
+    --bind 127.0.0.1:8001 \
+    --workers 4 \
+    --timeout 120 \
+    --access-logfile /var/log/kast-web2/access.log \
+    --error-logfile /var/log/kast-web2/error.log \
+    --log-level info \
+    wsgi:app
+
+Restart=always
+RestartSec=10
+KillMode=mixed
+TimeoutStopSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
