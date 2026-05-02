@@ -73,11 +73,11 @@ if [[ -n "$NEW_MIG_FILES" ]]; then
     read -rp "Run them now? [y/N] " ans
     if [[ "$ans" =~ ^[Yy]$ ]]; then
         for mig in $NEW_MIG_FILES; do
-            green "Running $mig..."
-            venv/bin/python "$mig"
+            green "Running $mig (as www-data)..."
+            sudo -u www-data bash -c "cd $PROD_DIR && set -a && source .env && set +a && venv/bin/python $mig"
         done
     else
-        yellow "Skipped migrations. Run them manually before testing."
+        yellow "Skipped migrations. Run them manually with: sudo -u www-data bash -c 'cd $PROD_DIR && set -a && source .env && set +a && venv/bin/python <script>'"
     fi
 fi
 
