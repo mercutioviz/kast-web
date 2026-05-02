@@ -912,3 +912,57 @@ class ZapConfigurationForm(FlaskForm):
             config = ZapConfiguration.query.filter_by(name=name.data).first()
             if config:
                 raise ValidationError('A configuration with this name already exists. Please choose a different name.')
+
+
+class CloudCredentialForm(FlaskForm):
+    """Form for creating and editing CloudCredential rows."""
+
+    name = StringField(
+        'Credential Name',
+        validators=[
+            DataRequired(message='Name is required'),
+            Length(min=2, max=100),
+        ],
+        render_kw={'placeholder': 'e.g., AWS Prod, GCP East', 'class': 'form-control'},
+    )
+
+    provider = SelectField(
+        'Cloud Provider',
+        choices=[
+            ('aws', 'AWS — Amazon Web Services'),
+            ('azure', 'Azure — Microsoft Azure'),
+            ('gcp', 'GCP — Google Cloud Platform'),
+        ],
+        validators=[DataRequired()],
+        render_kw={'class': 'form-select', 'id': 'provider-select'},
+    )
+
+    credentials_json = TextAreaField(
+        'Credentials (JSON)',
+        validators=[DataRequired(message='Credentials JSON is required')],
+        render_kw={
+            'class': 'form-control font-monospace',
+            'rows': 8,
+            'placeholder': '{ "access_key_id": "...", "secret_access_key": "..." }',
+            'id': 'credentials-json',
+        },
+    )
+
+    is_active = BooleanField(
+        'Active',
+        default=True,
+        render_kw={'class': 'form-check-input'},
+    )
+
+    submit = SubmitField('Save Credential', render_kw={'class': 'btn btn-primary'})
+
+    def validate_credentials_json(self, field):
+        import json
+        try:
+            data = json.loads(field.data)
+        except (ValueError, TypeError):
+            raise ValidationError('Must be valid JSON.')
+        if not isinstance(data, dict):
+            raise ValidationError('Must be a JSON object.')
+        if not data:
+            raise ValidationError('Credentials cannot be empty.')

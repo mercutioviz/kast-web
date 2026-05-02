@@ -249,11 +249,18 @@ def teardown_for_scan(cloud_scan_id: int) -> None:
     cloud_scan.status = "tearing_down"
     db.session.commit()
 
+    if not cloud_scan.terraform_state_path:
+        # Provisioning failed before Terraform ran — nothing to destroy
+        cloud_scan.status = "torn_down"
+        cloud_scan.torn_down_at = datetime.utcnow()
+        db.session.commit()
+        return
+
     try:
         provider = _get_provider(cloud_scan.provider)
         provider.teardown(
-            instance_id=cloud_scan.terraform_state_path or "",
-            state_path=cloud_scan.terraform_state_path or "",
+            instance_id=cloud_scan.terraform_state_path,
+            state_path=cloud_scan.terraform_state_path,
         )
     except Exception as exc:
         cloud_scan.status = "orphaned"

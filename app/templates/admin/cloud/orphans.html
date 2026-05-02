@@ -1,0 +1,174 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}Cloud Orphans - Admin Panel{% endblock %}
+{% block admin_title %}Cloud Infrastructure{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Cloud Orphans</li>
+{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-exclamation-triangle"></i> Cloud Orphans</h2>
+            <p class="text-muted mb-0">Cloud resources that could not be reconciled — manual teardown may be required</p>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('cloud.admin_cloud_credentials') }}">
+                <i class="fas fa-key"></i> Credentials
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('cloud.admin_cloud_scans') }}">
+                <i class="fas fa-cloud"></i> Cloud Scans
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="{{ url_for('cloud.admin_cloud_orphans') }}">
+                <i class="fas fa-exclamation-triangle"></i> Orphans
+                {% if orphans %}<span class="badge bg-danger">{{ orphans|length }}</span>{% endif %}
+            </a>
+        </li>
+    </ul>
+
+    {% if orphans %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle"></i>
+        <strong>{{ orphans|length }} orphaned resource(s) detected.</strong>
+        The cleanup task runs every 15 minutes. Use the buttons below to trigger immediate teardown.
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Orphaned Resources
+                <span class="badge bg-{{ 'danger' if orphans else 'secondary' }}">{{ orphans|length }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if orphans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Provider</th>
+                            <th>Resource</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Detected</th>
+                            <th>Attempts</th>
+                            <th>Error</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for orphan in orphans %}
+                        <tr>
+                            <td>{{ orphan.id }}</td>
+                            <td><span class="badge bg-secondary">{{ orphan.provider }}</span></td>
+                            <td><code class="small">{{ orphan.resource_id }}</code></td>
+                            <td>{{ orphan.resource_type }}</td>
+                            <td>
+                                {% if orphan.status == 'cleaned' %}
+                                <span class="badge bg-success">cleaned</span>
+                                {% elif orphan.status == 'manual_review' %}
+                                <span class="badge bg-warning text-dark">manual review</span>
+                                {% else %}
+                                <span class="badge bg-danger">{{ orphan.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {{ orphan.detected_at.strftime('%Y-%m-%d %H:%M') if orphan.detected_at else '—' }}
+                            </td>
+                            <td>{{ orphan.cleanup_attempts or 0 }}</td>
+                            <td>
+                                {% if orphan.error_message %}
+                                <span class="text-danger small" title="{{ orphan.error_message }}">
+                                    {{ orphan.error_message[:50] }}{% if orphan.error_message|length > 50 %}…{% endif %}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if orphan.cloud_scan_id %}
+                                <button class="btn btn-sm btn-outline-danger cleanup-btn"
+                                        data-orphan-id="{{ orphan.id }}"
+                                        title="Dispatch teardown task now">
+                                    <i class="fas fa-trash"></i> Cleanup
+                                </button>
+                                {% else %}
+                                <span class="text-muted small">No scan ref</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
+                <p>No orphaned resources detected.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block admin_js %}
+<script>
+document.querySelectorAll('.cleanup-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        const orphanId = this.dataset.orphanId;
+        if (!confirm('Dispatch teardown task for orphan #' + orphanId + '?')) return;
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+        fetch('/api/cloud/orphans/' + orphanId + '/cleanup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]') ?
+                    document.querySelector('meta[name="csrf-token"]').content : ''
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                btn.innerHTML = '<i class="fas fa-check"></i> Dispatched';
+                btn.classList.remove('btn-outline-danger');
+                btn.classList.add('btn-outline-success');
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-trash"></i> Cleanup';
+                alert('Error: ' + (data.error || 'Unknown error'));
+            }
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-trash"></i> Cleanup';
+            alert('Request failed: ' + err);
+        });
+    });
+});
+</script>
+{% endblock %}
