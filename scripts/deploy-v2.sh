@@ -35,7 +35,7 @@ fi
 cd "$PROD_DIR"
 
 OLD_SHA=$(git rev-parse HEAD)
-OLD_REQ=$(sha256sum requirements.txt | awk '{print $1}')
+OLD_REQ=$(sha256sum requirements-production.txt | awk '{print $1}')
 OLD_MIGS=$(ls utils/migrate_*.py 2>/dev/null | sort)
 
 green "Fetching $BRANCH from dev remote..."
@@ -58,12 +58,12 @@ echo
 
 git reset --hard FETCH_HEAD
 
-NEW_REQ=$(sha256sum requirements.txt | awk '{print $1}')
+NEW_REQ=$(sha256sum requirements-production.txt | awk '{print $1}')
 NEW_MIGS=$(ls utils/migrate_*.py 2>/dev/null | sort)
 
 if [[ "$OLD_REQ" != "$NEW_REQ" ]]; then
-    green "requirements.txt changed; running pip install..."
-    venv/bin/pip install --quiet -r requirements.txt
+    green "requirements-production.txt changed; running pip install..."
+    venv/bin/pip install --quiet -r requirements-production.txt
 fi
 
 NEW_MIG_FILES=$(comm -13 <(echo "$OLD_MIGS") <(echo "$NEW_MIGS") || true)
