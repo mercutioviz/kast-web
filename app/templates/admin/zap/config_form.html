@@ -171,11 +171,45 @@
                         <h5 class="mb-0"><i class="fas fa-cloud"></i> Cloud Configuration</h5>
                     </div>
                     <div class="card-body">
+                        <!-- Cloud Credential -->
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="fas fa-key"></i> Cloud Credential
+                            </label>
+                            {% if cloud_credentials %}
+                            <select id="cloud_credential_id" name="cloud_credential_id" class="form-select">
+                                <option value="0">— Select a cloud credential —</option>
+                                {% for cred in cloud_credentials %}
+                                <option value="{{ cred.id }}"
+                                        data-provider="{{ cred.provider }}"
+                                        {% if form.cloud_credential_id.data == cred.id %}selected{% endif %}>
+                                    {{ cred.name }} ({{ cred.provider | upper }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">
+                                Credentials are managed at
+                                <a href="{{ url_for('cloud.admin_cloud_credentials') }}" target="_blank">
+                                    Admin &rsaquo; Cloud &rsaquo; Credentials
+                                </a>.
+                            </small>
+                            {% else %}
+                            <div class="alert alert-warning mb-0">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                No active cloud credentials found.
+                                <a href="{{ url_for('cloud.admin_cloud_credentials') }}" class="alert-link">
+                                    Create one first.
+                                </a>
+                            </div>
+                            <input type="hidden" name="cloud_credential_id" value="0">
+                            {% endif %}
+                        </div>
+
                         <!-- Provider Selection -->
                         <div class="mb-3">
                             {{ form.cloud_provider.label(class="form-label") }}
                             {{ form.cloud_provider(class="form-select") }}
-                            <small class="form-text text-muted">Select your cloud provider</small>
+                            <small class="form-text text-muted">Must match the provider of the selected credential above.</small>
                         </div>
 
                         <!-- CIDR Blocks Configuration -->
@@ -205,7 +239,7 @@
                         <!-- AWS-specific Configuration -->
                         <div class="provider-config" id="aws-config" style="display: none;">
                             <h6 class="border-bottom pb-2 mb-3">
-                                <i class="fab fa-aws"></i> AWS Configuration
+                                <i class="fab fa-aws"></i> AWS Deployment Configuration
                             </h6>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
@@ -226,31 +260,12 @@
                                 {{ form.aws_spot_max_price(class="form-control") }}
                                 <small class="form-text text-muted">Leave empty for on-demand pricing</small>
                             </div>
-                            <div class="alert alert-info">
-                                <i class="fas fa-info-circle"></i> <strong>AWS Credentials</strong><br>
-                                By default, KAST will use AWS CLI credentials (<code>~/.aws/credentials</code>). 
-                                You only need to provide keys if you want to use different credentials.
-                            </div>
-                            <div class="mb-3">
-                                {{ form.aws_access_key.label(class="form-label") }}
-                                {{ form.aws_access_key(class="form-control") }}
-                                {% if mode == 'edit' %}
-                                <small class="form-text text-muted">Leave blank to keep existing</small>
-                                {% endif %}
-                            </div>
-                            <div class="mb-3">
-                                {{ form.aws_secret_key.label(class="form-label") }}
-                                {{ form.aws_secret_key(class="form-control") }}
-                                {% if mode == 'edit' %}
-                                <small class="form-text text-muted">Leave blank to keep existing</small>
-                                {% endif %}
-                            </div>
                         </div>
 
                         <!-- Azure-specific Configuration -->
                         <div class="provider-config" id="azure-config" style="display: none;">
                             <h6 class="border-bottom pb-2 mb-3">
-                                <i class="fab fa-microsoft"></i> Azure Configuration
+                                <i class="fab fa-microsoft"></i> Azure Deployment Configuration
                             </h6>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
@@ -262,25 +277,6 @@
                                     {{ form.azure_vm_size(class="form-select") }}
                                 </div>
                             </div>
-                            <div class="mb-3">
-                                {{ form.azure_subscription_id.label(class="form-label") }}
-                                {{ form.azure_subscription_id(class="form-control") }}
-                            </div>
-                            <div class="mb-3">
-                                {{ form.azure_tenant_id.label(class="form-label") }}
-                                {{ form.azure_tenant_id(class="form-control") }}
-                            </div>
-                            <div class="mb-3">
-                                {{ form.azure_client_id.label(class="form-label") }}
-                                {{ form.azure_client_id(class="form-control") }}
-                            </div>
-                            <div class="mb-3">
-                                {{ form.azure_client_secret.label(class="form-label") }}
-                                {{ form.azure_client_secret(class="form-control") }}
-                                {% if mode == 'edit' %}
-                                <small class="form-text text-muted">Leave blank to keep existing</small>
-                                {% endif %}
-                            </div>
                             <div class="form-check">
                                 {{ form.azure_spot_enabled(class="form-check-input") }}
                                 {{ form.azure_spot_enabled.label(class="form-check-label") }}
@@ -291,7 +287,7 @@
                         <!-- GCP-specific Configuration -->
                         <div class="provider-config" id="gcp-config" style="display: none;">
                             <h6 class="border-bottom pb-2 mb-3">
-                                <i class="fab fa-google"></i> Google Cloud Platform Configuration
+                                <i class="fab fa-google"></i> GCP Deployment Configuration
                             </h6>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
@@ -307,27 +303,6 @@
                             <div class="mb-3">
                                 {{ form.gcp_machine_type.label(class="form-label") }}
                                 {{ form.gcp_machine_type(class="form-select") }}
-                            </div>
-                            <div class="mb-3">
-                                {{ form.gcp_project_id.label(class="form-label") }}
-                                {{ form.gcp_project_id(class="form-control") }}
-                            </div>
-                            
-                            <div class="alert alert-info">
-                                <i class="fas fa-info-circle"></i> <strong>Service Account Credentials</strong><br>
-                                Provide either a file path to your service account JSON key OR paste the JSON directly below.
-                            </div>
-                            
-                            <div class="mb-3">
-                                {{ form.gcp_credentials_file.label(class="form-label") }}
-                                {{ form.gcp_credentials_file(class="form-control") }}
-                            </div>
-                            <div class="mb-3">
-                                {{ form.gcp_credentials_json.label(class="form-label") }}
-                                {{ form.gcp_credentials_json(class="form-control font-monospace") }}
-                                {% if mode == 'edit' %}
-                                <small class="form-text text-muted">Leave blank to keep existing credentials</small>
-                                {% endif %}
                             </div>
                             <div class="form-check">
                                 {{ form.gcp_preemptible(class="form-check-input") }}
@@ -867,15 +842,38 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
         updateRemoteConnectionPreview();
         updateCloudCommandPreview();
         
-        // Auto-populate CIDRs when switching to cloud mode (for new configs only)
+        // Auto-populate CIDRs and filter credentials when switching to cloud mode
         if (modeSelect.value === 'cloud') {
             autoPopulateCidrs();
+            filterCredentialsByProvider();
         }
     });
     cloudProviderSelect.addEventListener('change', () => {
         updateCloudProviderVisibility();
         updateCloudCommandPreview();
+        filterCredentialsByProvider();
     });
+
+    // Filter credential dropdown to show only credentials matching selected provider
+    const credentialSelect = document.getElementById('cloud_credential_id');
+
+    function filterCredentialsByProvider() {
+        if (!credentialSelect) return;
+        const provider = cloudProviderSelect.value;
+        const options = credentialSelect.querySelectorAll('option');
+        let firstMatch = null;
+        options.forEach(opt => {
+            if (!opt.value || opt.value === '0') return;
+            const match = !provider || opt.dataset.provider === provider;
+            opt.hidden = !match;
+            if (match && !firstMatch) firstMatch = opt;
+        });
+        // If current selection is now hidden, reset to placeholder
+        const selected = credentialSelect.options[credentialSelect.selectedIndex];
+        if (selected && selected.hidden) {
+            credentialSelect.value = '0';
+        }
+    }
     gcpRegionSelect.addEventListener('change', updateGcpZone);
     cidrTextarea.addEventListener('blur', normalizeCidrs);
     cidrTextarea.addEventListener('input', validateCidrs);
@@ -1032,7 +1030,7 @@ az vm create --resource-group kast-zap-rg --name kast-zap-vm \\
         const region = document.getElementById('gcp_region')?.value || 'us-central1';
         const zone = document.getElementById('gcp_zone')?.value || 'us-central1-a';
         const machineType = document.getElementById('gcp_machine_type')?.value || 'n1-standard-2';
-        const projectId = document.getElementById('gcp_project_id')?.value || '[project-id]';
+        const projectId = '[from cloud credential]';
         const preemptible = document.getElementById('gcp_preemptible')?.checked || false;
         
         const cidrList = cidrs.join(',') || '0.0.0.0/0';
@@ -1126,7 +1124,7 @@ gcloud compute instances create kast-zap-vm \\
     const cloudInputs = [
         'aws_region', 'aws_instance_type', 'aws_spot_max_price',
         'azure_region', 'azure_vm_size', 'azure_spot_enabled',
-        'gcp_region', 'gcp_zone', 'gcp_machine_type', 'gcp_project_id', 'gcp_preemptible'
+        'gcp_region', 'gcp_zone', 'gcp_machine_type', 'gcp_preemptible'
     ];
     
     cloudInputs.forEach(inputId => {
@@ -1153,7 +1151,7 @@ gcloud compute instances create kast-zap-vm \\
             updateRemoteConnectionPreview();
         } else if (initialMode === 'cloud') {
             updateCloudCommandPreview();
-            // Auto-populate CIDRs if this is a new config (create mode)
+            filterCredentialsByProvider();
             {% if mode == 'create' %}
             autoPopulateCidrs();
             {% endif %}

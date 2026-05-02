@@ -640,6 +640,14 @@ class ZapConfigurationForm(FlaskForm):
     )
     
     # Cloud configuration
+    cloud_credential_id = SelectField(
+        'Cloud Credential',
+        choices=[],
+        coerce=int,
+        validators=[Optional()],
+        render_kw={'class': 'form-select', 'id': 'cloud_credential_id'}
+    )
+
     cloud_provider = SelectField(
         'Cloud Provider',
         choices=[
@@ -706,34 +714,6 @@ class ZapConfigurationForm(FlaskForm):
         }
     )
     
-    aws_access_key = StringField(
-        'Access Key (Optional)',
-        validators=[
-            Optional(),
-            Length(max=200, message='Access key must not exceed 200 characters')
-        ],
-        render_kw={
-            'placeholder': 'Leave empty to use AWS CLI credentials',
-            'class': 'form-control',
-            'type': 'password',
-            'data-provider': 'aws'
-        }
-    )
-    
-    aws_secret_key = StringField(
-        'Secret Key (Optional)',
-        validators=[
-            Optional(),
-            Length(max=200, message='Secret key must not exceed 200 characters')
-        ],
-        render_kw={
-            'placeholder': 'Leave empty to use AWS CLI credentials',
-            'class': 'form-control',
-            'type': 'password',
-            'data-provider': 'aws'
-        }
-    )
-    
     # Azure-specific fields
     azure_region = SelectField(
         'Azure Region',
@@ -747,59 +727,6 @@ class ZapConfigurationForm(FlaskForm):
         choices=[('', 'Select VM Size')] + AZURE_VM_SIZES,
         validators=[Optional()],
         render_kw={'class': 'form-select', 'data-provider': 'azure'}
-    )
-    
-    azure_subscription_id = StringField(
-        'Subscription ID',
-        validators=[
-            Optional(),
-            Length(max=100, message='Subscription ID must not exceed 100 characters')
-        ],
-        render_kw={
-            'placeholder': 'Azure subscription ID',
-            'class': 'form-control',
-            'data-provider': 'azure'
-        }
-    )
-    
-    azure_tenant_id = StringField(
-        'Tenant ID',
-        validators=[
-            Optional(),
-            Length(max=100, message='Tenant ID must not exceed 100 characters')
-        ],
-        render_kw={
-            'placeholder': 'Azure tenant ID',
-            'class': 'form-control',
-            'data-provider': 'azure'
-        }
-    )
-    
-    azure_client_id = StringField(
-        'Client ID',
-        validators=[
-            Optional(),
-            Length(max=100, message='Client ID must not exceed 100 characters')
-        ],
-        render_kw={
-            'placeholder': 'Service principal client ID',
-            'class': 'form-control',
-            'data-provider': 'azure'
-        }
-    )
-    
-    azure_client_secret = StringField(
-        'Client Secret',
-        validators=[
-            Optional(),
-            Length(max=200, message='Client secret must not exceed 200 characters')
-        ],
-        render_kw={
-            'placeholder': 'Service principal client secret',
-            'class': 'form-control',
-            'type': 'password',
-            'data-provider': 'azure'
-        }
     )
     
     azure_spot_enabled = BooleanField(
@@ -835,46 +762,6 @@ class ZapConfigurationForm(FlaskForm):
         choices=[('', 'Select Machine Type')] + GCP_MACHINE_TYPES,
         validators=[Optional()],
         render_kw={'class': 'form-select', 'data-provider': 'gcp'}
-    )
-    
-    gcp_project_id = StringField(
-        'Project ID',
-        validators=[
-            Optional(),
-            Length(max=100, message='Project ID must not exceed 100 characters')
-        ],
-        render_kw={
-            'placeholder': 'GCP project ID',
-            'class': 'form-control',
-            'data-provider': 'gcp'
-        }
-    )
-    
-    gcp_credentials_file = StringField(
-        'Service Account Key File Path',
-        validators=[
-            Optional(),
-            Length(max=500, message='File path must not exceed 500 characters')
-        ],
-        render_kw={
-            'placeholder': '/path/to/service-account-key.json',
-            'class': 'form-control',
-            'data-provider': 'gcp'
-        }
-    )
-    
-    gcp_credentials_json = TextAreaField(
-        'Service Account Key JSON (Alternative)',
-        validators=[
-            Optional(),
-            Length(max=10000, message='JSON must not exceed 10000 characters')
-        ],
-        render_kw={
-            'placeholder': 'Paste service account JSON key here (alternative to file path)',
-            'class': 'form-control font-monospace',
-            'rows': 8,
-            'data-provider': 'gcp'
-        }
     )
     
     gcp_preemptible = BooleanField(

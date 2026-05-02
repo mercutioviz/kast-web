@@ -7,7 +7,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from functools import wraps
 from app import db
-from app.models import ZapAutomationPlan, ZapConfiguration, AuditLog, Scan, User
+from app.models import ZapAutomationPlan, ZapConfiguration, AuditLog, Scan, User, CloudCredential
 from app.forms import ZapAutomationPlanForm, ZapConfigurationForm
 from app.zap_utils import (
     validate_plan_yaml, parse_plan_jobs, test_docker_connection,
@@ -17,6 +17,19 @@ from app.zap_utils import (
 from datetime import datetime
 
 bp = Blueprint('zap_admin', __name__, url_prefix='/admin/zap')
+
+
+def _populate_credential_choices(form):
+    """Populate cloud_credential_id SelectField choices from active CloudCredentials."""
+    creds = (CloudCredential.query
+             .filter_by(is_active=True)
+             .order_by(CloudCredential.provider, CloudCredential.name)
+             .all())
+    form.cloud_credential_id.choices = (
+        [(0, '— Select a cloud credential —')] +
+        [(c.id, f'{c.name} ({c.provider.upper()})') for c in creds]
+    )
+    return creds
 
 
 def admin_required(f):
@@ -324,9 +337,10 @@ def configs_list():
 @admin_required
 def config_create():
     """Create a new ZAP configuration"""
-    
+
     form = ZapConfigurationForm()
-    
+    cloud_credentials = _populate_credential_choices(form)
+
     if form.validate_on_submit():
         # If setting as default, unset other defaults
         if form.is_default.data:
@@ -360,64 +374,54 @@ def config_create():
                 'verify_ssl': form.remote_verify_ssl.data
             }
         elif form.execution_mode.data == 'cloud':
-            # Parse CIDR blocks
+            if not form.cloud_credential_id.data:
+                flash('A cloud credential must be selected for cloud mode.', 'danger')
+                return render_template('admin/zap/config_form.html', form=form, mode='create',
+                                       cloud_credentials=cloud_credentials)
+
             from app.zap_utils import validate_cidr_list
             cidr_text = form.cloud_allowed_cidrs.data or ''
-            cidr_list = [line.strip() for line in cidr_text.strip().split('\n') 
-                        if line.strip() and not line.strip().startswith('#')]
-            
-            # Validate CIDRs
+            cidr_list = [line.strip() for line in cidr_text.strip().split('\n')
+                         if line.strip() and not line.strip().startswith('#')]
             is_valid, error_msg, normalized_cidrs = validate_cidr_list(cidr_list)
             if not is_valid:
                 flash(f'Invalid CIDR blocks: {error_msg}', 'danger')
-                return render_template('admin/zap/config_form.html', form=form, mode='create')
-            
-            # Build cloud_config based on selected provider
+                return render_template('admin/zap/config_form.html', form=form, mode='create',
+                                       cloud_credentials=cloud_credentials)
+
+            provider = form.cloud_provider.data or 'aws'
             cloud_config = {
-                'provider': form.cloud_provider.data or 'aws',
+                'provider': provider,
                 'allowed_cidrs': normalized_cidrs,
-                'auto_terminate': form.cloud_auto_terminate.data
+                'auto_terminate': form.cloud_auto_terminate.data,
             }
-            
-            # Add provider-specific fields
-            provider = form.cloud_provider.data
             if provider == 'aws':
                 cloud_config.update({
                     'region': form.aws_region.data or '',
                     'instance_type': form.aws_instance_type.data or '',
                     'ami_id': form.aws_ami_id.data or '',
                     'spot_max_price': form.aws_spot_max_price.data or '',
-                    'access_key': form.aws_access_key.data or '',
-                    'secret_key': form.aws_secret_key.data or ''
                 })
             elif provider == 'azure':
                 cloud_config.update({
                     'region': form.azure_region.data or '',
                     'vm_size': form.azure_vm_size.data or '',
-                    'subscription_id': form.azure_subscription_id.data or '',
-                    'tenant_id': form.azure_tenant_id.data or '',
-                    'client_id': form.azure_client_id.data or '',
-                    'client_secret': form.azure_client_secret.data or '',
-                    'spot_enabled': form.azure_spot_enabled.data
+                    'spot_enabled': form.azure_spot_enabled.data,
                 })
             elif provider == 'gcp':
-                # Handle dual credential options (file path OR JSON)
-                credentials = form.gcp_credentials_json.data or form.gcp_credentials_file.data or ''
                 cloud_config.update({
                     'region': form.gcp_region.data or '',
                     'zone': form.gcp_zone.data or '',
                     'machine_type': form.gcp_machine_type.data or '',
-                    'project_id': form.gcp_project_id.data or '',
-                    'credentials': credentials,
-                    'preemptible': form.gcp_preemptible.data
+                    'preemptible': form.gcp_preemptible.data,
                 })
-            
+
             config.cloud_config = cloud_config
-        
+            config.cloud_credential_id = form.cloud_credential_id.data
+
         db.session.add(config)
         db.session.commit()
-        
-        # Log the action
+
         AuditLog.log(
             user_id=current_user.id,
             action='zap_config_created',
@@ -425,32 +429,31 @@ def config_create():
             resource_id=config.id,
             details=f'Created ZAP configuration: {config.name} ({config.execution_mode})'
         )
-        
+
         flash(f'ZAP configuration "{config.name}" created successfully', 'success')
         return redirect(url_for('zap_admin.configs_list'))
-    
-    return render_template('admin/zap/config_form.html', form=form, mode='create')
 
+    return render_template('admin/zap/config_form.html', form=form, mode='create',
+                           cloud_credentials=cloud_credentials)
 
 @bp.route('/configs/<int:config_id>/edit', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def config_edit(config_id):
     """Edit an existing ZAP configuration"""
-    
+
     config = ZapConfiguration.query.get_or_404(config_id)
     form = ZapConfigurationForm()
-    form.obj = config  # Store for name validation
-    
+    form.obj = config
+    cloud_credentials = _populate_credential_choices(form)
+
     if request.method == 'GET':
-        # Populate form with existing data
         form.name.data = config.name
         form.description.data = config.description
         form.execution_mode.data = config.execution_mode
         form.is_active.data = config.is_active
         form.is_default.data = config.is_default
-        
-        # Populate mode-specific fields
+
         if config.execution_mode == 'local':
             local_conf = config.local_config
             form.docker_image.data = local_conf.get('docker_image', '')
@@ -460,163 +463,110 @@ def config_edit(config_id):
         elif config.execution_mode == 'remote':
             remote_conf = config.remote_config
             form.remote_url.data = remote_conf.get('zap_url', '')
-            # Don't populate API key for security (user must re-enter if changing)
             form.remote_timeout.data = remote_conf.get('timeout', 30)
             form.remote_verify_ssl.data = remote_conf.get('verify_ssl', True)
         elif config.execution_mode == 'cloud':
             cloud_conf = config.cloud_config
             form.cloud_provider.data = cloud_conf.get('provider', 'aws')
             form.cloud_auto_terminate.data = cloud_conf.get('auto_terminate', True)
-            
-            # Populate CIDR blocks (convert list to textarea format)
+            form.cloud_credential_id.data = config.cloud_credential_id or 0
+
             if cloud_conf.get('allowed_cidrs'):
                 form.cloud_allowed_cidrs.data = '\n'.join(cloud_conf.get('allowed_cidrs', []))
-            
-            # Populate provider-specific fields based on provider
+
             provider = cloud_conf.get('provider', 'aws')
-            
             if provider == 'aws':
                 form.aws_region.data = cloud_conf.get('region', '')
                 form.aws_instance_type.data = cloud_conf.get('instance_type', '')
                 form.aws_ami_id.data = cloud_conf.get('ami_id', '')
                 form.aws_spot_max_price.data = cloud_conf.get('spot_max_price', '')
-                # Don't populate keys for security
             elif provider == 'azure':
                 form.azure_region.data = cloud_conf.get('region', '')
                 form.azure_vm_size.data = cloud_conf.get('vm_size', '')
-                form.azure_subscription_id.data = cloud_conf.get('subscription_id', '')
-                form.azure_tenant_id.data = cloud_conf.get('tenant_id', '')
-                form.azure_client_id.data = cloud_conf.get('client_id', '')
                 form.azure_spot_enabled.data = cloud_conf.get('spot_enabled', True)
-                # Don't populate client_secret for security
             elif provider == 'gcp':
                 form.gcp_region.data = cloud_conf.get('region', '')
                 form.gcp_zone.data = cloud_conf.get('zone', '')
                 form.gcp_machine_type.data = cloud_conf.get('machine_type', '')
-                form.gcp_project_id.data = cloud_conf.get('project_id', '')
                 form.gcp_preemptible.data = cloud_conf.get('preemptible', True)
-                # Handle dual credentials - show file path if that's what's stored
-                credentials = cloud_conf.get('credentials', '')
-                if credentials and credentials.startswith('/') or credentials.startswith('~'):
-                    form.gcp_credentials_file.data = credentials
-                # Don't populate credentials JSON for security
-    
+
     if form.validate_on_submit():
-        # If setting as default, unset other defaults
         if form.is_default.data and not config.is_default:
-            ZapConfiguration.query.filter_by(is_default=True).update(
-                {'is_default': False}
-            )
-        
-        # Update configuration
+            ZapConfiguration.query.filter_by(is_default=True).update({'is_default': False})
+
         config.name = form.name.data
         config.description = form.description.data
         config.execution_mode = form.execution_mode.data
         config.is_active = form.is_active.data
         config.is_default = form.is_default.data
         config.updated_at = datetime.utcnow()
-        
-        # Update mode-specific configuration
+
         if form.execution_mode.data == 'local':
             config.local_config = {
                 'docker_image': form.docker_image.data or 'ghcr.io/zaproxy/zaproxy:stable',
                 'port': form.docker_port.data or 8080,
                 'memory_limit': form.docker_memory_limit.data or '2g',
-                'auto_remove': form.docker_auto_remove.data
+                'auto_remove': form.docker_auto_remove.data,
             }
         elif form.execution_mode.data == 'remote':
             remote_conf = {
                 'zap_url': form.remote_url.data or '',
                 'timeout': form.remote_timeout.data or 30,
-                'verify_ssl': form.remote_verify_ssl.data
+                'verify_ssl': form.remote_verify_ssl.data,
             }
-            # Only update API key if provided
             if form.remote_api_key.data:
                 remote_conf['api_key'] = form.remote_api_key.data
             else:
-                # Keep existing API key
-                existing_remote = config.remote_config
-                remote_conf['api_key'] = existing_remote.get('api_key', '')
+                remote_conf['api_key'] = config.remote_config.get('api_key', '')
             config.remote_config = remote_conf
         elif form.execution_mode.data == 'cloud':
-            # Parse CIDR blocks
+            if not form.cloud_credential_id.data:
+                flash('A cloud credential must be selected for cloud mode.', 'danger')
+                return render_template('admin/zap/config_form.html', form=form, config=config,
+                                       mode='edit', cloud_credentials=cloud_credentials)
+
             from app.zap_utils import validate_cidr_list
             cidr_text = form.cloud_allowed_cidrs.data or ''
-            cidr_list = [line.strip() for line in cidr_text.strip().split('\n') 
-                        if line.strip() and not line.strip().startswith('#')]
-            
-            # Validate CIDRs
+            cidr_list = [line.strip() for line in cidr_text.strip().split('\n')
+                         if line.strip() and not line.strip().startswith('#')]
             is_valid, error_msg, normalized_cidrs = validate_cidr_list(cidr_list)
             if not is_valid:
                 flash(f'Invalid CIDR blocks: {error_msg}', 'danger')
-                return render_template('admin/zap/config_form.html', form=form, config=config, mode='edit')
-            
-            # Get existing cloud config
-            existing_cloud = config.cloud_config
-            
-            # Build cloud_config based on selected provider
+                return render_template('admin/zap/config_form.html', form=form, config=config,
+                                       mode='edit', cloud_credentials=cloud_credentials)
+
+            provider = form.cloud_provider.data or 'aws'
             cloud_config = {
-                'provider': form.cloud_provider.data or 'aws',
+                'provider': provider,
                 'allowed_cidrs': normalized_cidrs,
-                'auto_terminate': form.cloud_auto_terminate.data
+                'auto_terminate': form.cloud_auto_terminate.data,
             }
-            
-            # Add provider-specific fields
-            provider = form.cloud_provider.data
             if provider == 'aws':
                 cloud_config.update({
                     'region': form.aws_region.data or '',
                     'instance_type': form.aws_instance_type.data or '',
                     'ami_id': form.aws_ami_id.data or '',
-                    'spot_max_price': form.aws_spot_max_price.data or ''
+                    'spot_max_price': form.aws_spot_max_price.data or '',
                 })
-                # Only update keys if provided, otherwise keep existing
-                if form.aws_access_key.data:
-                    cloud_config['access_key'] = form.aws_access_key.data
-                elif existing_cloud.get('access_key'):
-                    cloud_config['access_key'] = existing_cloud['access_key']
-                
-                if form.aws_secret_key.data:
-                    cloud_config['secret_key'] = form.aws_secret_key.data
-                elif existing_cloud.get('secret_key'):
-                    cloud_config['secret_key'] = existing_cloud['secret_key']
-                    
             elif provider == 'azure':
                 cloud_config.update({
                     'region': form.azure_region.data or '',
                     'vm_size': form.azure_vm_size.data or '',
-                    'subscription_id': form.azure_subscription_id.data or '',
-                    'tenant_id': form.azure_tenant_id.data or '',
-                    'client_id': form.azure_client_id.data or '',
-                    'spot_enabled': form.azure_spot_enabled.data
+                    'spot_enabled': form.azure_spot_enabled.data,
                 })
-                # Only update client_secret if provided
-                if form.azure_client_secret.data:
-                    cloud_config['client_secret'] = form.azure_client_secret.data
-                elif existing_cloud.get('client_secret'):
-                    cloud_config['client_secret'] = existing_cloud['client_secret']
-                    
             elif provider == 'gcp':
-                # Handle dual credential options (file path OR JSON)
-                credentials = form.gcp_credentials_json.data or form.gcp_credentials_file.data
                 cloud_config.update({
                     'region': form.gcp_region.data or '',
                     'zone': form.gcp_zone.data or '',
                     'machine_type': form.gcp_machine_type.data or '',
-                    'project_id': form.gcp_project_id.data or '',
-                    'preemptible': form.gcp_preemptible.data
+                    'preemptible': form.gcp_preemptible.data,
                 })
-                # Only update credentials if provided
-                if credentials:
-                    cloud_config['credentials'] = credentials
-                elif existing_cloud.get('credentials'):
-                    cloud_config['credentials'] = existing_cloud['credentials']
-            
+
             config.cloud_config = cloud_config
-        
+            config.cloud_credential_id = form.cloud_credential_id.data
+
         db.session.commit()
-        
-        # Log the action
+
         AuditLog.log(
             user_id=current_user.id,
             action='zap_config_updated',
@@ -624,11 +574,12 @@ def config_edit(config_id):
             resource_id=config.id,
             details=f'Updated ZAP configuration: {config.name}'
         )
-        
+
         flash(f'ZAP configuration "{config.name}" updated successfully', 'success')
         return redirect(url_for('zap_admin.configs_list'))
-    
-    return render_template('admin/zap/config_form.html', form=form, config=config, mode='edit')
+
+    return render_template('admin/zap/config_form.html', form=form, config=config,
+                           mode='edit', cloud_credentials=cloud_credentials)
 
 
 @bp.route('/configs/<int:config_id>/delete', methods=['POST'])
