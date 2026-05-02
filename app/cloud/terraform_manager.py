@@ -11,7 +11,12 @@ Ported from kast/kast/scripts/terraform_manager.py with these adaptations:
 Used exclusively by the per-provider CloudProvider.provision() implementations.
 """
 
+import json
 import os
+import shutil
+import subprocess
+from pathlib import Path
+
 from flask import current_app
 
 
@@ -29,70 +34,153 @@ class TerraformManager:
     def __init__(self, provider: str, scan_id: int):
         self.provider = provider
         self.scan_id = scan_id
+        self._last_stderr = ""
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
     def state_path(self) -> str:
-        """Absolute path to this scan's Terraform state directory.
-
-        Returns:
-            '/var/lib/kast-web2/cloud_state/<scan_id>/'
-        """
+        """Absolute path to this scan's Terraform state directory."""
         return os.path.join(_CLOUD_STATE_BASE, str(self.scan_id))
 
     @property
     def config_path(self) -> str:
-        """Absolute path to the Terraform config directory for this provider.
+        """Absolute path to the Terraform config directory for this provider."""
+        return str(Path(__file__).parent / "terraform" / self.provider)
 
-        Returns:
-            Path to app/cloud/terraform/<provider>/ inside the kast-web install.
-        """
-        raise NotImplementedError("Will be implemented in D2 (terraform_manager port)")
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _log(self, msg: str) -> None:
+        current_app.logger.info("[TerraformManager scan=%s] %s", self.scan_id, msg)
+
+    def _run(self, cmd: list, timeout: int = 600) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            cmd,
+            cwd=self.state_path,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
 
     def init(self) -> None:
-        """Run 'terraform init' in the provider config directory.
-
-        Creates self.state_path if it does not exist, copies provider
-        Terraform configs there, then runs terraform init.
+        """Create state directory, copy provider TF files, run terraform init.
 
         Raises:
-            RuntimeError: if 'terraform init' returns non-zero.
+            RuntimeError: if terraform init returns non-zero.
         """
-        raise NotImplementedError("Will be implemented in D2 (terraform_manager port)")
+        state_dir = Path(self.state_path)
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        config_dir = Path(self.config_path)
+        for tf_file in config_dir.glob("*.tf"):
+            dest = state_dir / tf_file.name
+            if not dest.exists():
+                shutil.copy2(tf_file, dest)
+
+        self._log(f"Running terraform init in {self.state_path}")
+        result = self._run(["terraform", "init", "-input=false"], timeout=300)
+        if result.returncode != 0:
+            raise RuntimeError(f"terraform init failed:\n{result.stderr}")
+        self._log("terraform init succeeded")
 
     def apply(self, tfvars: dict) -> dict:
-        """Run 'terraform apply' with the given variable values.
-
-        Writes a terraform.tfvars.json from tfvars, then runs:
-            terraform apply -auto-approve -var-file=terraform.tfvars.json
+        """Write tfvars, run terraform apply, return output values.
 
         Args:
-            tfvars: dict of Terraform input variable names → values.
-                Sensitive values (access keys, passwords) are written to the
-                tfvars file and the file is chmod 600 before apply.
+            tfvars: Terraform input variables dict.
 
         Returns:
-            dict of Terraform output values (from 'terraform output -json').
+            dict of output name → value from terraform output -json.
 
         Raises:
             RuntimeError: if apply returns non-zero.
         """
-        raise NotImplementedError("Will be implemented in D2 (terraform_manager port)")
+        state_dir = Path(self.state_path)
+        tfvars_path = state_dir / "terraform.tfvars.json"
+
+        with open(tfvars_path, "w") as f:
+            json.dump(tfvars, f)
+        os.chmod(tfvars_path, 0o600)
+
+        self._log("Running terraform apply")
+        result = self._run([
+            "terraform", "apply",
+            "-auto-approve",
+            "-input=false",
+            "-var-file=terraform.tfvars.json",
+        ])
+        self._last_stderr = result.stderr
+
+        if result.returncode != 0:
+            raise RuntimeError(f"terraform apply failed:\n{result.stderr}")
+
+        self._log("terraform apply succeeded")
+        return self.get_outputs()
 
     def destroy(self) -> None:
-        """Run 'terraform destroy' to tear down all provisioned resources.
-
-        Idempotent: safe to call if apply never completed (no state file = no-op).
+        """Run terraform destroy. No-op if state directory does not exist.
 
         Raises:
-            RuntimeError: if destroy returns non-zero and there are known live
-                resources (i.e. the state file is non-empty).
+            RuntimeError: if destroy returns non-zero with a non-empty state file.
         """
-        raise NotImplementedError("Will be implemented in D2 (terraform_manager port)")
+        state_dir = Path(self.state_path)
+        if not state_dir.exists():
+            self._log("State directory absent; nothing to destroy")
+            return
+
+        state_file = state_dir / "terraform.tfstate"
+        if not state_file.exists() or state_file.stat().st_size < 10:
+            self._log("State file absent or empty; nothing to destroy")
+            return
+
+        self._log("Running terraform destroy")
+        result = self._run([
+            "terraform", "destroy",
+            "-auto-approve",
+            "-input=false",
+        ])
+        if result.returncode != 0:
+            raise RuntimeError(f"terraform destroy failed:\n{result.stderr}")
+        self._log("terraform destroy succeeded")
 
     def get_outputs(self) -> dict:
-        """Return current Terraform outputs from the state file.
+        """Return current terraform outputs, or {} if state does not exist."""
+        state_dir = Path(self.state_path)
+        if not state_dir.exists():
+            return {}
 
-        Returns:
-            dict of output name → value, or {} if state file does not exist.
-        """
-        raise NotImplementedError("Will be implemented in D2 (terraform_manager port)")
+        result = self._run(["terraform", "output", "-json"], timeout=30)
+        if result.returncode != 0:
+            self._log(f"terraform output failed: {result.stderr}")
+            return {}
+
+        try:
+            raw = json.loads(result.stdout)
+            return {k: v.get("value") for k, v in raw.items()}
+        except (json.JSONDecodeError, AttributeError):
+            return {}
+
+    def is_capacity_error(self) -> bool:
+        """Return True if the last apply/destroy failure was a spot capacity issue."""
+        if not self._last_stderr:
+            return False
+        lower = self._last_stderr.lower()
+        capacity_markers = [
+            # AWS
+            "insufficientinstancecapacity", "max spot instance count exceeded",
+            "capacity-not-available", "spotmaxpricetoolow",
+            # Azure
+            "skunotavailable", "allocationfailed", "capacity not available",
+            # GCP
+            "zone_resource_pool_exhausted", "insufficient resources",
+            "preemptible_quota_exceeded",
+        ]
+        return any(m in lower for m in capacity_markers)
