@@ -52,7 +52,7 @@ def admin_ai_settings():
             action='update_ai_settings',
             resource_type='ai_settings',
             resource_id=1,
-            details={'ai_enabled': settings.ai_enabled, 'model_id': settings.model_id},
+            details=f'ai_enabled={settings.ai_enabled} model_id={settings.model_id!r}',
             ip_address=request.remote_addr,
         )
         flash('AI settings saved.', 'success')
@@ -138,8 +138,7 @@ def generate_summary(scan_id):
         action='generate_ai_summary',
         resource_type='scan',
         resource_id=scan_id,
-        details={'tokens_in': summary.tokens_in, 'tokens_out': summary.tokens_out,
-                 'cost_usd': summary.cost_usd},
+        details=f'tokens_in={summary.tokens_in} tokens_out={summary.tokens_out} cost_usd={summary.cost_usd}',
         ip_address=request.remote_addr,
     )
     return jsonify({
@@ -178,7 +177,7 @@ def review_summary(scan_id):
         action=f'ai_summary_{action}',
         resource_type='scan',
         resource_id=scan_id,
-        details={'summary_id': summary.id, 'action': action},
+        details=f'summary_id={summary.id} action={action!r}',
         ip_address=request.remote_addr,
     )
     return jsonify({'status': summary.status, 'text': _service.display_text(summary)})
