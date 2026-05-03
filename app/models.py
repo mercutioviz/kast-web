@@ -20,6 +20,7 @@ class User(UserMixin, db.Model):
     login_count = db.Column(db.Integer, default=0)
     failed_login_attempts = db.Column(db.Integer, default=0)
     last_failed_login = db.Column(db.DateTime)
+    anthropic_api_key_encrypted = db.Column(db.Text, nullable=True)
     
     # Relationships
     scans = db.relationship('Scan', backref='user', lazy='dynamic', cascade='all, delete-orphan')

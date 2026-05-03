@@ -127,7 +127,48 @@ def list_users():
 @login_required
 def profile():
     """User profile page"""
-    return render_template('auth/profile.html', title='My Profile')
+    has_personal_ai_key = bool(current_user.anthropic_api_key_encrypted)
+    return render_template('auth/profile.html', title='My Profile',
+                           has_personal_ai_key=has_personal_ai_key)
+
+
+@bp.route('/save-api-key', methods=['POST'])
+@login_required
+def save_api_key():
+    """Save or clear the user's personal Anthropic API key."""
+    from app.encryption import encrypt_value
+    from app.models import AuditLog
+
+    action = request.form.get('action', 'save')
+
+    if action == 'clear':
+        current_user.anthropic_api_key_encrypted = None
+        db.session.commit()
+        AuditLog.log(
+            user_id=current_user.id,
+            action='clear_personal_ai_key',
+            resource_type='user',
+            resource_id=current_user.id,
+            ip_address=request.remote_addr,
+        )
+        flash('Your Anthropic API key has been removed.', 'success')
+    else:
+        new_key = request.form.get('api_key', '').strip()
+        if not new_key:
+            flash('No API key provided.', 'warning')
+        else:
+            current_user.anthropic_api_key_encrypted = encrypt_value(new_key)
+            db.session.commit()
+            AuditLog.log(
+                user_id=current_user.id,
+                action='save_personal_ai_key',
+                resource_type='user',
+                resource_id=current_user.id,
+                ip_address=request.remote_addr,
+            )
+            flash('Your Anthropic API key has been saved.', 'success')
+
+    return redirect(url_for('auth.profile'))
 
 
 @bp.route('/change-password', methods=['GET', 'POST'])

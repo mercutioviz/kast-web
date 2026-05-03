@@ -102,6 +102,59 @@
                 </div>
             </div>
 
+            <div class="card shadow mb-4">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-robot me-2"></i>AI Executive Summaries</h5>
+                    {% if has_personal_ai_key %}
+                    <span class="badge bg-success">Key configured</span>
+                    {% else %}
+                    <span class="badge bg-secondary">No key</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if has_personal_ai_key %}
+                    <p class="text-muted small mb-3">
+                        You have a personal Anthropic API key stored. AI summaries for your
+                        scans will be billed to your Anthropic account. Enter a new key below
+                        to replace it, or remove it to fall back to the org key
+                        (if your role allows).
+                    </p>
+                    {% else %}
+                    <p class="text-muted small mb-3">
+                        Add your own Anthropic API key to use AI executive summaries billed
+                        to your account. Leave blank to use the org-level key
+                        (available to admins and power users only).
+                    </p>
+                    {% endif %}
+
+                    <form method="post" action="{{ url_for('auth.save_api_key') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="save" id="api-key-action">
+                        <div class="mb-3">
+                            <label class="form-label" for="api_key">Anthropic API Key</label>
+                            <input type="password"
+                                   class="form-control"
+                                   id="api_key"
+                                   name="api_key"
+                                   placeholder="sk-ant-... (leave blank to keep existing)"
+                                   autocomplete="new-password">
+                            <small class="text-muted">Stored encrypted. Never shown after saving.</small>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="fas fa-save me-1"></i>Save Key
+                            </button>
+                            {% if has_personal_ai_key %}
+                            <button type="button" class="btn btn-outline-danger btn-sm"
+                                    onclick="document.getElementById('api-key-action').value='clear'; this.form.submit();">
+                                <i class="fas fa-trash me-1"></i>Remove Key
+                            </button>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <div class="card shadow">
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0">Account Actions</h5>

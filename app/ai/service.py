@@ -3,7 +3,12 @@ AIService — cost-gated executive summary generation for kast-web.
 
 Reads processed scan results from disk, calls the Anthropic API, and
 persists results in AISummary. All LLM calls are optional; if AI is
-disabled or over budget the caller gets a graceful None back.
+disabled the caller gets a graceful None back.
+
+Key resolution order:
+  1. User's personal Anthropic key (all roles)
+  2. Org-level key — admins and power_users only
+  3. No key → ValueError with a user-facing message
 """
 import json
 import logging
@@ -12,8 +17,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Approximate token costs (USD per million tokens) for budget checks.
-# These are conservative estimates; actual costs depend on the model.
+# Approximate token costs (USD per million tokens) for cost-estimate display.
 _COST_PER_M_INPUT = {
     'claude-haiku-4-5-20251001': 0.80,
     'claude-sonnet-4-6': 3.00,
@@ -57,15 +61,34 @@ class AIService:
         from app.models import AISettings
         return AISettings.get()
 
-    def _get_client(self, settings):
-        """Return an anthropic.Anthropic client using the stored API key."""
+    def _get_client(self, user=None):
+        """Return an Anthropic client, applying role-based key resolution.
+
+        Raises ValueError with a user-facing message if no key is available.
+        """
         from app.encryption import decrypt_value
         import anthropic
 
-        if not settings.api_key_encrypted:
-            raise ValueError('No API key configured — set one in Admin > AI Settings.')
-        api_key = decrypt_value(settings.api_key_encrypted)
-        return anthropic.Anthropic(api_key=api_key)
+        # 1. User's personal key (available to all roles)
+        if user and user.anthropic_api_key_encrypted:
+            api_key = decrypt_value(user.anthropic_api_key_encrypted)
+            return anthropic.Anthropic(api_key=api_key)
+
+        # 2. Org key — admins and power_users only
+        if user and user.role in ('admin', 'power_user'):
+            settings = self._get_settings()
+            if settings.api_key_encrypted:
+                api_key = decrypt_value(settings.api_key_encrypted)
+                return anthropic.Anthropic(api_key=api_key)
+            raise ValueError(
+                'No org-level API key configured. Add one in Admin > AI Settings.'
+            )
+
+        # 3. Standard user with no personal key
+        raise ValueError(
+            'No personal API key configured. '
+            'Add your Anthropic API key in My Profile > AI Settings.'
+        )
 
     def _read_findings(self, scan):
         """Read processed plugin JSON files and return a text summary of findings."""
@@ -125,35 +148,29 @@ class AIService:
             'model': model,
         }
 
-    def check_budget(self, estimated_cost_usd):
-        """Return True if the estimated cost fits within the remaining monthly budget."""
-        settings = self._get_settings()
-        if not settings.monthly_budget_tokens:
-            return True
-        # Convert remaining token budget to dollars using sonnet rate as reference
-        remaining_tokens = settings.monthly_budget_tokens - settings.current_period_tokens
-        remaining_usd = remaining_tokens / 1_000_000 * _COST_PER_M_INPUT.get(
-            settings.model_id or _DEFAULT_MODEL, 3.00
-        )
-        return estimated_cost_usd <= remaining_usd
-
-    def generate_summary(self, scan, mode=None):
+    def generate_summary(self, scan, mode=None, user=None):
         """Generate (or regenerate) an AI executive summary for a scan.
 
-        Creates or replaces the AISummary row for this scan.
-        Returns the AISummary instance, or None on failure.
+        Args:
+            scan: Scan model instance.
+            mode: 'auto' or 'review'. Defaults to the org setting.
+            user: The requesting User instance (for key resolution).
+
+        Returns the AISummary instance (check .status for 'error').
+        Returns None only if AI is disabled at the org level.
         """
+        import anthropic as _anthropic
         from app import db
         from app.models import AISummary
 
         settings = self._get_settings()
         if not settings.ai_enabled:
-            logger.info('AI is disabled; skipping summary generation for scan %s', scan.id)
+            logger.info('AI is disabled; skipping summary for scan %s', scan.id)
             return None
 
         effective_mode = mode or settings.default_mode
 
-        # Upsert the summary row
+        # Upsert the summary row and mark as generating
         summary = AISummary.query.filter_by(scan_id=scan.id).first()
         if summary is None:
             summary = AISummary(scan_id=scan.id)
@@ -163,6 +180,14 @@ class AIService:
         db.session.commit()
 
         try:
+            client = self._get_client(user=user)
+        except ValueError as exc:
+            summary.status = 'error'
+            summary.error_message = str(exc)
+            db.session.commit()
+            return summary
+
+        try:
             findings_text = self._read_findings(scan)
             prompt = _SUMMARY_PROMPT_TEMPLATE.format(
                 target=scan.target,
@@ -170,8 +195,6 @@ class AIService:
                 completed_at=scan.completed_at or 'unknown',
                 findings_text=findings_text,
             )
-
-            client = self._get_client(settings)
             model = settings.model_id or _DEFAULT_MODEL
             response = client.messages.create(
                 model=model,
@@ -193,7 +216,7 @@ class AIService:
             summary.status = 'ready' if effective_mode == 'review' else 'accepted'
             summary.prompt_version = 'exec_summary_v1'
 
-            # Update period token usage
+            # Update org-level period token counter (informational only for BYOK users)
             settings.current_period_tokens = (
                 (settings.current_period_tokens or 0)
                 + summary.tokens_in
@@ -202,10 +225,36 @@ class AIService:
             db.session.commit()
             return summary
 
-        except Exception as exc:
-            logger.exception('AI summary generation failed for scan %s', scan.id)
+        except _anthropic.RateLimitError:
+            # Covers both rate limiting and exhausted credit balance
             summary.status = 'error'
-            summary.error_message = str(exc)
+            summary.error_message = (
+                'API budget exceeded. '
+                'Please top up your Anthropic credit balance and try again.'
+            )
+            db.session.commit()
+            return summary
+
+        except _anthropic.AuthenticationError:
+            summary.status = 'error'
+            summary.error_message = (
+                'Invalid API key. '
+                'Please update your Anthropic API key in My Profile > AI Settings.'
+            )
+            db.session.commit()
+            return summary
+
+        except _anthropic.APIError as exc:
+            logger.exception('Anthropic API error for scan %s', scan.id)
+            summary.status = 'error'
+            summary.error_message = f'Anthropic API error: {exc}'
+            db.session.commit()
+            return summary
+
+        except Exception as exc:
+            logger.exception('Unexpected error generating AI summary for scan %s', scan.id)
+            summary.status = 'error'
+            summary.error_message = f'Unexpected error: {exc}'
             db.session.commit()
             return summary
 
