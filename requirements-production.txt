@@ -37,6 +37,7 @@ eventlet==0.36.1
 cryptography==41.0.7
 requests==2.31.0
 paramiko>=3.0.0
+anthropic>=0.40.0
 
 # Optional: Production monitoring and error tracking
 # sentry-sdk[flask]==1.39.1

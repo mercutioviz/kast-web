@@ -185,9 +185,15 @@ def detail(scan_id):
             report_path = str(potential_report)
     
     # Check if email functionality is enabled
-    from app.models import SystemSettings
+    from app.models import SystemSettings, AISettings
     email_enabled = SystemSettings.get_setting('email_enabled', False)
-    
+
+    ai_enabled = False
+    try:
+        ai_enabled = AISettings.get().ai_enabled
+    except Exception:
+        pass
+
     # Generate CLI command for display
     from flask import current_app
     # Use actual command if available (includes all --set args), otherwise generate it
@@ -195,7 +201,7 @@ def detail(scan_id):
         cli_command = scan.actual_cli_command
     else:
         cli_command = scan.get_cli_command(current_app.config['KAST_CLI_PATH'])
-    
+
     return render_template(
         'scan_detail.html',
         scan=scan,
@@ -203,7 +209,8 @@ def detail(scan_id):
         report_path=report_path,
         format_duration=format_duration,
         email_enabled=email_enabled,
-        cli_command=cli_command
+        cli_command=cli_command,
+        ai_enabled=ai_enabled,
     )
 
 @bp.route('/<int:scan_id>/delete', methods=['POST'])

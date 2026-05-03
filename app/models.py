@@ -933,6 +933,56 @@ class ZapScanProgress(db.Model):
         
         # Store raw snapshot
         progress.raw_snapshot = json.dumps(snapshot_data)
-        
+
         db.session.commit()
         return progress
+
+
+class AISettings(db.Model):
+    """Singleton row (id=1) storing org-wide AI configuration."""
+    __tablename__ = 'ai_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ai_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    default_mode = db.Column(db.String(10), default='review', nullable=False)  # auto, review
+    monthly_budget_tokens = db.Column(db.Integer, default=100000, nullable=False)
+    current_period_tokens = db.Column(db.Integer, default=0, nullable=False)
+    period_reset_date = db.Column(db.DateTime, nullable=True)
+    api_key_encrypted = db.Column(db.Text, nullable=True)
+    model_id = db.Column(db.String(100), default='claude-sonnet-4-6', nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    updater = db.relationship('User', backref='ai_settings_updates')
+
+    @classmethod
+    def get(cls):
+        """Return the singleton row, creating it with defaults if absent."""
+        row = cls.query.get(1)
+        if row is None:
+            row = cls(id=1)
+            db.session.add(row)
+            db.session.commit()
+        return row
+
+
+class AISummary(db.Model):
+    """LLM-generated executive summary for a completed scan."""
+    __tablename__ = 'ai_summaries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), unique=True, nullable=False, index=True)
+    prompt_version = db.Column(db.String(50), default='exec_summary_v1', nullable=False)
+    raw_text = db.Column(db.Text, nullable=True)
+    edited_text = db.Column(db.Text, nullable=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # pending → generating → ready → accepted | error
+    status = db.Column(db.String(20), default='pending', nullable=False, index=True)
+    tokens_in = db.Column(db.Integer, default=0)
+    tokens_out = db.Column(db.Integer, default=0)
+    cost_usd = db.Column(db.Float, default=0.0)
+    generated_at = db.Column(db.DateTime, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+
+    scan = db.relationship('Scan', backref=db.backref('ai_summary', uselist=False))
+    reviewer = db.relationship('User', backref='reviewed_ai_summaries')

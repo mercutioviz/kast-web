@@ -640,6 +640,73 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             </div>
         </div>
+
+        <!-- AI Executive Summary -->
+        {% if ai_enabled and scan.status == 'completed' %}
+        <div class="card shadow mt-4" id="ai-summary-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-stars"></i> AI Executive Summary</h5>
+                <div id="ai-summary-status-badge"></div>
+            </div>
+            <div class="card-body">
+                <div id="ai-summary-loading" class="text-center py-3" style="display:none;">
+                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>
+                    Generating summary&hellip;
+                </div>
+
+                <div id="ai-summary-none">
+                    <p class="text-muted small mb-2">
+                        Generate a concise executive narrative from this scan's findings —
+                        suitable for sharing with a prospect.
+                    </p>
+                    <p class="small mb-3">
+                        Estimated cost: <strong id="ai-cost-estimate">calculating&hellip;</strong>
+                    </p>
+                    <button class="btn btn-outline-primary btn-sm" id="ai-generate-btn" onclick="aiGenerateSummary()">
+                        <i class="bi bi-stars"></i> Generate AI Summary
+                    </button>
+                </div>
+
+                <div id="ai-summary-content" style="display:none;">
+                    <div id="ai-summary-text-display" class="mb-3" style="white-space:pre-wrap;"></div>
+
+                    <!-- Review mode controls (shown when status=ready) -->
+                    <div id="ai-review-controls" style="display:none;">
+                        <hr>
+                        <p class="text-muted small">
+                            <i class="bi bi-pencil-square"></i>
+                            Review mode: edit the summary below before accepting it.
+                        </p>
+                        <textarea id="ai-edited-text" class="form-control mb-2" rows="8"></textarea>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success btn-sm" onclick="aiSubmitReview('accept')">
+                                <i class="bi bi-check-lg"></i> Accept
+                            </button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="aiSubmitReview('discard')">
+                                Discard edits
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm ms-auto" onclick="aiGenerateSummary()">
+                                <i class="bi bi-arrow-clockwise"></i> Regenerate
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Accepted controls -->
+                    <div id="ai-accepted-controls" style="display:none;">
+                        <hr>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-success"><i class="bi bi-check-circle"></i> Accepted</span>
+                            <button class="btn btn-outline-primary btn-sm ms-auto" onclick="aiGenerateSummary()">
+                                <i class="bi bi-arrow-clockwise"></i> Regenerate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="ai-summary-error" class="alert alert-danger small py-2" style="display:none;"></div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Actions Sidebar -->
@@ -1173,6 +1240,112 @@ document.getElementById('emailModal').addEventListener('hidden.bs.modal', functi
     document.getElementById('emailResult').innerHTML = '';
     document.getElementById('email_recipients').value = '';
 });
+</script>
+{% endif %}
+
+{% if ai_enabled and scan.status == 'completed' %}
+<script>
+const SCAN_ID = {{ scan.id }};
+
+function aiSetLoading(on) {
+    document.getElementById('ai-summary-loading').style.display = on ? 'block' : 'none';
+    const btn = document.getElementById('ai-generate-btn');
+    if (btn) btn.disabled = on;
+}
+
+function aiShowError(msg) {
+    const el = document.getElementById('ai-summary-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function aiRenderSummary(data) {
+    document.getElementById('ai-summary-error').style.display = 'none';
+
+    const badge = document.getElementById('ai-summary-status-badge');
+    const display = document.getElementById('ai-summary-text-display');
+    const content = document.getElementById('ai-summary-content');
+    const noneDiv = document.getElementById('ai-summary-none');
+    const reviewControls = document.getElementById('ai-review-controls');
+    const acceptedControls = document.getElementById('ai-accepted-controls');
+
+    if (data.status === 'none' || !data.status) {
+        noneDiv.style.display = 'block';
+        content.style.display = 'none';
+        badge.innerHTML = '';
+        if (data.estimated_cost_usd !== undefined) {
+            document.getElementById('ai-cost-estimate').textContent =
+                '$' + data.estimated_cost_usd.toFixed(4);
+        }
+        return;
+    }
+
+    noneDiv.style.display = 'none';
+    content.style.display = 'block';
+
+    if (data.status === 'ready') {
+        badge.innerHTML = '<span class="badge bg-warning text-dark">Pending review</span>';
+        display.textContent = data.raw_text || '';
+        document.getElementById('ai-edited-text').value = data.raw_text || '';
+        reviewControls.style.display = 'block';
+        acceptedControls.style.display = 'none';
+    } else if (data.status === 'accepted') {
+        badge.innerHTML = '<span class="badge bg-success">Accepted</span>';
+        display.textContent = data.text || data.raw_text || '';
+        reviewControls.style.display = 'none';
+        acceptedControls.style.display = 'block';
+    } else if (data.status === 'error') {
+        badge.innerHTML = '<span class="badge bg-danger">Error</span>';
+        aiShowError(data.error_message || 'Generation failed.');
+        noneDiv.style.display = 'block';
+        content.style.display = 'none';
+    }
+}
+
+function aiGenerateSummary() {
+    aiSetLoading(true);
+    document.getElementById('ai-summary-none').style.display = 'none';
+    document.getElementById('ai-summary-content').style.display = 'none';
+    document.getElementById('ai-summary-error').style.display = 'none';
+
+    fetch('/api/ai/summary/' + SCAN_ID + '/generate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        credentials: 'same-origin',
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+        aiSetLoading(false);
+        if (!ok) { aiShowError(data.error || 'Generation failed.'); return; }
+        aiRenderSummary(data);
+    })
+    .catch(err => { aiSetLoading(false); aiShowError('Request failed: ' + err); });
+}
+
+function aiSubmitReview(action) {
+    const editedText = document.getElementById('ai-edited-text').value;
+    fetch('/api/ai/summary/' + SCAN_ID + '/review', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({ action: action, edited_text: editedText }),
+    })
+    .then(r => r.json())
+    .then(data => aiRenderSummary(data))
+    .catch(err => aiShowError('Request failed: ' + err));
+}
+
+// Load existing summary on page load
+fetch('/api/ai/summary/' + SCAN_ID, { credentials: 'same-origin' })
+    .then(r => r.json())
+    .then(aiRenderSummary)
+    .catch(() => {});
 </script>
 {% endif %}
 
