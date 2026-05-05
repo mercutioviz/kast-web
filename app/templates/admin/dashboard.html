@@ -213,6 +213,84 @@
     </div>
 </div>
 
+<!-- AI Settings & Cloud Infrastructure -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card border-dark">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0"><i class="fas fa-robot me-2"></i>AI Executive Summaries</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-3">
+                    <div class="col-4">
+                        {% if stats.ai.enabled %}
+                            <span class="badge bg-success fs-6">Enabled</span>
+                        {% else %}
+                            <span class="badge bg-secondary fs-6">Disabled</span>
+                        {% endif %}
+                        <div><small class="text-muted">Status</small></div>
+                    </div>
+                    <div class="col-4">
+                        <h3 class="text-dark mb-0">{{ stats.ai.total_summaries }}</h3>
+                        <small class="text-muted">Total Summaries</small>
+                    </div>
+                    <div class="col-4">
+                        <h3 class="text-success mb-0">{{ stats.ai.accepted_summaries }}</h3>
+                        <small class="text-muted">Accepted</small>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted">Model:</small>
+                    <strong>{{ stats.ai.model }}</strong>
+                </div>
+                <div class="d-grid">
+                    <a href="{{ url_for('ai.admin_ai_settings') }}" class="btn btn-outline-dark btn-sm">
+                        <i class="fas fa-cog"></i> Manage AI Settings
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="bi bi-cloud me-2"></i>Cloud Infrastructure</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center mb-3">
+                    <div class="col-4">
+                        <h3 class="text-secondary mb-0">{{ stats.cloud.credential_count }}</h3>
+                        <small class="text-muted">Credentials</small>
+                    </div>
+                    <div class="col-4">
+                        <h3 class="text-primary mb-0">{{ stats.cloud.active_scans }}</h3>
+                        <small class="text-muted">Active Scans</small>
+                    </div>
+                    <div class="col-4">
+                        {% if stats.cloud.unresolved_orphans > 0 %}
+                            <h3 class="text-danger mb-0">{{ stats.cloud.unresolved_orphans }}</h3>
+                        {% else %}
+                            <h3 class="text-success mb-0">0</h3>
+                        {% endif %}
+                        <small class="text-muted">Orphans</small>
+                    </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('cloud.admin_cloud_credentials') }}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-key"></i> Manage Credentials
+                    </a>
+                    {% if stats.cloud.unresolved_orphans > 0 %}
+                    <a href="{{ url_for('cloud.admin_cloud_orphans') }}" class="btn btn-outline-danger btn-sm">
+                        <i class="bi bi-exclamation-triangle"></i> Review Orphans ({{ stats.cloud.unresolved_orphans }})
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- System Status & Recent Logs -->
 <div class="row">
     <div class="col-md-4">

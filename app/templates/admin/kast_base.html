@@ -195,6 +195,21 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {% if request.endpoint and 'zap_admin' in request.endpoint %}active{% endif %}" href="{{ url_for('zap_admin.plans_list') }}">
+                    <i class="bi bi-shield-check"></i> ZAP
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'ai.admin_ai_settings' %}active{% endif %}" href="{{ url_for('ai.admin_ai_settings') }}">
+                    <i class="fas fa-robot"></i> AI Settings
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint and request.endpoint.startswith('cloud.admin_') %}active{% endif %}" href="{{ url_for('cloud.admin_cloud_credentials') }}">
+                    <i class="bi bi-cloud"></i> Cloud
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {% if 'db_admin' in request.endpoint %}active{% endif %}" href="{{ url_for('db_admin.index') }}">
                     <i class="fas fa-database"></i> Database Explorer
                 </a>
