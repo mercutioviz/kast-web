@@ -156,13 +156,21 @@ class AIService:
         )
         tokens_in, tokens_out = self._estimate_tokens(prompt)
         model = self._resolve_model(user, settings)
-        cost_in = tokens_in / 1_000_000 * _COST_PER_M_INPUT.get(model, 3.00)
-        cost_out = tokens_out / 1_000_000 * _COST_PER_M_OUTPUT.get(model, 15.00)
+        known = model in _COST_PER_M_INPUT
+        if known:
+            cost_usd = round(
+                tokens_in / 1_000_000 * _COST_PER_M_INPUT[model]
+                + tokens_out / 1_000_000 * _COST_PER_M_OUTPUT[model],
+                4,
+            )
+        else:
+            cost_usd = None
         return {
             'tokens_in': tokens_in,
             'tokens_out': tokens_out,
-            'cost_usd': round(cost_in + cost_out, 4),
+            'cost_usd': cost_usd,
             'model': model,
+            'cost_known': known,
         }
 
     def generate_summary(self, scan, mode=None, user=None):
@@ -225,10 +233,13 @@ class AIService:
             summary.reviewed_by_user_id = None
             summary.tokens_in = response.usage.input_tokens
             summary.tokens_out = response.usage.output_tokens
-            summary.cost_usd = (
-                response.usage.input_tokens / 1_000_000 * _COST_PER_M_INPUT.get(model, 3.00)
-                + response.usage.output_tokens / 1_000_000 * _COST_PER_M_OUTPUT.get(model, 15.00)
-            )
+            if model in _COST_PER_M_INPUT:
+                summary.cost_usd = (
+                    response.usage.input_tokens / 1_000_000 * _COST_PER_M_INPUT[model]
+                    + response.usage.output_tokens / 1_000_000 * _COST_PER_M_OUTPUT[model]
+                )
+            else:
+                summary.cost_usd = 0.0
             summary.generated_at = datetime.now(timezone.utc)
             summary.status = 'ready' if effective_mode == 'review' else 'accepted'
             summary.prompt_version = 'exec_summary_v1'

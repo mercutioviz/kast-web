@@ -152,5 +152,159 @@
             </div>
         </div>
     </div>
+
+    <!-- Preset management — full width below the 2-column layout -->
+    <div class="row mt-4">
+
+        <!-- Model Presets -->
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Custom Model Presets</h5>
+                    <small class="text-muted">Built-in Claude models (Haiku / Sonnet / Opus) are always available.</small>
+                </div>
+                <div class="card-body">
+                    {% if model_presets %}
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Model ID</th>
+                                    <th>Label</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in model_presets %}
+                                <tr>
+                                    <td><code>{{ p.model_id }}</code></td>
+                                    <td>{{ p.label }}</td>
+                                    <td>
+                                        {% if p.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <form method="post" action="{{ url_for('ai.toggle_model_preset', preset_id=p.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                {% if p.is_active %}Disable{% else %}Enable{% endif %}
+                                            </button>
+                                        </form>
+                                        <form method="post" action="{{ url_for('ai.delete_model_preset', preset_id=p.id) }}" class="d-inline"
+                                              onsubmit="return confirm('Delete preset {{ p.label }}?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-3">No custom model presets yet.</p>
+                    {% endif %}
+
+                    <form method="post" action="{{ url_for('ai.add_model_preset') }}" class="row g-2 align-items-end">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="col-md-4">
+                            <label class="form-label form-label-sm">Model ID</label>
+                            <input type="text" class="form-control form-control-sm" name="model_id"
+                                   placeholder="e.g. gpt-4o" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label form-label-sm">Display Label</label>
+                            <input type="text" class="form-control form-control-sm" name="label"
+                                   placeholder="e.g. GPT-4o (OpenAI)" required>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                <i class="fas fa-plus me-1"></i>Add Model
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Endpoint Presets -->
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-cloud me-2"></i>API Endpoint Presets</h5>
+                </div>
+                <div class="card-body">
+                    {% if endpoint_presets %}
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>URL</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ep in endpoint_presets %}
+                                <tr>
+                                    <td>{{ ep.name }}</td>
+                                    <td><code class="small">{{ ep.url }}</code></td>
+                                    <td>
+                                        {% if ep.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <form method="post" action="{{ url_for('ai.toggle_endpoint_preset', preset_id=ep.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                {% if ep.is_active %}Disable{% else %}Enable{% endif %}
+                                            </button>
+                                        </form>
+                                        <form method="post" action="{{ url_for('ai.delete_endpoint_preset', preset_id=ep.id) }}" class="d-inline"
+                                              onsubmit="return confirm('Delete endpoint {{ ep.name }}?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-3">No endpoint presets yet. Users can still enter a custom URL manually.</p>
+                    {% endif %}
+
+                    <form method="post" action="{{ url_for('ai.add_endpoint_preset') }}" class="row g-2 align-items-end">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="col-md-3">
+                            <label class="form-label form-label-sm">Name</label>
+                            <input type="text" class="form-control form-control-sm" name="name"
+                                   placeholder="e.g. AWS Bedrock US-East" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">URL</label>
+                            <input type="url" class="form-control form-control-sm" name="url"
+                                   placeholder="https://..." required>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                <i class="fas fa-plus me-1"></i>Add Endpoint
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+    </div>
 </div>
 {% endblock %}

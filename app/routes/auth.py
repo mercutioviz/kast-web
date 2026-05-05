@@ -123,23 +123,35 @@ def list_users():
     return render_template('auth/users.html', users=users, title='User Management')
 
 
-_ALLOWED_MODEL_OVERRIDES = {
+_BUILTIN_MODELS = frozenset({
     '',
     'claude-haiku-4-5-20251001',
     'claude-sonnet-4-6',
     'claude-opus-4-7',
-}
+})
 
 
 @bp.route('/profile')
 @login_required
 def profile():
     """User profile page"""
+    from app.models import AIModelPreset, AIEndpointPreset
     has_personal_ai_key = bool(current_user.anthropic_api_key_encrypted)
-    return render_template('auth/profile.html', title='My Profile',
-                           has_personal_ai_key=has_personal_ai_key,
-                           user_ai_model=current_user.ai_model_override or '',
-                           user_ai_base_url=current_user.ai_base_url or '')
+    model_presets = AIModelPreset.query.filter_by(is_active=True).order_by(
+        AIModelPreset.sort_order, AIModelPreset.id
+    ).all()
+    endpoint_presets = AIEndpointPreset.query.filter_by(is_active=True).order_by(
+        AIEndpointPreset.sort_order, AIEndpointPreset.id
+    ).all()
+    return render_template(
+        'auth/profile.html',
+        title='My Profile',
+        has_personal_ai_key=has_personal_ai_key,
+        user_ai_model=current_user.ai_model_override or '',
+        user_ai_base_url=current_user.ai_base_url or '',
+        model_presets=model_presets,
+        endpoint_presets=endpoint_presets,
+    )
 
 
 @bp.route('/save-api-key', methods=['POST'])
@@ -212,7 +224,9 @@ def save_ai_config():
         changed_fields.append('api_key')
 
     model_override = request.form.get('model_override', '').strip()
-    if model_override not in _ALLOWED_MODEL_OVERRIDES:
+    from app.models import AIModelPreset
+    preset_ids = {p.model_id for p in AIModelPreset.query.filter_by(is_active=True).all()}
+    if model_override not in (_BUILTIN_MODELS | preset_ids):
         flash(f'Invalid model selection: {model_override!r}', 'danger')
         return redirect(url_for('auth.profile'))
     current_user.ai_model_override = model_override or None

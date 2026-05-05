@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 
 from app import db
-from app.models import AISettings, AISummary, AuditLog, Scan
+from app.models import AISettings, AISummary, AuditLog, Scan, AIModelPreset, AIEndpointPreset
 from app.ai.forms import AISettingsForm
 from app.ai.service import AIService
 from app.encryption import encrypt_value
@@ -66,12 +66,167 @@ def admin_ai_settings():
         form.model_id.data = settings.model_id
 
     has_api_key = bool(settings.api_key_encrypted)
+    model_presets = AIModelPreset.query.order_by(
+        AIModelPreset.sort_order, AIModelPreset.id
+    ).all()
+    endpoint_presets = AIEndpointPreset.query.order_by(
+        AIEndpointPreset.sort_order, AIEndpointPreset.id
+    ).all()
     return render_template(
         'admin/ai/settings.html',
         form=form,
         settings=settings,
         has_api_key=has_api_key,
+        model_presets=model_presets,
+        endpoint_presets=endpoint_presets,
     )
+
+
+# ------------------------------------------------------------------ model presets
+
+@bp.route('/admin/ai/model-presets/add', methods=['POST'])
+@login_required
+@_admin_required
+def add_model_preset():
+    model_id = request.form.get('model_id', '').strip()
+    label = request.form.get('label', '').strip()
+    if not model_id or not label:
+        flash('Model ID and label are required.', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    preset = AIModelPreset(model_id=model_id, label=label)
+    db.session.add(preset)
+    db.session.commit()
+    AuditLog.log(
+        user_id=current_user.id,
+        action='add_ai_model_preset',
+        resource_type='ai_model_preset',
+        resource_id=preset.id,
+        details=f'model_id={model_id!r} label={label!r}',
+        ip_address=request.remote_addr,
+    )
+    flash(f'Model preset “{label}” added.', 'success')
+    return redirect(url_for('ai.admin_ai_settings'))
+
+
+@bp.route('/admin/ai/model-presets/<int:preset_id>/toggle', methods=['POST'])
+@login_required
+@_admin_required
+def toggle_model_preset(preset_id):
+    preset = db.session.get(AIModelPreset, preset_id)
+    if not preset:
+        flash('Preset not found.', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    preset.is_active = not preset.is_active
+    db.session.commit()
+    state = 'enabled' if preset.is_active else 'disabled'
+    AuditLog.log(
+        user_id=current_user.id,
+        action='toggle_ai_model_preset',
+        resource_type='ai_model_preset',
+        resource_id=preset_id,
+        details=f'model_id={preset.model_id!r} is_active={preset.is_active}',
+        ip_address=request.remote_addr,
+    )
+    flash(f'Model preset “{preset.label}” {state}.', 'success')
+    return redirect(url_for('ai.admin_ai_settings'))
+
+
+@bp.route('/admin/ai/model-presets/<int:preset_id>/delete', methods=['POST'])
+@login_required
+@_admin_required
+def delete_model_preset(preset_id):
+    preset = db.session.get(AIModelPreset, preset_id)
+    if not preset:
+        flash('Preset not found.', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    label = preset.label
+    db.session.delete(preset)
+    db.session.commit()
+    AuditLog.log(
+        user_id=current_user.id,
+        action='delete_ai_model_preset',
+        resource_type='ai_model_preset',
+        resource_id=preset_id,
+        details=f'label={label!r}',
+        ip_address=request.remote_addr,
+    )
+    flash(f'Model preset “{label}” deleted.', 'success')
+    return redirect(url_for('ai.admin_ai_settings'))
+
+
+# ------------------------------------------------------------------ endpoint presets
+
+@bp.route('/admin/ai/endpoint-presets/add', methods=['POST'])
+@login_required
+@_admin_required
+def add_endpoint_preset():
+    name = request.form.get('name', '').strip()
+    url = request.form.get('url', '').strip()
+    if not name or not url:
+        flash('Name and URL are required.', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    if not (url.startswith('http://') or url.startswith('https://')):
+        flash('URL must start with http:// or https://', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    preset = AIEndpointPreset(name=name, url=url)
+    db.session.add(preset)
+    db.session.commit()
+    AuditLog.log(
+        user_id=current_user.id,
+        action='add_ai_endpoint_preset',
+        resource_type='ai_endpoint_preset',
+        resource_id=preset.id,
+        details=f'name={name!r}',
+        ip_address=request.remote_addr,
+    )
+    flash(f'Endpoint preset “{name}” added.', 'success')
+    return redirect(url_for('ai.admin_ai_settings'))
+
+
+@bp.route('/admin/ai/endpoint-presets/<int:preset_id>/toggle', methods=['POST'])
+@login_required
+@_admin_required
+def toggle_endpoint_preset(preset_id):
+    preset = db.session.get(AIEndpointPreset, preset_id)
+    if not preset:
+        flash('Preset not found.', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    preset.is_active = not preset.is_active
+    db.session.commit()
+    state = 'enabled' if preset.is_active else 'disabled'
+    AuditLog.log(
+        user_id=current_user.id,
+        action='toggle_ai_endpoint_preset',
+        resource_type='ai_endpoint_preset',
+        resource_id=preset_id,
+        details=f'name={preset.name!r} is_active={preset.is_active}',
+        ip_address=request.remote_addr,
+    )
+    flash(f'Endpoint preset “{preset.name}” {state}.', 'success')
+    return redirect(url_for('ai.admin_ai_settings'))
+
+
+@bp.route('/admin/ai/endpoint-presets/<int:preset_id>/delete', methods=['POST'])
+@login_required
+@_admin_required
+def delete_endpoint_preset(preset_id):
+    preset = db.session.get(AIEndpointPreset, preset_id)
+    if not preset:
+        flash('Preset not found.', 'danger')
+        return redirect(url_for('ai.admin_ai_settings'))
+    name = preset.name
+    db.session.delete(preset)
+    db.session.commit()
+    AuditLog.log(
+        user_id=current_user.id,
+        action='delete_ai_endpoint_preset',
+        resource_type='ai_endpoint_preset',
+        resource_id=preset_id,
+        details=f'name={name!r}',
+        ip_address=request.remote_addr,
+    )
+    flash(f'Endpoint preset “{name}” deleted.', 'success')
+    return redirect(url_for('ai.admin_ai_settings'))
 
 
 # ------------------------------------------------------------------ scan-level API

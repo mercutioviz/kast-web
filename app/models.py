@@ -969,6 +969,36 @@ class AISettings(db.Model):
         return row
 
 
+class AIModelPreset(db.Model):
+    """Admin-managed list of additional AI model IDs available to users."""
+    __tablename__ = 'ai_model_presets'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    model_id   = db.Column(db.Text, nullable=False)
+    label      = db.Column(db.Text, nullable=False)
+    is_active  = db.Column(db.Boolean, default=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AIModelPreset {self.model_id!r}>'
+
+
+class AIEndpointPreset(db.Model):
+    """Admin-managed list of named API endpoint presets available to users."""
+    __tablename__ = 'ai_endpoint_presets'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.Text, nullable=False)
+    url        = db.Column(db.Text, nullable=False)
+    is_active  = db.Column(db.Boolean, default=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AIEndpointPreset {self.name!r}>'
+
+
 class AISummary(db.Model):
     """LLM-generated executive summary for a completed scan."""
     __tablename__ = 'ai_summaries'
