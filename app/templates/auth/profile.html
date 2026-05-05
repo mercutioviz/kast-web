@@ -127,9 +127,10 @@
                     </p>
                     {% endif %}
 
-                    <form method="post" action="{{ url_for('auth.save_api_key') }}">
+                    <form method="post" action="{{ url_for('auth.save_ai_config') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="save" id="api-key-action">
+                        <input type="hidden" name="action" value="save" id="ai-config-action">
+
                         <div class="mb-3">
                             <label class="form-label" for="api_key">Anthropic API Key</label>
                             <input type="password"
@@ -140,14 +141,54 @@
                                    autocomplete="new-password">
                             <small class="text-muted">Stored encrypted. Never shown after saving.</small>
                         </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="model_override">Model</label>
+                            <select class="form-select" id="model_override" name="model_override">
+                                <option value="" {% if not user_ai_model %}selected{% endif %}>
+                                    Use org default
+                                </option>
+                                <option value="claude-haiku-4-5-20251001"
+                                    {% if user_ai_model == 'claude-haiku-4-5-20251001' %}selected{% endif %}>
+                                    Haiku — fastest / lowest cost
+                                </option>
+                                <option value="claude-sonnet-4-6"
+                                    {% if user_ai_model == 'claude-sonnet-4-6' %}selected{% endif %}>
+                                    Sonnet — balanced
+                                </option>
+                                <option value="claude-opus-4-7"
+                                    {% if user_ai_model == 'claude-opus-4-7' %}selected{% endif %}>
+                                    Opus — most capable
+                                </option>
+                            </select>
+                            <small class="text-muted">Overrides the org-level model for your scans only.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="base_url">
+                                Custom API Endpoint
+                                <span class="badge bg-secondary ms-1" style="font-size: 0.65rem;">Advanced</span>
+                            </label>
+                            <input type="url"
+                                   class="form-control"
+                                   id="base_url"
+                                   name="base_url"
+                                   value="{{ user_ai_base_url }}"
+                                   placeholder="https://my-proxy.example.com (leave blank for Anthropic default)">
+                            <small class="text-muted">
+                                Route AI requests through a compatible proxy — e.g. AWS Bedrock, Azure, or LiteLLM.
+                                Leave blank to call the Anthropic API directly.
+                            </small>
+                        </div>
+
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-primary btn-sm">
-                                <i class="fas fa-save me-1"></i>Save Key
+                                <i class="fas fa-save me-1"></i>Save Settings
                             </button>
                             {% if has_personal_ai_key %}
                             <button type="button" class="btn btn-outline-danger btn-sm"
-                                    onclick="document.getElementById('api-key-action').value='clear'; this.form.submit();">
-                                <i class="fas fa-trash me-1"></i>Remove Key
+                                    onclick="document.getElementById('ai-config-action').value='clear_key'; this.form.submit();">
+                                <i class="fas fa-trash me-1"></i>Remove API Key
                             </button>
                             {% endif %}
                         </div>

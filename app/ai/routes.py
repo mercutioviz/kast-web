@@ -87,7 +87,7 @@ def get_summary(scan_id):
 
     summary = AISummary.query.filter_by(scan_id=scan_id).first()
     if not summary:
-        cost_info = _service.estimate_cost(scan)
+        cost_info = _service.estimate_cost(scan, user=current_user)
         return jsonify({
             'status': 'none',
             'estimated_cost_usd': cost_info['cost_usd'],

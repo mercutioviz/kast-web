@@ -61,25 +61,42 @@ class AIService:
         from app.models import AISettings
         return AISettings.get()
 
+    def _resolve_model(self, user, settings):
+        """Return the effective model ID for a user."""
+        return (
+            (user.ai_model_override if user else None)
+            or settings.model_id
+            or _DEFAULT_MODEL
+        )
+
     def _get_client(self, user=None):
         """Return an Anthropic client, applying role-based key resolution.
+
+        Per-user base_url (if set) is forwarded to the Anthropic constructor so
+        requests can be routed through a compatible proxy.
 
         Raises ValueError with a user-facing message if no key is available.
         """
         from app.encryption import decrypt_value
         import anthropic
 
+        base_url = (user.ai_base_url or None) if user else None
+
+        def _make_client(api_key):
+            kwargs = {'api_key': api_key}
+            if base_url:
+                kwargs['base_url'] = base_url
+            return anthropic.Anthropic(**kwargs)
+
         # 1. User's personal key (available to all roles)
         if user and user.anthropic_api_key_encrypted:
-            api_key = decrypt_value(user.anthropic_api_key_encrypted)
-            return anthropic.Anthropic(api_key=api_key)
+            return _make_client(decrypt_value(user.anthropic_api_key_encrypted))
 
         # 2. Org key — admins and power_users only
         if user and user.role in ('admin', 'power_user'):
             settings = self._get_settings()
             if settings.api_key_encrypted:
-                api_key = decrypt_value(settings.api_key_encrypted)
-                return anthropic.Anthropic(api_key=api_key)
+                return _make_client(decrypt_value(settings.api_key_encrypted))
             raise ValueError(
                 'No org-level API key configured. Add one in Admin > AI Settings.'
             )
@@ -127,7 +144,7 @@ class AIService:
     def is_enabled(self):
         return self._get_settings().ai_enabled
 
-    def estimate_cost(self, scan):
+    def estimate_cost(self, scan, user=None):
         """Return dict with estimated token counts and USD cost for a scan."""
         settings = self._get_settings()
         findings_text = self._read_findings(scan)
@@ -138,7 +155,7 @@ class AIService:
             findings_text=findings_text,
         )
         tokens_in, tokens_out = self._estimate_tokens(prompt)
-        model = settings.model_id or _DEFAULT_MODEL
+        model = self._resolve_model(user, settings)
         cost_in = tokens_in / 1_000_000 * _COST_PER_M_INPUT.get(model, 3.00)
         cost_out = tokens_out / 1_000_000 * _COST_PER_M_OUTPUT.get(model, 15.00)
         return {
@@ -195,7 +212,7 @@ class AIService:
                 completed_at=scan.completed_at or 'unknown',
                 findings_text=findings_text,
             )
-            model = settings.model_id or _DEFAULT_MODEL
+            model = self._resolve_model(user, settings)
             response = client.messages.create(
                 model=model,
                 max_tokens=1024,
