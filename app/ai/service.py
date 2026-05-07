@@ -8,7 +8,8 @@ disabled the caller gets a graceful None back.
 Key resolution order:
   1. User's personal Anthropic key (all roles)
   2. Org-level key — admins and power_users only
-  3. No key → ValueError with a user-facing message
+  3. KAST_AI_API_KEY / KAST_AI_BASE_URL env vars (system-level default)
+  4. No key → ValueError with a user-facing message
 """
 import json
 import logging
@@ -72,36 +73,48 @@ class AIService:
     def _get_client(self, user=None):
         """Return an Anthropic client, applying role-based key resolution.
 
-        Per-user base_url (if set) is forwarded to the Anthropic constructor so
-        requests can be routed through a compatible proxy.
+        Resolution order:
+          1. User's personal DB key + user's ai_base_url (falls back to KAST_AI_BASE_URL)
+          2. Org DB key — admins and power_users only (falls back to KAST_AI_BASE_URL)
+          3. KAST_AI_API_KEY / KAST_AI_BASE_URL env vars (system-level default)
+          4. ValueError (no key available)
 
-        Raises ValueError with a user-facing message if no key is available.
+        A 60-second timeout is applied to all clients to prevent hung gunicorn workers.
         """
+        import os
         from app.encryption import decrypt_value
         import anthropic
 
-        base_url = (user.ai_base_url or None) if user else None
+        env_key = os.environ.get('KAST_AI_API_KEY')
+        env_base_url = os.environ.get('KAST_AI_BASE_URL')
+        user_base_url = (user.ai_base_url or None) if user else None
 
-        def _make_client(api_key):
-            kwargs = {'api_key': api_key}
+        def _make_client(api_key, base_url=None):
+            kwargs = {'api_key': api_key, 'timeout': 60.0}
             if base_url:
                 kwargs['base_url'] = base_url
             return anthropic.Anthropic(**kwargs)
 
-        # 1. User's personal key (available to all roles)
+        # 1. User's personal key; inherit env base_url if user has no override
         if user and user.anthropic_api_key_encrypted:
-            return _make_client(decrypt_value(user.anthropic_api_key_encrypted))
+            return _make_client(
+                decrypt_value(user.anthropic_api_key_encrypted),
+                base_url=user_base_url or env_base_url,
+            )
 
         # 2. Org key — admins and power_users only
         if user and user.role in ('admin', 'power_user'):
             settings = self._get_settings()
             if settings.api_key_encrypted:
-                return _make_client(decrypt_value(settings.api_key_encrypted))
-            raise ValueError(
-                'No org-level API key configured. Add one in Admin > AI Settings.'
-            )
+                return _make_client(
+                    decrypt_value(settings.api_key_encrypted),
+                    base_url=user_base_url or env_base_url,
+                )
 
-        # 3. Standard user with no personal key
+        # 3. System env vars — lowest-priority fallback (works for all roles)
+        if env_key:
+            return _make_client(env_key, base_url=env_base_url)
+
         raise ValueError(
             'No personal API key configured. '
             'Add your Anthropic API key in My Profile > AI Settings.'

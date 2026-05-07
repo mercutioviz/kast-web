@@ -383,8 +383,11 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             cmd.append('--dry-run')
 
         # Pass --ai-summary to kast if the scan requested it.
-        # api_key_for_ai is set here and injected into env after env is initialised below.
+        # Resolution: user DB key → org DB key → KAST_AI_API_KEY env var (system default).
+        # api_key_for_ai / base_url_for_ai override env vars injected below.
         api_key_for_ai = None
+        base_url_for_ai = None
+        ai_enabled = False
         if getattr(scan, 'generate_ai_summary', False):
             from app.models import User, AISettings
             from app.encryption import decrypt_value
@@ -394,10 +397,17 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
 
             if ai_user and ai_user.anthropic_api_key_encrypted:
                 api_key_for_ai = decrypt_value(ai_user.anthropic_api_key_encrypted)
+                base_url_for_ai = ai_user.ai_base_url or None
+                ai_enabled = True
             elif ai_user and ai_user.role in ('admin', 'power_user') and ai_settings.api_key_encrypted:
                 api_key_for_ai = decrypt_value(ai_settings.api_key_encrypted)
+                base_url_for_ai = (ai_user.ai_base_url or None) if ai_user else None
+                ai_enabled = True
+            elif os.environ.get('KAST_AI_API_KEY'):
+                # System env vars already present via os.environ.copy() — no explicit key to inject
+                ai_enabled = True
 
-            if api_key_for_ai:
+            if ai_enabled:
                 cmd.append('--ai-summary')
                 model = (ai_user.ai_model_override if ai_user else None) or ai_settings.model_id
                 if model:
@@ -422,6 +432,8 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         env = os.environ.copy()
         if api_key_for_ai:
             env['KAST_AI_API_KEY'] = api_key_for_ai
+        if base_url_for_ai:
+            env['KAST_AI_BASE_URL'] = base_url_for_ai
 
         # ============================================================
         # DEBUGGING: Capture file system state BEFORE execution
@@ -994,8 +1006,11 @@ def regenerate_report_task(self, scan_id, generate_ai_summary=False):
             cmd.extend(['--logo', logo_path])
             current_app.logger.info(f"Using logo for report regeneration: {logo_path}")
 
-        # Resolve AI API key and append --ai-summary if requested
+        # Resolve AI API key and append --ai-summary if requested.
+        # Resolution: user DB key → org DB key → KAST_AI_API_KEY env var (system default).
         api_key_for_ai = None
+        base_url_for_ai = None
+        ai_enabled = False
         if generate_ai_summary:
             from app.models import User, AISettings
             from app.encryption import decrypt_value
@@ -1003,9 +1018,15 @@ def regenerate_report_task(self, scan_id, generate_ai_summary=False):
             ai_settings = AISettings.get()
             if ai_user and ai_user.anthropic_api_key_encrypted:
                 api_key_for_ai = decrypt_value(ai_user.anthropic_api_key_encrypted)
+                base_url_for_ai = ai_user.ai_base_url or None
+                ai_enabled = True
             elif ai_user and ai_user.role in ('admin', 'power_user') and ai_settings.api_key_encrypted:
                 api_key_for_ai = decrypt_value(ai_settings.api_key_encrypted)
-            if api_key_for_ai:
+                base_url_for_ai = (ai_user.ai_base_url or None) if ai_user else None
+                ai_enabled = True
+            elif os.environ.get('KAST_AI_API_KEY'):
+                ai_enabled = True
+            if ai_enabled:
                 cmd.append('--ai-summary')
                 model = (ai_user.ai_model_override if ai_user else None) or ai_settings.model_id
                 if model:
@@ -1023,6 +1044,8 @@ def regenerate_report_task(self, scan_id, generate_ai_summary=False):
         env = os.environ.copy()
         if api_key_for_ai:
             env['KAST_AI_API_KEY'] = api_key_for_ai
+        if base_url_for_ai:
+            env['KAST_AI_BASE_URL'] = base_url_for_ai
 
         # Execute command
         process = subprocess.Popen(
