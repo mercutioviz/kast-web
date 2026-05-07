@@ -101,6 +101,9 @@ class Scan(db.Model):
     
     # CLI command logging
     actual_cli_command = db.Column(db.Text)  # The actual command executed (with all --set args)
+
+    # AI summary options
+    generate_ai_summary = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')

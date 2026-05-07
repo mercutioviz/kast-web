@@ -278,10 +278,11 @@ def generate_summary(scan_id):
         return jsonify({'error': 'AI is disabled'}), 400
 
     cost_info = _service.estimate_cost(scan)
-    if not _service.check_budget(cost_info['cost_usd']):
+    estimated_tokens = (cost_info.get('tokens_in') or 0) + (cost_info.get('tokens_out') or 0)
+    if not _service.check_budget(estimated_tokens):
         return jsonify({'error': 'Monthly token budget exceeded'}), 429
 
-    mode = request.json.get('mode') if request.is_json else None
+    mode = (request.get_json(silent=True) or {}).get('mode')
     summary = _service.generate_summary(scan, mode=mode, user=current_user)
     if summary is None:
         return jsonify({'error': 'Generation failed — AI may be disabled'}), 500

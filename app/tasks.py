@@ -381,7 +381,34 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         if dry_run:
             cmd.append('--dry-run')
-        
+
+        # Pass --ai-summary to kast if the scan requested it.
+        # api_key_for_ai is set here and injected into env after env is initialised below.
+        api_key_for_ai = None
+        if getattr(scan, 'generate_ai_summary', False):
+            from app.models import User, AISettings
+            from app.encryption import decrypt_value
+
+            ai_user = db.session.get(User, scan.user_id)
+            ai_settings = AISettings.get()
+
+            if ai_user and ai_user.anthropic_api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_user.anthropic_api_key_encrypted)
+            elif ai_user and ai_user.role in ('admin', 'power_user') and ai_settings.api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_settings.api_key_encrypted)
+
+            if api_key_for_ai:
+                cmd.append('--ai-summary')
+                model = (ai_user.ai_model_override if ai_user else None) or ai_settings.model_id
+                if model:
+                    cmd.extend(['--ai-model', model])
+                current_app.logger.info('AI summary enabled for scan %s', scan_id)
+            else:
+                current_app.logger.warning(
+                    'generate_ai_summary=True but no API key resolved for scan %s; skipping --ai-summary',
+                    scan_id,
+                )
+
         cmd.extend(['-o', str(output_dir)])
         
         current_app.logger.info(f"Full command to execute: {' '.join(cmd)}")
@@ -393,7 +420,9 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         current_app.logger.info("Stored actual CLI command in database")
         
         env = os.environ.copy()
-        
+        if api_key_for_ai:
+            env['KAST_AI_API_KEY'] = api_key_for_ai
+
         # ============================================================
         # DEBUGGING: Capture file system state BEFORE execution
         # ============================================================
@@ -537,17 +566,17 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         if process.returncode == 0:
             scan.status = 'completed'
             db.session.commit()
-            
+
             # Parse execution log to create per-plugin log files
             parse_plugin_logs(log_file_path, output_dir)
-            
+
             # Parse results and extract plugin errors
             parse_scan_results(scan_id, output_dir)
-            
+
             # Preserve ZAP progress data if it exists
             if plugins and 'zap' in plugins:
                 preserve_zap_final_progress(output_dir)
-            
+
             return {
                 'success': True,
                 'output_dir': str(output_dir),
@@ -928,53 +957,80 @@ def parse_scan_results_task(scan_id, output_dir):
 
 
 @celery.task(bind=True)
-def regenerate_report_task(self, scan_id):
+def regenerate_report_task(self, scan_id, generate_ai_summary=False):
     """
     Celery task to regenerate the KAST HTML report using --report-only flag
-    
+
     Args:
         scan_id: Database scan ID
-    
+        generate_ai_summary: pass --ai-summary to kast so it embeds the summary in the report
+
     Returns:
         dict with 'success', 'error' keys
     """
     from flask import current_app
     from app.utils import get_logo_for_scan
-    
+
     try:
         # Get scan from database
         scan = db.session.get(Scan, scan_id)
         if not scan:
             return {'success': False, 'error': 'Scan not found'}
-        
+
         if not scan.output_dir:
             return {'success': False, 'error': 'No output directory found for this scan'}
-        
+
         output_dir = Path(scan.output_dir)
         if not output_dir.exists():
             return {'success': False, 'error': 'Output directory does not exist'}
-        
+
         # Build command with --report-only flag and format both
         kast_cli = current_app.config['KAST_CLI_PATH']
         cmd = [kast_cli, '--report-only', str(output_dir), '--format', 'both']
-        
+
         # Add logo if available
         logo_path = get_logo_for_scan(scan)
         if logo_path:
             cmd.extend(['--logo', logo_path])
             current_app.logger.info(f"Using logo for report regeneration: {logo_path}")
-        
+
+        # Resolve AI API key and append --ai-summary if requested
+        api_key_for_ai = None
+        if generate_ai_summary:
+            from app.models import User, AISettings
+            from app.encryption import decrypt_value
+            ai_user = db.session.get(User, scan.user_id)
+            ai_settings = AISettings.get()
+            if ai_user and ai_user.anthropic_api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_user.anthropic_api_key_encrypted)
+            elif ai_user and ai_user.role in ('admin', 'power_user') and ai_settings.api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_settings.api_key_encrypted)
+            if api_key_for_ai:
+                cmd.append('--ai-summary')
+                model = (ai_user.ai_model_override if ai_user else None) or ai_settings.model_id
+                if model:
+                    cmd.extend(['--ai-model', model])
+            else:
+                current_app.logger.warning(
+                    f"AI summary requested for scan {scan_id} but no API key available"
+                )
+
         current_app.logger.info(f"Executing KAST report regeneration: {' '.join(cmd)}")
-        
+
         # Update task state to show progress
         self.update_state(state='PROGRESS', meta={'status': 'regenerating', 'scan_id': scan_id})
-        
+
+        env = os.environ.copy()
+        if api_key_for_ai:
+            env['KAST_AI_API_KEY'] = api_key_for_ai
+
         # Execute command
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            env=env,
         )
         
         # Wait for process to complete
@@ -1099,3 +1155,25 @@ def send_report_email_task(self, scan_id, recipients, sender_user_id, include_zi
     except Exception as e:
         current_app.logger.exception(f"Error sending report email for scan {scan_id}: {str(e)}")
         return {'success': False, 'error': str(e)}
+
+
+@celery.task(bind=True)
+def generate_ai_summary_task(self, scan_id):
+    """Generate an AI executive summary for a completed scan (background task)."""
+    from flask import current_app
+    from app.models import User
+    from app.ai.service import AIService
+
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return {'success': False, 'error': 'Scan not found'}
+
+    user = db.session.get(User, scan.user_id)
+    try:
+        summary = AIService().generate_summary(scan, user=user)
+        if summary is None:
+            return {'success': False, 'error': 'AI disabled'}
+        return {'success': summary.status != 'error', 'status': summary.status}
+    except Exception as exc:
+        current_app.logger.exception('AI summary generation failed for scan %s', scan_id)
+        return {'success': False, 'error': str(exc)}

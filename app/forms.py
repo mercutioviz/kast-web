@@ -63,6 +63,12 @@ class ScanConfigForm(FlaskForm):
         default=False,
         render_kw={'class': 'form-check-input'}
     )
+
+    generate_ai_summary = BooleanField(
+        'Auto-generate AI executive summary after scan',
+        default=False,
+        render_kw={'class': 'form-check-input'}
+    )
     
     max_workers = IntegerField(
         'Max Workers',

@@ -112,23 +112,21 @@
                                         <i class="bi bi-eye"></i>
                                     </a>
                                     {% if scan.status == 'completed' and scan.output_dir %}
-                                        <a href="{{ url_for('scans.view_report', scan_id=scan.id) }}" 
+                                        <a href="{{ url_for('scans.view_report', scan_id=scan.id) }}"
                                            class="btn btn-outline-success" title="View Report">
                                             <i class="bi bi-file-earmark-text"></i>
                                         </a>
-                                        <form method="POST" action="{{ url_for('scans.regenerate_report', scan_id=scan.id) }}" 
-                                              class="d-inline" onsubmit="return confirm('Regenerate the PDF/HTML report for this scan?');">
-                                            <button type="submit" class="btn btn-outline-warning" title="Regenerate Report">
-                                                <i class="bi bi-arrow-repeat"></i>
-                                            </button>
-                                        </form>
                                     {% endif %}
-                                    <form method="POST" action="{{ url_for('scans.rerun', scan_id=scan.id) }}" 
-                                          class="d-inline" onsubmit="return confirm('Re-run this scan?');">
-                                        <button type="submit" class="btn btn-outline-info" title="Re-run Scan">
-                                            <i class="bi bi-arrow-clockwise"></i>
-                                        </button>
-                                    </form>
+                                    <button type="button"
+                                            class="btn btn-outline-info rerun-btn"
+                                            title="Re-run Scan"
+                                            data-rerun-url="{{ url_for('scans.rerun', scan_id=scan.id) }}"
+                                            data-target="{{ scan.target }}"
+                                            data-completed="{{ 'true' if (scan.status == 'completed' and scan.output_dir) else 'false' }}"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#rerunModal">
+                                        <i class="bi bi-arrow-clockwise"></i>
+                                    </button>
                                     <form method="POST" action="{{ url_for('scans.delete', scan_id=scan.id) }}" 
                                           class="d-inline" onsubmit="return confirm('Delete this scan?');">
                                         <button type="submit" class="btn btn-outline-danger" title="Delete">
@@ -186,4 +184,101 @@
         </div>
     </div>
 {% endif %}
+
+<!-- Shared Re-run Modal (populated by JS per row) -->
+<div class="modal fade" id="rerunModal" tabindex="-1" aria-labelledby="rerunModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="rerunModalLabel">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Re-run Options: <span id="rerunModalTarget"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="rerunModalForm" method="POST" action="">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Mode</label>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="rerun_mode"
+                                   id="rerun_mode_full" value="full" checked>
+                            <label class="form-check-label" for="rerun_mode_full">
+                                <strong>Full re-scan</strong>
+                            </label>
+                            <div class="form-text">
+                                Create a new scan with the same configuration and re-run all plugins.
+                            </div>
+                        </div>
+                        <div class="form-check" id="rerunReportOnlyOption">
+                            <input class="form-check-input" type="radio" name="rerun_mode"
+                                   id="rerun_mode_report" value="report_only">
+                            <label class="form-check-label" for="rerun_mode_report">
+                                <strong>Report only</strong>
+                            </label>
+                            <div class="form-text">
+                                Regenerate the HTML/PDF report from existing results — no plugins re-run.
+                            </div>
+                        </div>
+                        <div class="form-text text-warning mt-1" id="rerunReportOnlyUnavailable" style="display:none;">
+                            Report only is unavailable — scan is not completed or has no results.
+                        </div>
+                    </div>
+
+                    {% if ai_enabled %}
+                    <div class="border-top pt-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="generate_ai_summary"
+                                   id="rerun_gen_ai" value="1">
+                            <label class="form-check-label" for="rerun_gen_ai">
+                                <i class="fas fa-robot me-1"></i>
+                                <strong>Generate AI executive summary</strong>
+                            </label>
+                            <div class="form-text">
+                                An AI summary will be generated after the operation completes.
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Run
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('rerunModal').addEventListener('show.bs.modal', function (event) {
+    var btn = event.relatedTarget;
+    var target = btn.getAttribute('data-target');
+    var rerunUrl = btn.getAttribute('data-rerun-url');
+    var completed = btn.getAttribute('data-completed') === 'true';
+
+    document.getElementById('rerunModalTarget').textContent = target;
+    document.getElementById('rerunModalForm').action = rerunUrl;
+
+    var reportRadio = document.getElementById('rerun_mode_report');
+    var reportOption = document.getElementById('rerunReportOnlyOption');
+    var reportUnavailable = document.getElementById('rerunReportOnlyUnavailable');
+
+    if (completed) {
+        reportRadio.disabled = false;
+        reportOption.classList.remove('text-muted');
+        reportUnavailable.style.display = 'none';
+    } else {
+        reportRadio.disabled = true;
+        reportRadio.checked = false;
+        document.getElementById('rerun_mode_full').checked = true;
+        reportOption.classList.add('text-muted');
+        reportUnavailable.style.display = 'block';
+    }
+});
+</script>
 {% endblock %}

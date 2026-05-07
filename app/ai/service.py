@@ -122,15 +122,49 @@ class AIService:
                 if not findings:
                     lines.append(f'{plugin_name}: no findings')
                     continue
-                lines.append(f'{plugin_name}: {len(findings)} finding(s)')
-                for f in findings[:50]:  # cap to keep prompt size reasonable
-                    severity = f.get('severity', 'unknown')
-                    title = f.get('title') or f.get('name') or f.get('id', 'Unknown')
-                    lines.append(f'  [{severity.upper()}] {title}')
+                if isinstance(findings, list):
+                    lines.append(f'{plugin_name}: {len(findings)} finding(s)')
+                    for f in findings[:50]:
+                        severity = f.get('severity', 'unknown')
+                        title = f.get('title') or f.get('name') or f.get('id', 'Unknown')
+                        lines.append(f'  [{severity.upper()}] {title}')
+                else:
+                    # Dict-style findings (flat result object) — summarise key fields
+                    disp = findings.get('disposition') or findings.get('status', '')
+                    results = findings.get('results')
+                    summary_parts = []
+                    if disp:
+                        summary_parts.append(f'disposition={disp}')
+                    if results:
+                        if isinstance(results, list):
+                            summary_parts.append(f'{len(results)} result(s)')
+                        elif isinstance(results, dict):
+                            summary_parts.append(f'results: {str(results)[:200]}')
+                    else:
+                        # No nested results — surface top-level scalar values
+                        for k, v in findings.items():
+                            if isinstance(v, (str, int, float, bool)) and v:
+                                summary_parts.append(f'{k}={v}')
+                    lines.append(f'{plugin_name}: {"; ".join(summary_parts) or "data present"}')
             except Exception as exc:
                 logger.warning('Could not read %s: %s', processed_file, exc)
 
         return '\n'.join(lines) if lines else 'No processed findings available.'
+
+    def check_budget(self, estimated_tokens):
+        """Return True if there is remaining budget for estimated_tokens.
+
+        Treats None or 0 as unknown cost — allowed through.
+        Budget of 0 means unlimited.
+        """
+        if not estimated_tokens:
+            return True
+        settings = self._get_settings()
+        limit = settings.monthly_budget_tokens or 0
+        if limit == 0:
+            return True
+        used = settings.current_period_tokens or 0
+        return used + estimated_tokens <= limit
 
     def _estimate_tokens(self, prompt_text):
         """Rough token estimate: 1 token ≈ 4 chars."""

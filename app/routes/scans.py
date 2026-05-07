@@ -86,13 +86,21 @@ def list():
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     scans = pagination.items
     
+    from app.models import AISettings
+    ai_enabled = False
+    try:
+        ai_enabled = AISettings.get().ai_enabled
+    except Exception:
+        pass
+
     return render_template(
         'scan_history.html',
         scans=scans,
         pagination=pagination,
         status_filter=status_filter,
         target_filter=target_filter,
-        format_duration=format_duration
+        format_duration=format_duration,
+        ai_enabled=ai_enabled,
     )
 
 @bp.route('/<int:scan_id>')
@@ -585,24 +593,44 @@ def regenerate_report(scan_id):
 @bp.route('/<int:scan_id>/rerun', methods=['POST'])
 @login_required
 def rerun(scan_id):
-    """Re-run a scan with the same configuration"""
+    """Re-run a scan (full re-scan or report-only) with optional AI summary generation."""
     original_scan = db.session.get(Scan, scan_id)
     if not original_scan:
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
-    
-    # Check access permission (need edit permission)
+
     has_access, permission = check_scan_access(original_scan, 'edit')
     if not has_access:
         flash('You do not have permission to re-run this scan', 'danger')
         return redirect(url_for('scans.list'))
-    
-    # Check if user is allowed to run active scans if the original was active
+
+    rerun_mode = request.form.get('rerun_mode', 'full')
+    gen_ai = request.form.get('generate_ai_summary') == '1'
+
+    # --- Report-only: regenerate report + optionally AI summary ---
+    if rerun_mode == 'report_only':
+        if original_scan.status != 'completed' or not original_scan.output_dir:
+            flash('Report-only mode requires a completed scan with results.', 'warning')
+            return redirect(url_for('scans.detail', scan_id=scan_id))
+
+        from app.tasks import regenerate_report_task
+        try:
+            regenerate_report_task.delay(scan_id, generate_ai_summary=gen_ai)
+            msg = f'Report regeneration started for {original_scan.target}.'
+            if gen_ai:
+                msg += ' AI summary will be embedded in the report.'
+            flash(msg, 'info')
+        except Exception as e:
+            flash(f'Error starting report regeneration: {str(e)}', 'danger')
+            return redirect(url_for('scans.detail', scan_id=scan_id))
+
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+
+    # --- Full re-scan ---
     if original_scan.scan_mode == 'active' and not current_user.can_run_active_scans:
         flash('You do not have permission to run active scans. Only Power Users and Admins can run active scans.', 'danger')
         return redirect(url_for('scans.detail', scan_id=scan_id))
-    
-    # Create new scan with same configuration (assigned to current user)
+
     new_scan = Scan(
         user_id=current_user.id,
         target=original_scan.target,
@@ -611,36 +639,32 @@ def rerun(scan_id):
         parallel=original_scan.parallel,
         verbose=original_scan.verbose,
         dry_run=original_scan.dry_run,
+        generate_ai_summary=gen_ai,
         status='pending',
-        config_json=original_scan.config_json
+        config_json=original_scan.config_json,
     )
-    
+
     db.session.add(new_scan)
     db.session.commit()
-    
-    flash(f'Re-running scan for {new_scan.target}', 'info')
-    
-    # Execute scan
-    from app.utils import execute_kast_scan
+
+    flash(f'Re-running scan for {new_scan.target}.', 'info')
+
+    from app.tasks import execute_scan_task
     try:
-        result = execute_kast_scan(
+        task = execute_scan_task.delay(
             new_scan.id,
             new_scan.target,
             new_scan.scan_mode,
             plugins=new_scan.plugin_list if new_scan.plugins else None,
             parallel=new_scan.parallel,
             verbose=new_scan.verbose,
-            dry_run=new_scan.dry_run
+            dry_run=new_scan.dry_run,
         )
-        
-        if result['success']:
-            flash(f'Scan completed successfully', 'success')
-        else:
-            flash(f'Scan failed: {result.get("error", "Unknown error")}', 'danger')
-    
+        new_scan.celery_task_id = task.id
+        db.session.commit()
     except Exception as e:
-        flash(f'Error executing scan: {str(e)}', 'danger')
-    
+        flash(f'Error starting scan: {str(e)}', 'danger')
+
     return redirect(url_for('scans.detail', scan_id=new_scan.id))
 
 
