@@ -1,0 +1,148 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}Cloud Scans - Admin Panel{% endblock %}
+{% block admin_title %}Cloud Infrastructure{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Cloud Scans</li>
+{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-cloud"></i> Cloud Scans</h2>
+            <p class="text-muted mb-0">Provisioned cloud ZAP instances and their lifecycle status</p>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('cloud.admin_cloud_credentials') }}">
+                <i class="fas fa-key"></i> Credentials
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link active" href="{{ url_for('cloud.admin_cloud_scans') }}">
+                <i class="fas fa-cloud"></i> Cloud Scans
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('cloud.admin_cloud_orphans') }}">
+                <i class="fas fa-exclamation-triangle"></i> Orphans
+            </a>
+        </li>
+    </ul>
+
+    <!-- Status filter -->
+    <div class="card mb-4">
+        <div class="card-body py-2">
+            <form method="get" class="d-flex gap-2 align-items-center">
+                <label class="form-label mb-0">Filter:</label>
+                <select name="status" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+                    <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed / Orphaned</option>
+                    <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All</option>
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Cloud Scans
+                <span class="badge bg-secondary">{{ cloud_scans|length }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if cloud_scans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Scan</th>
+                            <th>Provider</th>
+                            <th>Status</th>
+                            <th>ZAP URL</th>
+                            <th>Provisioned</th>
+                            <th>Torn Down</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for cs in cloud_scans %}
+                        <tr>
+                            <td>{{ cs.id }}</td>
+                            <td>
+                                <a href="{{ url_for('scans.view_scan', scan_id=cs.scan_id) }}">
+                                    Scan #{{ cs.scan_id }}
+                                </a>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ cs.provider }}</span>
+                            </td>
+                            <td>
+                                {% if cs.status == 'scanning' %}
+                                <span class="badge bg-success">{{ cs.status }}</span>
+                                {% elif cs.status == 'provisioning' %}
+                                <span class="badge bg-info">{{ cs.status }}</span>
+                                {% elif cs.status == 'tearing_down' %}
+                                <span class="badge bg-warning text-dark">{{ cs.status }}</span>
+                                {% elif cs.status == 'torn_down' %}
+                                <span class="badge bg-secondary">{{ cs.status }}</span>
+                                {% elif cs.status in ('failed', 'orphaned') %}
+                                <span class="badge bg-danger">{{ cs.status }}</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ cs.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if cs.zap_url %}
+                                <code class="small">{{ cs.zap_url }}</code>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {{ cs.provisioned_at.strftime('%Y-%m-%d %H:%M') if cs.provisioned_at else '—' }}
+                            </td>
+                            <td class="small">
+                                {{ cs.torn_down_at.strftime('%Y-%m-%d %H:%M') if cs.torn_down_at else '—' }}
+                            </td>
+                            <td>
+                                {% if cs.error_message %}
+                                <span class="text-danger small" title="{{ cs.error_message }}">
+                                    {{ cs.error_message[:60] }}{% if cs.error_message|length > 60 %}…{% endif %}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-cloud fa-3x mb-3"></i>
+                <p>No cloud scans found for the selected filter.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

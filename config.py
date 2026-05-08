@@ -3,8 +3,11 @@ from pathlib import Path
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-# Application version
-VERSION = '1.5.13'
+# Application version — read from VERSION file at repo root, fall back to 'unknown'
+try:
+    VERSION = Path(basedir).joinpath('VERSION').read_text().strip()
+except Exception:
+    VERSION = 'unknown'
 
 class Config:
     """Base configuration"""

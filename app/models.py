@@ -20,7 +20,10 @@ class User(UserMixin, db.Model):
     login_count = db.Column(db.Integer, default=0)
     failed_login_attempts = db.Column(db.Integer, default=0)
     last_failed_login = db.Column(db.DateTime)
-    
+    anthropic_api_key_encrypted = db.Column(db.Text, nullable=True)
+    ai_model_override = db.Column(db.Text, nullable=True)
+    ai_base_url = db.Column(db.Text, nullable=True)
+
     # Relationships
     scans = db.relationship('Scan', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     
@@ -98,6 +101,9 @@ class Scan(db.Model):
     
     # CLI command logging
     actual_cli_command = db.Column(db.Text)  # The actual command executed (with all --set args)
+
+    # AI summary options
+    generate_ai_summary = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
@@ -615,7 +621,10 @@ class ZapConfiguration(db.Model):
     # Settings
     is_active = db.Column(db.Boolean, default=True)
     is_default = db.Column(db.Boolean, default=False)
-    
+
+    # Phase D: reference to the new cloud credentials table
+    cloud_credential_id = db.Column(db.Integer, db.ForeignKey('cloud_credentials.id'), nullable=True)
+
     # Metadata
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -624,6 +633,7 @@ class ZapConfiguration(db.Model):
     
     # Relationships
     creator = db.relationship('User', backref='created_zap_configs')
+    cloud_credential = db.relationship('CloudCredential', backref='zap_configurations')
     
     def __repr__(self):
         return f'<ZapConfiguration {self.id}: {self.name}>'
@@ -714,6 +724,97 @@ class ZapConfiguration(db.Model):
                     masked[key] = '********'
         
         return masked
+
+
+class CloudCredential(db.Model):
+    """Encrypted cloud-provider credentials (Phase D)."""
+    __tablename__ = 'cloud_credentials'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    provider = db.Column(db.String(20), nullable=False)  # aws, azure, gcp
+    credentials_encrypted = db.Column(db.Text, nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+
+    creator = db.relationship('User', backref='cloud_credentials')
+
+    def __repr__(self):
+        return f'<CloudCredential {self.id}: {self.name} ({self.provider})>'
+
+    @property
+    def credentials(self):
+        if self.credentials_encrypted:
+            from app.encryption import decrypt_json
+            return decrypt_json(self.credentials_encrypted)
+        return {}
+
+    @credentials.setter
+    def credentials(self, value):
+        from app.encryption import encrypt_json
+        self.credentials_encrypted = encrypt_json(value)
+
+
+class CloudScan(db.Model):
+    """Tracks provisioned cloud infrastructure for a scan (Phase D)."""
+    __tablename__ = 'cloud_scans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), nullable=False, index=True)
+    cloud_credential_id = db.Column(db.Integer, db.ForeignKey('cloud_credentials.id'), nullable=False)
+    provider = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default='provisioning')
+    # provisioning, provisioned, scan_running, scan_complete, teardown, torn_down, failed
+    zap_url = db.Column(db.String(255))
+    zap_api_key_encrypted = db.Column(db.Text)
+    terraform_state_path = db.Column(db.String(255))
+    error_message = db.Column(db.Text)
+    provisioned_at = db.Column(db.DateTime)
+    torn_down_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+
+    scan = db.relationship('Scan', backref=db.backref('cloud_scan', uselist=False))
+    credential = db.relationship('CloudCredential', backref='cloud_scans')
+
+    def __repr__(self):
+        return f'<CloudScan {self.id}: scan={self.scan_id} status={self.status}>'
+
+    @property
+    def zap_api_key(self):
+        if self.zap_api_key_encrypted:
+            from app.encryption import decrypt_value
+            return decrypt_value(self.zap_api_key_encrypted)
+        return None
+
+    @zap_api_key.setter
+    def zap_api_key(self, value):
+        from app.encryption import encrypt_value
+        self.zap_api_key_encrypted = encrypt_value(value) if value else None
+
+
+class CloudOrphan(db.Model):
+    """Tracks cloud resources that outlived their scan and need cleanup (Phase D)."""
+    __tablename__ = 'cloud_orphans'
+
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(20), nullable=False)
+    resource_id = db.Column(db.String(255), nullable=False)
+    resource_type = db.Column(db.String(50), nullable=False)
+    cloud_scan_id = db.Column(db.Integer, db.ForeignKey('cloud_scans.id'), nullable=True)
+    detected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    cleanup_attempts = db.Column(db.Integer, default=0)
+    last_cleanup_attempt = db.Column(db.DateTime)
+    status = db.Column(db.String(20), nullable=False, default='detected')
+    # detected, cleanup_pending, cleaning, cleaned, failed
+    error_message = db.Column(db.Text)
+
+    cloud_scan = db.relationship('CloudScan', backref='orphans')
+
+    def __repr__(self):
+        return f'<CloudOrphan {self.id}: {self.provider}/{self.resource_type}/{self.resource_id}>'
 
 
 class ZapScanProgress(db.Model):
@@ -838,6 +939,86 @@ class ZapScanProgress(db.Model):
         
         # Store raw snapshot
         progress.raw_snapshot = json.dumps(snapshot_data)
-        
+
         db.session.commit()
         return progress
+
+
+class AISettings(db.Model):
+    """Singleton row (id=1) storing org-wide AI configuration."""
+    __tablename__ = 'ai_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ai_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    default_mode = db.Column(db.String(10), default='review', nullable=False)  # auto, review
+    monthly_budget_tokens = db.Column(db.Integer, default=100000, nullable=False)
+    current_period_tokens = db.Column(db.Integer, default=0, nullable=False)
+    period_reset_date = db.Column(db.DateTime, nullable=True)
+    api_key_encrypted = db.Column(db.Text, nullable=True)
+    model_id = db.Column(db.String(100), default='claude-sonnet-4-6', nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    updater = db.relationship('User', backref='ai_settings_updates')
+
+    @classmethod
+    def get(cls):
+        """Return the singleton row, creating it with defaults if absent."""
+        row = cls.query.get(1)
+        if row is None:
+            row = cls(id=1)
+            db.session.add(row)
+            db.session.commit()
+        return row
+
+
+class AIModelPreset(db.Model):
+    """Admin-managed list of additional AI model IDs available to users."""
+    __tablename__ = 'ai_model_presets'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    model_id   = db.Column(db.Text, nullable=False)
+    label      = db.Column(db.Text, nullable=False)
+    is_active  = db.Column(db.Boolean, default=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AIModelPreset {self.model_id!r}>'
+
+
+class AIEndpointPreset(db.Model):
+    """Admin-managed list of named API endpoint presets available to users."""
+    __tablename__ = 'ai_endpoint_presets'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.Text, nullable=False)
+    url        = db.Column(db.Text, nullable=False)
+    is_active  = db.Column(db.Boolean, default=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AIEndpointPreset {self.name!r}>'
+
+
+class AISummary(db.Model):
+    """LLM-generated executive summary for a completed scan."""
+    __tablename__ = 'ai_summaries'
+
+    id = db.Column(db.Integer, primary_key=True)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scans.id'), unique=True, nullable=False, index=True)
+    prompt_version = db.Column(db.String(50), default='exec_summary_v1', nullable=False)
+    raw_text = db.Column(db.Text, nullable=True)
+    edited_text = db.Column(db.Text, nullable=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # pending → generating → ready → accepted | error
+    status = db.Column(db.String(20), default='pending', nullable=False, index=True)
+    tokens_in = db.Column(db.Integer, default=0)
+    tokens_out = db.Column(db.Integer, default=0)
+    cost_usd = db.Column(db.Float, default=0.0)
+    generated_at = db.Column(db.DateTime, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+
+    scan = db.relationship('Scan', backref=db.backref('ai_summary', uselist=False))
+    reviewer = db.relationship('User', backref='reviewed_ai_summaries')

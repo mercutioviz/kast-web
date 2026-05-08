@@ -1,0 +1,310 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}AI Settings - Admin Panel{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-robot"></i> AI Executive Summary Settings</h2>
+            <p class="text-muted mb-0">Configure the Anthropic API integration for AI-generated scan summaries.</p>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="row">
+        <div class="col-lg-7">
+            <form method="post">
+                {{ form.hidden_tag() }}
+
+                <!-- Enable / Disable -->
+                <div class="card mb-4">
+                    <div class="card-header"><h5 class="mb-0">Availability</h5></div>
+                    <div class="card-body">
+                        <div class="form-check form-switch mb-0">
+                            {{ form.ai_enabled(class="form-check-input") }}
+                            <label class="form-check-label" for="ai_enabled">
+                                Enable AI executive summaries
+                            </label>
+                        </div>
+                        <small class="text-muted">
+                            When enabled, a "Generate AI Summary" button appears on completed scan detail pages.
+                        </small>
+                    </div>
+                </div>
+
+                <!-- API Key -->
+                <div class="card mb-4">
+                    <div class="card-header"><h5 class="mb-0">Anthropic API Key</h5></div>
+                    <div class="card-body">
+                        {% if has_api_key %}
+                        <div class="alert alert-success py-2 mb-3">
+                            <i class="fas fa-check-circle"></i> An API key is stored.
+                            Enter a new value below to replace it.
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning py-2 mb-3">
+                            <i class="fas fa-exclamation-triangle"></i> No API key configured.
+                            AI generation will fail until one is provided.
+                        </div>
+                        {% endif %}
+                        <label class="form-label" for="api_key">{{ form.api_key.label.text }}</label>
+                        {{ form.api_key() }}
+                        <small class="text-muted">
+                            Keys are encrypted at rest. Leave blank to keep the existing key.
+                        </small>
+                        {% if form.api_key.errors %}
+                        <div class="text-danger mt-1">
+                            {% for e in form.api_key.errors %}{{ e }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Generation settings -->
+                <div class="card mb-4">
+                    <div class="card-header"><h5 class="mb-0">Generation Settings</h5></div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.model_id.label.text }}</label>
+                            {{ form.model_id() }}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.default_mode.label.text }}</label>
+                            {{ form.default_mode() }}
+                            <small class="text-muted d-block mt-1">
+                                <strong>Review</strong>: summary is drafted and shown to you before being included in any shared report.
+                                <strong>Auto</strong>: published immediately after generation.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Budget -->
+                <div class="card mb-4">
+                    <div class="card-header"><h5 class="mb-0">Monthly Token Budget</h5></div>
+                    <div class="card-body">
+                        <label class="form-label">{{ form.monthly_budget_tokens.label.text }}</label>
+                        {{ form.monthly_budget_tokens() }}
+                        {% if form.monthly_budget_tokens.errors %}
+                        <div class="text-danger mt-1">
+                            {% for e in form.monthly_budget_tokens.errors %}{{ e }}{% endfor %}
+                        </div>
+                        {% endif %}
+                        <small class="text-muted d-block mt-1">
+                            Cumulative input + output tokens for the current calendar month.
+                            Generation is blocked once this limit is reached.
+                        </small>
+
+                        <hr>
+                        <div class="row text-center mt-2">
+                            <div class="col-6">
+                                <div class="text-muted small">Used this period</div>
+                                <div class="fw-bold">{{ "{:,}".format(settings.current_period_tokens or 0) }}</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-muted small">Budget</div>
+                                <div class="fw-bold">{{ "{:,}".format(settings.monthly_budget_tokens or 0) }}</div>
+                            </div>
+                        </div>
+                        {% set pct = ((settings.current_period_tokens or 0) / (settings.monthly_budget_tokens or 1) * 100) | int %}
+                        <div class="progress mt-2" style="height: 8px;">
+                            <div class="progress-bar {% if pct >= 90 %}bg-danger{% elif pct >= 70 %}bg-warning{% else %}bg-success{% endif %}"
+                                 style="width: {{ [pct, 100] | min }}%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Settings
+                </button>
+            </form>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card border-info">
+                <div class="card-header bg-info text-white"><h6 class="mb-0">About AI Summaries</h6></div>
+                <div class="card-body">
+                    <p class="small mb-2">
+                        When enabled, completed scans display a
+                        <strong>Generate AI Summary</strong> button. Clicking it sends
+                        the scan's processed findings to Claude and returns a 3-4 paragraph
+                        executive narrative suitable for sharing with a prospect.
+                    </p>
+                    <p class="small mb-2">
+                        In <strong>Review</strong> mode you can read, edit, and accept the
+                        summary before it appears on any shared report link. In
+                        <strong>Auto</strong> mode it is published immediately.
+                    </p>
+                    <p class="small mb-0">
+                        Typical cost per summary: <strong>$0.01 – $0.05</strong> depending
+                        on the number of findings and the model selected.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preset management — full width below the 2-column layout -->
+    <div class="row mt-4">
+
+        <!-- Model Presets -->
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Custom Model Presets</h5>
+                    <small class="text-muted">Built-in Claude models (Haiku / Sonnet / Opus) are always available.</small>
+                </div>
+                <div class="card-body">
+                    {% if model_presets %}
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Model ID</th>
+                                    <th>Label</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in model_presets %}
+                                <tr>
+                                    <td><code>{{ p.model_id }}</code></td>
+                                    <td>{{ p.label }}</td>
+                                    <td>
+                                        {% if p.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <form method="post" action="{{ url_for('ai.toggle_model_preset', preset_id=p.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                {% if p.is_active %}Disable{% else %}Enable{% endif %}
+                                            </button>
+                                        </form>
+                                        <form method="post" action="{{ url_for('ai.delete_model_preset', preset_id=p.id) }}" class="d-inline"
+                                              onsubmit="return confirm('Delete preset {{ p.label }}?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-3">No custom model presets yet.</p>
+                    {% endif %}
+
+                    <form method="post" action="{{ url_for('ai.add_model_preset') }}" class="row g-2 align-items-end">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="col-md-4">
+                            <label class="form-label form-label-sm">Model ID</label>
+                            <input type="text" class="form-control form-control-sm" name="model_id"
+                                   placeholder="e.g. gpt-4o" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label form-label-sm">Display Label</label>
+                            <input type="text" class="form-control form-control-sm" name="label"
+                                   placeholder="e.g. GPT-4o (OpenAI)" required>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                <i class="fas fa-plus me-1"></i>Add Model
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Endpoint Presets -->
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-cloud me-2"></i>API Endpoint Presets</h5>
+                </div>
+                <div class="card-body">
+                    {% if endpoint_presets %}
+                    <div class="table-responsive mb-3">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Name</th>
+                                    <th>URL</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ep in endpoint_presets %}
+                                <tr>
+                                    <td>{{ ep.name }}</td>
+                                    <td><code class="small">{{ ep.url }}</code></td>
+                                    <td>
+                                        {% if ep.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <form method="post" action="{{ url_for('ai.toggle_endpoint_preset', preset_id=ep.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                {% if ep.is_active %}Disable{% else %}Enable{% endif %}
+                                            </button>
+                                        </form>
+                                        <form method="post" action="{{ url_for('ai.delete_endpoint_preset', preset_id=ep.id) }}" class="d-inline"
+                                              onsubmit="return confirm('Delete endpoint {{ ep.name }}?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-3">No endpoint presets yet. Users can still enter a custom URL manually.</p>
+                    {% endif %}
+
+                    <form method="post" action="{{ url_for('ai.add_endpoint_preset') }}" class="row g-2 align-items-end">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="col-md-3">
+                            <label class="form-label form-label-sm">Name</label>
+                            <input type="text" class="form-control form-control-sm" name="name"
+                                   placeholder="e.g. AWS Bedrock US-East" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label form-label-sm">URL</label>
+                            <input type="url" class="form-control form-control-sm" name="url"
+                                   placeholder="https://..." required>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">
+                                <i class="fas fa-plus me-1"></i>Add Endpoint
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

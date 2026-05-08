@@ -120,6 +120,7 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         zap_plan_file = None
         zap_plan_fd = None
         zap_config_to_use = None
+        cloud_scan_id = None  # set during cloud provisioning; triggers teardown in finally
         
         if plugins and 'zap' in plugins:
             from app.models import ZapAutomationPlan, ZapConfiguration
@@ -231,10 +232,11 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             config = zap_config_to_use
             from app.encryption import decrypt_json
             
-            # ALWAYS add execution_mode first (matches working syntax order)
-            cmd.extend(['--set', f'zap.execution_mode={config.execution_mode}'])
-            zap_set_args.append(f'zap.execution_mode={config.execution_mode}')
-            current_app.logger.info(f"[1] --set zap.execution_mode={config.execution_mode}")
+            # Cloud mode is handled by kast-web; kast receives remote mode
+            effective_execution_mode = 'remote' if config.execution_mode == 'cloud' else config.execution_mode
+            cmd.extend(['--set', f'zap.execution_mode={effective_execution_mode}'])
+            zap_set_args.append(f'zap.execution_mode={effective_execution_mode}')
+            current_app.logger.info(f"[1] --set zap.execution_mode={effective_execution_mode}")
             
             # Handle LOCAL mode configuration
             if config.execution_mode == 'local' and config.local_config_encrypted:
@@ -306,154 +308,36 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
                 except Exception as e:
                     current_app.logger.error(f"Error decrypting ZAP remote config: {e}")
             
-            # Handle CLOUD mode configuration
+            # Handle CLOUD mode — provision ZAP via kast-web, then run kast in remote mode
             elif config.execution_mode == 'cloud':
-                current_app.logger.info("DEBUG: Entered CLOUD mode block")
+                current_app.logger.info("CLOUD MODE: provisioning ZAP via kast-web cloud runtime")
+                from app.cloud.orchestrator import (
+                    provision_for_scan as _provision_for_scan,
+                    CloudProvisionError, CredentialError,
+                )
                 try:
-                    # Use the model's @property which handles decryption automatically
-                    cloud_config = config.cloud_config
-                    
-                    if not cloud_config:
-                        current_app.logger.warning("Cloud mode selected but no cloud configuration found")
-                        raise ValueError("No cloud configuration available")
-                    
+                    provision_result = _provision_for_scan(scan_id)
+                    cloud_scan_id = provision_result['cloud_scan_id']
                     arg_num = len(zap_set_args) + 1
-                    
-                    # Provider (required)
-                    if 'provider' in cloud_config and cloud_config['provider']:
-                        arg = f'zap.cloud.provider={cloud_config["provider"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Region (required for all providers)
-                    if 'region' in cloud_config and cloud_config['region']:
-                        arg = f'zap.cloud.region={cloud_config["region"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Instance type (AWS) / VM size (Azure) / Machine type (GCP)
-                    if 'instance_type' in cloud_config and cloud_config['instance_type']:
-                        arg = f'zap.cloud.instance_type={cloud_config["instance_type"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    elif 'vm_size' in cloud_config and cloud_config['vm_size']:
-                        # Azure uses vm_size instead of instance_type
-                        arg = f'zap.cloud.vm_size={cloud_config["vm_size"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    elif 'machine_type' in cloud_config and cloud_config['machine_type']:
-                        # GCP uses machine_type
-                        arg = f'zap.cloud.machine_type={cloud_config["machine_type"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # AMI ID (AWS-specific, optional)
-                    if 'ami_id' in cloud_config and cloud_config['ami_id']:
-                        arg = f'zap.cloud.ami_id={cloud_config["ami_id"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Spot instance configuration (AWS)
-                    if 'spot_max_price' in cloud_config and cloud_config['spot_max_price']:
-                        arg = f'zap.cloud.spot_max_price={cloud_config["spot_max_price"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Spot enabled (Azure)
-                    if 'spot_enabled' in cloud_config:
-                        arg = f'zap.cloud.spot_enabled={str(cloud_config["spot_enabled"]).lower()}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Preemptible (GCP)
-                    if 'preemptible' in cloud_config:
-                        arg = f'zap.cloud.preemptible={str(cloud_config["preemptible"]).lower()}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Zone (GCP-specific)
-                    if 'zone' in cloud_config and cloud_config['zone']:
-                        arg = f'zap.cloud.zone={cloud_config["zone"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Project ID (GCP-specific)
-                    if 'project_id' in cloud_config and cloud_config['project_id']:
-                        arg = f'zap.cloud.project_id={cloud_config["project_id"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Subscription ID (Azure-specific)
-                    if 'subscription_id' in cloud_config and cloud_config['subscription_id']:
-                        arg = f'zap.cloud.subscription_id={cloud_config["subscription_id"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Tenant ID (Azure-specific)
-                    if 'tenant_id' in cloud_config and cloud_config['tenant_id']:
-                        arg = f'zap.cloud.tenant_id={cloud_config["tenant_id"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Client ID (Azure-specific)
-                    if 'client_id' in cloud_config and cloud_config['client_id']:
-                        arg = f'zap.cloud.client_id={cloud_config["client_id"]}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Security group CIDRs (if any)
-                    if 'allowed_cidrs' in cloud_config and cloud_config['allowed_cidrs']:
-                        # Convert list to comma-separated string
-                        cidrs_str = ','.join(cloud_config['allowed_cidrs'])
-                        arg = f'zap.cloud.allowed_cidrs={cidrs_str}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    # Auto-terminate setting
-                    if 'auto_terminate' in cloud_config:
-                        arg = f'zap.cloud.auto_terminate={str(cloud_config["auto_terminate"]).lower()}'
-                        cmd.extend(['--set', arg])
-                        zap_set_args.append(arg)
-                        current_app.logger.info(f"[{arg_num}] --set {arg}")
-                        arg_num += 1
-                    
-                    current_app.logger.info(f"Applied {len(zap_set_args) - 1} ZAP cloud configuration argument(s)")
-                except Exception as e:
-                    current_app.logger.error(f"Error decrypting ZAP cloud config: {e}")
-            else:
-                # This should NEVER execute - log if it does
-                current_app.logger.error(f"DEBUG: UNEXPECTED - No mode block executed!")
-                current_app.logger.error(f"DEBUG: execution_mode={config.execution_mode}, local={bool(config.local_config_encrypted)}, remote={bool(config.remote_config_encrypted)}, cloud={bool(config.cloud_config_encrypted)}")
+
+                    arg = f'zap.remote.api_url={provision_result["zap_url"]}'
+                    cmd.extend(['--set', arg])
+                    zap_set_args.append(arg)
+                    current_app.logger.info(f"[{arg_num}] --set {arg}")
+                    arg_num += 1
+
+                    arg = f'zap.remote.api_key={provision_result["zap_api_key"]}'
+                    cmd.extend(['--set', arg])
+                    zap_set_args.append('zap.remote.api_key=***hidden***')
+                    current_app.logger.info(f"[{arg_num}] --set zap.remote.api_key=***hidden***")
+
+                    current_app.logger.info(
+                        "Cloud ZAP provisioned: cloud_scan_id=%d url=%s",
+                        cloud_scan_id, provision_result['zap_url'],
+                    )
+                except (CloudProvisionError, CredentialError) as exc:
+                    cloud_scan_id = getattr(exc, 'cloud_scan_id', None)
+                    raise
             
             # Add custom automation plan LAST (matches working syntax order)
             if zap_plan_file:
@@ -497,7 +381,44 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         
         if dry_run:
             cmd.append('--dry-run')
-        
+
+        # Pass --ai-summary to kast if the scan requested it.
+        # Resolution: user DB key → org DB key → KAST_AI_API_KEY env var (system default).
+        # api_key_for_ai / base_url_for_ai override env vars injected below.
+        api_key_for_ai = None
+        base_url_for_ai = None
+        ai_enabled = False
+        if getattr(scan, 'generate_ai_summary', False):
+            from app.models import User, AISettings
+            from app.encryption import decrypt_value
+
+            ai_user = db.session.get(User, scan.user_id)
+            ai_settings = AISettings.get()
+
+            if ai_user and ai_user.anthropic_api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_user.anthropic_api_key_encrypted)
+                base_url_for_ai = ai_user.ai_base_url or None
+                ai_enabled = True
+            elif ai_user and ai_user.role in ('admin', 'power_user') and ai_settings.api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_settings.api_key_encrypted)
+                base_url_for_ai = (ai_user.ai_base_url or None) if ai_user else None
+                ai_enabled = True
+            elif os.environ.get('KAST_AI_API_KEY'):
+                # System env vars already present via os.environ.copy() — no explicit key to inject
+                ai_enabled = True
+
+            if ai_enabled:
+                cmd.append('--ai-summary')
+                model = (ai_user.ai_model_override if ai_user else None) or ai_settings.model_id
+                if model:
+                    cmd.extend(['--ai-model', model])
+                current_app.logger.info('AI summary enabled for scan %s', scan_id)
+            else:
+                current_app.logger.warning(
+                    'generate_ai_summary=True but no API key resolved for scan %s; skipping --ai-summary',
+                    scan_id,
+                )
+
         cmd.extend(['-o', str(output_dir)])
         
         current_app.logger.info(f"Full command to execute: {' '.join(cmd)}")
@@ -508,99 +429,12 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         db.session.commit()
         current_app.logger.info("Stored actual CLI command in database")
         
-        # ============================================================
-        # CLOUD CREDENTIALS: Set environment variables for Terraform
-        # ============================================================
-        env = os.environ.copy()  # Start with current environment
-        
-        if plugins and 'zap' in plugins and zap_config_to_use:
-            if zap_config_to_use.execution_mode == 'cloud':
-                current_app.logger.info("="*80)
-                current_app.logger.info("SETTING CLOUD CREDENTIALS AS ENVIRONMENT VARIABLES")
-                current_app.logger.info("="*80)
-                
-                cloud_config = zap_config_to_use.cloud_config
-                provider = cloud_config.get('provider', '').lower()
-                
-                current_app.logger.info(f"Cloud provider: {provider}")
-                
-                if provider == 'aws':
-                    # Set AWS credentials
-                    current_app.logger.info("Setting AWS credentials as environment variables")
-                    
-                    if 'access_key' in cloud_config and cloud_config['access_key']:
-                        env['AWS_ACCESS_KEY_ID'] = cloud_config['access_key']
-                        current_app.logger.info("  ✓ AWS_ACCESS_KEY_ID set")
-                    else:
-                        current_app.logger.warning("  ✗ AWS_ACCESS_KEY_ID not found in cloud config")
-                    
-                    if 'secret_key' in cloud_config and cloud_config['secret_key']:
-                        env['AWS_SECRET_ACCESS_KEY'] = cloud_config['secret_key']
-                        current_app.logger.info("  ✓ AWS_SECRET_ACCESS_KEY set")
-                    else:
-                        current_app.logger.warning("  ✗ AWS_SECRET_ACCESS_KEY not found in cloud config")
-                    
-                    if 'region' in cloud_config and cloud_config['region']:
-                        env['AWS_DEFAULT_REGION'] = cloud_config['region']
-                        current_app.logger.info(f"  ✓ AWS_DEFAULT_REGION set to: {cloud_config['region']}")
-                    else:
-                        # Default to us-east-1 if not specified
-                        env['AWS_DEFAULT_REGION'] = 'us-east-1'
-                        current_app.logger.info("  ✓ AWS_DEFAULT_REGION set to default: us-east-1")
-                    
-                    # Also set AWS_REGION for compatibility
-                    env['AWS_REGION'] = env['AWS_DEFAULT_REGION']
-                    current_app.logger.info(f"  ✓ AWS_REGION set to: {env['AWS_DEFAULT_REGION']}")
-                
-                elif provider == 'azure':
-                    # Set Azure credentials
-                    current_app.logger.info("Setting Azure credentials as environment variables")
-                    
-                    if 'client_id' in cloud_config and cloud_config['client_id']:
-                        env['AZURE_CLIENT_ID'] = cloud_config['client_id']
-                        current_app.logger.info("  ✓ AZURE_CLIENT_ID set")
-                    else:
-                        current_app.logger.warning("  ✗ AZURE_CLIENT_ID not found in cloud config")
-                    
-                    if 'client_secret' in cloud_config and cloud_config['client_secret']:
-                        env['AZURE_CLIENT_SECRET'] = cloud_config['client_secret']
-                        current_app.logger.info("  ✓ AZURE_CLIENT_SECRET set")
-                    else:
-                        current_app.logger.warning("  ✗ AZURE_CLIENT_SECRET not found in cloud config")
-                    
-                    if 'tenant_id' in cloud_config and cloud_config['tenant_id']:
-                        env['AZURE_TENANT_ID'] = cloud_config['tenant_id']
-                        current_app.logger.info("  ✓ AZURE_TENANT_ID set")
-                    else:
-                        current_app.logger.warning("  ✗ AZURE_TENANT_ID not found in cloud config")
-                    
-                    if 'subscription_id' in cloud_config and cloud_config['subscription_id']:
-                        env['AZURE_SUBSCRIPTION_ID'] = cloud_config['subscription_id']
-                        current_app.logger.info("  ✓ AZURE_SUBSCRIPTION_ID set")
-                    else:
-                        current_app.logger.warning("  ✗ AZURE_SUBSCRIPTION_ID not found in cloud config")
-                
-                elif provider == 'gcp':
-                    # Set GCP credentials
-                    current_app.logger.info("Setting GCP credentials as environment variables")
-                    
-                    if 'service_account_key_path' in cloud_config and cloud_config['service_account_key_path']:
-                        env['GOOGLE_APPLICATION_CREDENTIALS'] = cloud_config['service_account_key_path']
-                        current_app.logger.info(f"  ✓ GOOGLE_APPLICATION_CREDENTIALS set to: {cloud_config['service_account_key_path']}")
-                    else:
-                        current_app.logger.warning("  ✗ GOOGLE_APPLICATION_CREDENTIALS not found in cloud config")
-                    
-                    if 'project_id' in cloud_config and cloud_config['project_id']:
-                        env['GOOGLE_CLOUD_PROJECT'] = cloud_config['project_id']
-                        current_app.logger.info(f"  ✓ GOOGLE_CLOUD_PROJECT set to: {cloud_config['project_id']}")
-                    else:
-                        current_app.logger.warning("  ✗ GOOGLE_CLOUD_PROJECT not found in cloud config")
-                
-                else:
-                    current_app.logger.warning(f"Unknown cloud provider: {provider}")
-                
-                current_app.logger.info("="*80)
-        
+        env = os.environ.copy()
+        if api_key_for_ai:
+            env['KAST_AI_API_KEY'] = api_key_for_ai
+        if base_url_for_ai:
+            env['KAST_AI_BASE_URL'] = base_url_for_ai
+
         # ============================================================
         # DEBUGGING: Capture file system state BEFORE execution
         # ============================================================
@@ -744,17 +578,17 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         if process.returncode == 0:
             scan.status = 'completed'
             db.session.commit()
-            
+
             # Parse execution log to create per-plugin log files
             parse_plugin_logs(log_file_path, output_dir)
-            
+
             # Parse results and extract plugin errors
             parse_scan_results(scan_id, output_dir)
-            
+
             # Preserve ZAP progress data if it exists
             if plugins and 'zap' in plugins:
                 preserve_zap_final_progress(output_dir)
-            
+
             return {
                 'success': True,
                 'output_dir': str(output_dir),
@@ -810,7 +644,85 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         #         current_app.logger.info(f"Cleaned up temporary ZAP plan file: {zap_plan_file}")
         #     except Exception as e:
         #         current_app.logger.warning(f"Could not delete temporary ZAP plan file: {e}")
-        pass  # Placeholder to keep finally block valid
+
+        # Schedule cloud teardown regardless of scan outcome
+        if cloud_scan_id is not None:
+            try:
+                cloud_teardown_task.delay(cloud_scan_id)
+                current_app.logger.info(
+                    "Scheduled cloud_teardown_task for cloud_scan_id=%d", cloud_scan_id
+                )
+            except Exception as teardown_exc:
+                current_app.logger.error(
+                    "Failed to schedule cloud_teardown_task for cloud_scan_id=%d: %s",
+                    cloud_scan_id, teardown_exc,
+                )
+
+
+# ---------------------------------------------------------------------------
+# D4 — Cloud lifecycle tasks
+# ---------------------------------------------------------------------------
+
+@celery.task(bind=True)
+def cloud_provision_task(self, scan_id):
+    """Provision cloud infrastructure (Terraform + SSH + ZAP) for a scan.
+
+    Returns dict with keys: success, cloud_scan_id, zap_url, zap_api_key,
+    instance_id on success; success=False and error on failure.
+    """
+    from flask import current_app
+    from app.cloud.orchestrator import (
+        provision_for_scan, CloudProvisionError, CredentialError,
+    )
+
+    current_app.logger.info("[cloud_provision_task] scan_id=%d", scan_id)
+    try:
+        result = provision_for_scan(scan_id)
+        return {"success": True, **result}
+    except (CloudProvisionError, CredentialError, ValueError) as exc:
+        cloud_scan_id = getattr(exc, "cloud_scan_id", None)
+        current_app.logger.error(
+            "[cloud_provision_task] scan %d failed: %s", scan_id, exc
+        )
+        return {"success": False, "error": str(exc), "cloud_scan_id": cloud_scan_id}
+
+
+@celery.task(bind=True)
+def cloud_teardown_task(self, cloud_scan_id):
+    """Tear down cloud infrastructure for a CloudScan row.
+
+    Idempotent; safe to call multiple times. Returns success/error dict.
+    """
+    from flask import current_app
+    from app.cloud.orchestrator import teardown_for_scan, CloudTeardownError
+
+    current_app.logger.info("[cloud_teardown_task] cloud_scan_id=%d", cloud_scan_id)
+    try:
+        teardown_for_scan(cloud_scan_id)
+        return {"success": True}
+    except CloudTeardownError as exc:
+        current_app.logger.error(
+            "[cloud_teardown_task] cloud_scan %d failed: %s", cloud_scan_id, exc
+        )
+        return {"success": False, "error": str(exc)}
+
+
+@celery.task
+def cloud_orphan_cleanup_task():
+    """Detect orphaned cloud resources and dispatch teardown tasks.
+
+    Scheduled by Celery Beat every 15 minutes. Returns detected/scheduled/errors.
+    """
+    from flask import current_app
+    from app.cloud.orchestrator import cleanup_orphans
+
+    current_app.logger.info("[cloud_orphan_cleanup_task] starting orphan scan")
+    result = cleanup_orphans()
+    current_app.logger.info(
+        "[cloud_orphan_cleanup_task] detected=%d scheduled=%d errors=%d",
+        result["detected"], result["scheduled"], len(result["errors"]),
+    )
+    return result
 
 
 def parse_scan_results(scan_id, output_dir):
@@ -1057,53 +969,91 @@ def parse_scan_results_task(scan_id, output_dir):
 
 
 @celery.task(bind=True)
-def regenerate_report_task(self, scan_id):
+def regenerate_report_task(self, scan_id, generate_ai_summary=False):
     """
     Celery task to regenerate the KAST HTML report using --report-only flag
-    
+
     Args:
         scan_id: Database scan ID
-    
+        generate_ai_summary: pass --ai-summary to kast so it embeds the summary in the report
+
     Returns:
         dict with 'success', 'error' keys
     """
     from flask import current_app
     from app.utils import get_logo_for_scan
-    
+
     try:
         # Get scan from database
         scan = db.session.get(Scan, scan_id)
         if not scan:
             return {'success': False, 'error': 'Scan not found'}
-        
+
         if not scan.output_dir:
             return {'success': False, 'error': 'No output directory found for this scan'}
-        
+
         output_dir = Path(scan.output_dir)
         if not output_dir.exists():
             return {'success': False, 'error': 'Output directory does not exist'}
-        
+
         # Build command with --report-only flag and format both
         kast_cli = current_app.config['KAST_CLI_PATH']
         cmd = [kast_cli, '--report-only', str(output_dir), '--format', 'both']
-        
+
         # Add logo if available
         logo_path = get_logo_for_scan(scan)
         if logo_path:
             cmd.extend(['--logo', logo_path])
             current_app.logger.info(f"Using logo for report regeneration: {logo_path}")
-        
+
+        # Resolve AI API key and append --ai-summary if requested.
+        # Resolution: user DB key → org DB key → KAST_AI_API_KEY env var (system default).
+        api_key_for_ai = None
+        base_url_for_ai = None
+        ai_enabled = False
+        if generate_ai_summary:
+            from app.models import User, AISettings
+            from app.encryption import decrypt_value
+            ai_user = db.session.get(User, scan.user_id)
+            ai_settings = AISettings.get()
+            if ai_user and ai_user.anthropic_api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_user.anthropic_api_key_encrypted)
+                base_url_for_ai = ai_user.ai_base_url or None
+                ai_enabled = True
+            elif ai_user and ai_user.role in ('admin', 'power_user') and ai_settings.api_key_encrypted:
+                api_key_for_ai = decrypt_value(ai_settings.api_key_encrypted)
+                base_url_for_ai = (ai_user.ai_base_url or None) if ai_user else None
+                ai_enabled = True
+            elif os.environ.get('KAST_AI_API_KEY'):
+                ai_enabled = True
+            if ai_enabled:
+                cmd.append('--ai-summary')
+                model = (ai_user.ai_model_override if ai_user else None) or ai_settings.model_id
+                if model:
+                    cmd.extend(['--ai-model', model])
+            else:
+                current_app.logger.warning(
+                    f"AI summary requested for scan {scan_id} but no API key available"
+                )
+
         current_app.logger.info(f"Executing KAST report regeneration: {' '.join(cmd)}")
-        
+
         # Update task state to show progress
         self.update_state(state='PROGRESS', meta={'status': 'regenerating', 'scan_id': scan_id})
-        
+
+        env = os.environ.copy()
+        if api_key_for_ai:
+            env['KAST_AI_API_KEY'] = api_key_for_ai
+        if base_url_for_ai:
+            env['KAST_AI_BASE_URL'] = base_url_for_ai
+
         # Execute command
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            env=env,
         )
         
         # Wait for process to complete
@@ -1228,3 +1178,25 @@ def send_report_email_task(self, scan_id, recipients, sender_user_id, include_zi
     except Exception as e:
         current_app.logger.exception(f"Error sending report email for scan {scan_id}: {str(e)}")
         return {'success': False, 'error': str(e)}
+
+
+@celery.task(bind=True)
+def generate_ai_summary_task(self, scan_id):
+    """Generate an AI executive summary for a completed scan (background task)."""
+    from flask import current_app
+    from app.models import User
+    from app.ai.service import AIService
+
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return {'success': False, 'error': 'Scan not found'}
+
+    user = db.session.get(User, scan.user_id)
+    try:
+        summary = AIService().generate_summary(scan, user=user)
+        if summary is None:
+            return {'success': False, 'error': 'AI disabled'}
+        return {'success': summary.status != 'error', 'status': summary.status}
+    except Exception as exc:
+        current_app.logger.exception('AI summary generation failed for scan %s', scan_id)
+        return {'success': False, 'error': str(exc)}

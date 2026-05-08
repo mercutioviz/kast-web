@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}KAST Web{% endblock %}</title>
     
     <!-- Favicon -->
@@ -71,6 +72,24 @@
                             </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('scans.list') }}">
                                 <i class="fas fa-tasks"></i> All Scans
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('zap_admin.plans_list') }}">
+                                <i class="bi bi-shield-check"></i> ZAP Plans
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('zap_admin.configs_list') }}">
+                                <i class="bi bi-server"></i> ZAP Configurations
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('ai.admin_ai_settings') }}">
+                                <i class="fas fa-robot"></i> AI Settings
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('cloud.admin_cloud_credentials') }}">
+                                <i class="bi bi-cloud"></i> Cloud Credentials
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('cloud.admin_cloud_scans') }}">
+                                <i class="bi bi-cloud-check"></i> Cloud Scans
                             </a></li>
                         </ul>
                     </li>

@@ -73,6 +73,8 @@ def create_app(config_name='default'):
     
     # Register blueprints
     from app.routes import main, scans, api, auth, admin, logos, config_profiles, zap_admin
+    from app.cloud import routes as cloud_routes
+    from app.ai import routes as ai_routes
     app.register_blueprint(main.bp)
     app.register_blueprint(scans.bp)
     app.register_blueprint(api.bp)
@@ -81,6 +83,8 @@ def create_app(config_name='default'):
     app.register_blueprint(logos.bp)
     app.register_blueprint(config_profiles.bp)
     app.register_blueprint(zap_admin.bp)
+    app.register_blueprint(cloud_routes.bp)
+    app.register_blueprint(ai_routes.bp)
     
     # Initialize Flask-Admin for database explorer
     from app.admin_db import init_admin

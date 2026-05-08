@@ -11,7 +11,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from functools import wraps
 from app import db
-from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo, ZapAutomationPlan, ZapConfiguration
+from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo, ZapAutomationPlan, ZapConfiguration, CloudCredential, CloudScan, CloudOrphan, AISettings, AISummary
 from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import json
@@ -82,7 +82,34 @@ def dashboard():
     remote_configs = ZapConfiguration.query.filter_by(execution_mode='remote').count()
     cloud_configs = ZapConfiguration.query.filter_by(execution_mode='cloud').count()
     auto_configs = ZapConfiguration.query.filter_by(execution_mode='auto').count()
-    
+
+    # AI statistics
+    try:
+        ai_settings = AISettings.get()
+        ai_enabled = ai_settings.ai_enabled
+        ai_model = ai_settings.model_id or 'not set'
+        ai_total_summaries = AISummary.query.count()
+        ai_accepted_summaries = AISummary.query.filter_by(status='accepted').count()
+    except Exception:
+        ai_enabled = False
+        ai_model = 'unknown'
+        ai_total_summaries = 0
+        ai_accepted_summaries = 0
+
+    # Cloud statistics
+    try:
+        cloud_credential_count = CloudCredential.query.count()
+        cloud_active_scans = CloudScan.query.filter(
+            CloudScan.status.in_(['provisioning', 'provisioned', 'scan_running'])
+        ).count()
+        cloud_unresolved_orphans = CloudOrphan.query.filter(
+            CloudOrphan.status.in_(['detected', 'cleanup_pending', 'failed'])
+        ).count()
+    except Exception:
+        cloud_credential_count = 0
+        cloud_active_scans = 0
+        cloud_unresolved_orphans = 0
+
     stats = {
         'users': {
             'total': total_users,
@@ -122,6 +149,17 @@ def dashboard():
                     'auto': auto_configs
                 }
             }
+        },
+        'ai': {
+            'enabled': ai_enabled,
+            'model': ai_model,
+            'total_summaries': ai_total_summaries,
+            'accepted_summaries': ai_accepted_summaries,
+        },
+        'cloud': {
+            'credential_count': cloud_credential_count,
+            'active_scans': cloud_active_scans,
+            'unresolved_orphans': cloud_unresolved_orphans,
         }
     }
     

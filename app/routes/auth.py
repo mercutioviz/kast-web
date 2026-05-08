@@ -123,11 +123,134 @@ def list_users():
     return render_template('auth/users.html', users=users, title='User Management')
 
 
+_BUILTIN_MODELS = frozenset({
+    '',
+    'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-6',
+    'claude-opus-4-7',
+})
+
+
 @bp.route('/profile')
 @login_required
 def profile():
     """User profile page"""
-    return render_template('auth/profile.html', title='My Profile')
+    from app.models import AIModelPreset, AIEndpointPreset
+    has_personal_ai_key = bool(current_user.anthropic_api_key_encrypted)
+    model_presets = AIModelPreset.query.filter_by(is_active=True).order_by(
+        AIModelPreset.sort_order, AIModelPreset.id
+    ).all()
+    endpoint_presets = AIEndpointPreset.query.filter_by(is_active=True).order_by(
+        AIEndpointPreset.sort_order, AIEndpointPreset.id
+    ).all()
+    return render_template(
+        'auth/profile.html',
+        title='My Profile',
+        has_personal_ai_key=has_personal_ai_key,
+        user_ai_model=current_user.ai_model_override or '',
+        user_ai_base_url=current_user.ai_base_url or '',
+        model_presets=model_presets,
+        endpoint_presets=endpoint_presets,
+    )
+
+
+@bp.route('/save-api-key', methods=['POST'])
+@login_required
+def save_api_key():
+    """Save or clear the user's personal Anthropic API key."""
+    from app.encryption import encrypt_value
+    from app.models import AuditLog
+
+    action = request.form.get('action', 'save')
+
+    if action == 'clear':
+        current_user.anthropic_api_key_encrypted = None
+        db.session.commit()
+        AuditLog.log(
+            user_id=current_user.id,
+            action='clear_personal_ai_key',
+            resource_type='user',
+            resource_id=current_user.id,
+            ip_address=request.remote_addr,
+        )
+        flash('Your Anthropic API key has been removed.', 'success')
+    else:
+        new_key = request.form.get('api_key', '').strip()
+        if not new_key:
+            flash('No API key provided.', 'warning')
+        else:
+            current_user.anthropic_api_key_encrypted = encrypt_value(new_key)
+            db.session.commit()
+            AuditLog.log(
+                user_id=current_user.id,
+                action='save_personal_ai_key',
+                resource_type='user',
+                resource_id=current_user.id,
+                ip_address=request.remote_addr,
+            )
+            flash('Your Anthropic API key has been saved.', 'success')
+
+    return redirect(url_for('auth.profile'))
+
+
+@bp.route('/save-ai-config', methods=['POST'])
+@login_required
+def save_ai_config():
+    """Save the user's personal AI configuration (api_key, model, base_url)."""
+    from app.encryption import encrypt_value
+    from app.models import AuditLog
+
+    action = request.form.get('action', 'save')
+    changed_fields = []
+
+    if action == 'clear_key':
+        current_user.anthropic_api_key_encrypted = None
+        db.session.commit()
+        AuditLog.log(
+            user_id=current_user.id,
+            action='clear_personal_ai_key',
+            resource_type='user',
+            resource_id=current_user.id,
+            ip_address=request.remote_addr,
+        )
+        flash('Your Anthropic API key has been removed.', 'success')
+        return redirect(url_for('auth.profile'))
+
+    # --- action == 'save' ---
+
+    new_key = request.form.get('api_key', '').strip()
+    if new_key:
+        current_user.anthropic_api_key_encrypted = encrypt_value(new_key)
+        changed_fields.append('api_key')
+
+    model_override = request.form.get('model_override', '').strip()
+    from app.models import AIModelPreset
+    preset_ids = {p.model_id for p in AIModelPreset.query.filter_by(is_active=True).all()}
+    if model_override not in (_BUILTIN_MODELS | preset_ids):
+        flash(f'Invalid model selection: {model_override!r}', 'danger')
+        return redirect(url_for('auth.profile'))
+    current_user.ai_model_override = model_override or None
+    changed_fields.append('model_override')
+
+    base_url = request.form.get('base_url', '').strip()
+    if base_url and not (base_url.startswith('http://') or base_url.startswith('https://')):
+        flash('Custom API endpoint must start with http:// or https://', 'danger')
+        return redirect(url_for('auth.profile'))
+    current_user.ai_base_url = base_url or None
+    changed_fields.append('base_url')
+
+    db.session.commit()
+
+    AuditLog.log(
+        user_id=current_user.id,
+        action='save_ai_config',
+        resource_type='user',
+        resource_id=current_user.id,
+        details=f'fields_updated={",".join(changed_fields)}',
+        ip_address=request.remote_addr,
+    )
+    flash('Your AI configuration has been saved.', 'success')
+    return redirect(url_for('auth.profile'))
 
 
 @bp.route('/change-password', methods=['GET', 'POST'])

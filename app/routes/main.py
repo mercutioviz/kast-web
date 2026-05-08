@@ -113,11 +113,18 @@ def index():
     else:
         db_path = 'Configured database'
     
-    return render_template('index.html', form=form, recent_scans=recent_scans, 
+    from app.models import AISettings
+    try:
+        ai_enabled = AISettings.get().ai_enabled
+    except Exception:
+        ai_enabled = False
+
+    return render_template('index.html', form=form, recent_scans=recent_scans,
                          can_run_active=current_user.can_run_active_scans,
                          plugins_with_types=plugins_with_types,
                          results_dir=results_dir,
-                         db_path=db_path)
+                         db_path=db_path,
+                         ai_enabled=ai_enabled)
 
 @bp.route('/scan/new', methods=['POST'])
 @login_required
@@ -262,6 +269,7 @@ def create_scan():
             parallel=form.parallel.data,
             verbose=form.verbose.data,
             dry_run=form.dry_run.data,
+            generate_ai_summary=form.generate_ai_summary.data,
             logo_id=logo_id,
             config_profile_id=config_profile_id,
             config_overrides=config_overrides,

@@ -343,6 +343,20 @@
                                     {{ form.dry_run.label(class="form-check-label") }}
                                     <div class="form-text">Preview what would be done without executing</div>
                                 </div>
+
+                                {% if ai_enabled %}
+                                <hr class="my-3">
+                                <div class="form-check mb-0">
+                                    {{ form.generate_ai_summary(class="form-check-input") }}
+                                    <label class="form-check-label" for="generate_ai_summary">
+                                        <i class="fas fa-robot me-1"></i>
+                                        {{ form.generate_ai_summary.label.text }}
+                                    </label>
+                                    <div class="form-text">
+                                        An AI executive summary will be generated automatically once the scan completes.
+                                    </div>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>

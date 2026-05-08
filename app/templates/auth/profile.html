@@ -102,6 +102,121 @@
                 </div>
             </div>
 
+            <div class="card shadow mb-4">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-robot me-2"></i>AI Executive Summaries</h5>
+                    {% if has_personal_ai_key %}
+                    <span class="badge bg-success">Key configured</span>
+                    {% else %}
+                    <span class="badge bg-secondary">No key</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if has_personal_ai_key %}
+                    <p class="text-muted small mb-3">
+                        You have a personal Anthropic API key stored. AI summaries for your
+                        scans will be billed to your Anthropic account. Enter a new key below
+                        to replace it, or remove it to fall back to the org key
+                        (if your role allows).
+                    </p>
+                    {% else %}
+                    <p class="text-muted small mb-3">
+                        Add your own Anthropic API key to use AI executive summaries billed
+                        to your account. Leave blank to use the org-level key
+                        (available to admins and power users only).
+                    </p>
+                    {% endif %}
+
+                    <form method="post" action="{{ url_for('auth.save_ai_config') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="save" id="ai-config-action">
+
+                        <div class="mb-3">
+                            <label class="form-label" for="api_key">Anthropic API Key</label>
+                            <input type="password"
+                                   class="form-control"
+                                   id="api_key"
+                                   name="api_key"
+                                   placeholder="sk-ant-... (leave blank to keep existing)"
+                                   autocomplete="new-password">
+                            <small class="text-muted">Stored encrypted. Never shown after saving.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="model_override">Model</label>
+                            <select class="form-select" id="model_override" name="model_override">
+                                <option value="" {% if not user_ai_model %}selected{% endif %}>
+                                    Use org default
+                                </option>
+                                <optgroup label="Claude Models">
+                                    <option value="claude-haiku-4-5-20251001"
+                                        {% if user_ai_model == 'claude-haiku-4-5-20251001' %}selected{% endif %}>
+                                        Haiku — fastest / lowest cost
+                                    </option>
+                                    <option value="claude-sonnet-4-6"
+                                        {% if user_ai_model == 'claude-sonnet-4-6' %}selected{% endif %}>
+                                        Sonnet — balanced
+                                    </option>
+                                    <option value="claude-opus-4-7"
+                                        {% if user_ai_model == 'claude-opus-4-7' %}selected{% endif %}>
+                                        Opus — most capable
+                                    </option>
+                                </optgroup>
+                                {% if model_presets %}
+                                <optgroup label="Custom Models">
+                                    {% for p in model_presets %}
+                                    <option value="{{ p.model_id }}"
+                                        {% if user_ai_model == p.model_id %}selected{% endif %}>
+                                        {{ p.label }}
+                                    </option>
+                                    {% endfor %}
+                                </optgroup>
+                                {% endif %}
+                            </select>
+                            <small class="text-muted">Overrides the org-level model for your scans only.</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="base_url">
+                                Custom API Endpoint
+                                <span class="badge bg-secondary ms-1" style="font-size: 0.65rem;">Advanced</span>
+                            </label>
+                            <input type="url"
+                                   class="form-control"
+                                   id="base_url"
+                                   name="base_url"
+                                   list="endpoint-presets-list"
+                                   value="{{ user_ai_base_url }}"
+                                   placeholder="https://my-proxy.example.com (leave blank for Anthropic default)">
+                            {% if endpoint_presets %}
+                            <datalist id="endpoint-presets-list">
+                                {% for ep in endpoint_presets %}
+                                <option value="{{ ep.url }}" label="{{ ep.name }}">
+                                {% endfor %}
+                            </datalist>
+                            {% endif %}
+                            <small class="text-muted">
+                                Route AI requests through a compatible proxy — e.g. AWS Bedrock, Azure, or LiteLLM.
+                                Leave blank to call the Anthropic API directly.
+                                {% if endpoint_presets %}Org presets available in the dropdown.{% endif %}
+                            </small>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="fas fa-save me-1"></i>Save Settings
+                            </button>
+                            {% if has_personal_ai_key %}
+                            <button type="button" class="btn btn-outline-danger btn-sm"
+                                    onclick="document.getElementById('ai-config-action').value='clear_key'; this.form.submit();">
+                                <i class="fas fa-trash me-1"></i>Remove API Key
+                            </button>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <div class="card shadow">
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0">Account Actions</h5>
@@ -110,7 +225,7 @@
                     <a href="{{ url_for('auth.change_password') }}" class="btn btn-warning">
                         <i class="fas fa-key me-2"></i>Change Password
                     </a>
-                    <a href="{{ url_for('scans.history') }}" class="btn btn-primary ms-2">
+                    <a href="{{ url_for('scans.list') }}" class="btn btn-primary ms-2">
                         <i class="fas fa-history me-2"></i>View My Scans
                     </a>
                 </div>
