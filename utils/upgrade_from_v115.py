@@ -227,7 +227,11 @@ def main():
     if not args.dry_run:
         V2_DB.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(V115_DB, V2_DB)
-        # Ensure www-data owns the file
+        # Ensure www-data owns the directory AND the file so that migration
+        # scripts (which run as www-data) can create backup files alongside
+        # the database.
+        run(['sudo', 'chown', 'www-data:www-data', str(V2_DB.parent)])
+        run(['sudo', 'chmod', '750', str(V2_DB.parent)])
         run(['sudo', 'chown', 'www-data:www-data', str(V2_DB)])
         run(['sudo', 'chmod', '660', str(V2_DB)])
         green(f'  Copied {V115_DB} → {V2_DB}')
