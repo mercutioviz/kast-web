@@ -97,24 +97,41 @@ class AIService:
 
         # 1. User's personal key; inherit env base_url if user has no override
         if user and user.anthropic_api_key_encrypted:
+            effective_base_url = user_base_url or env_base_url
+            logger.info(
+                '_get_client: using user personal key (user_id=%s) base_url=%r',
+                user.id, effective_base_url,
+            )
             return _make_client(
                 decrypt_value(user.anthropic_api_key_encrypted),
-                base_url=user_base_url or env_base_url,
+                base_url=effective_base_url,
             )
 
         # 2. Org key — admins and power_users only
         if user and user.role in ('admin', 'power_user'):
             settings = self._get_settings()
             if settings.api_key_encrypted:
+                effective_base_url = user_base_url or env_base_url
+                logger.info(
+                    '_get_client: using org key (user_id=%s role=%s) base_url=%r',
+                    user.id, user.role, effective_base_url,
+                )
                 return _make_client(
                     decrypt_value(settings.api_key_encrypted),
-                    base_url=user_base_url or env_base_url,
+                    base_url=effective_base_url,
                 )
 
         # 3. System env vars — lowest-priority fallback (works for all roles)
         if env_key:
+            logger.info('_get_client: using KAST_AI_API_KEY env var base_url=%r', env_base_url)
             return _make_client(env_key, base_url=env_base_url)
 
+        user_id = user.id if user else None
+        user_role = user.role if user else None
+        logger.warning(
+            '_get_client: no key resolved (user_id=%s role=%s env_key_set=%s)',
+            user_id, user_role, bool(env_key),
+        )
         raise ValueError(
             'No personal API key configured. '
             'Add your Anthropic API key in My Profile > AI Settings.'
@@ -241,6 +258,10 @@ class AIService:
             return None
 
         effective_mode = mode or settings.default_mode
+        logger.info(
+            'generate_summary: scan_id=%s user_id=%s mode=%r',
+            scan.id, user.id if user else None, effective_mode,
+        )
 
         # Upsert the summary row and mark as generating
         summary = AISummary.query.filter_by(scan_id=scan.id).first()
@@ -268,11 +289,19 @@ class AIService:
                 findings_text=findings_text,
             )
             model = self._resolve_model(user, settings)
+            logger.info(
+                'generate_summary: calling Anthropic model=%r prompt_chars=%d',
+                model, len(prompt),
+            )
             response = client.messages.create(
                 model=model,
                 max_tokens=1024,
                 system=_SYSTEM_PROMPT,
                 messages=[{'role': 'user', 'content': prompt}],
+            )
+            logger.info(
+                'generate_summary: API call succeeded tokens_in=%s tokens_out=%s',
+                response.usage.input_tokens, response.usage.output_tokens,
             )
 
             summary.raw_text = response.content[0].text

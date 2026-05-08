@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, send_file, abort, jsonify
 from flask_login import login_required, current_user
 from app import db
-from app.models import Scan, ScanResult, ScanShare, User, AuditLog
+from app.models import Scan, ScanResult, ScanShare, User, AuditLog, AISummary, CloudScan, ZapScanProgress
 from app.forms import ShareWithUserForm, GeneratePublicLinkForm, TransferOwnershipForm
 from app.utils import format_duration
 from pathlib import Path
@@ -238,8 +238,19 @@ def delete(scan_id):
     
     target = scan.target
     output_dir = scan.output_dir
-    
-    # Delete from database (cascade will delete results)
+
+    # Delete related rows not covered by Scan.results cascade before removing the scan.
+    # These models define the FK on their own side with no cascade, so SQLAlchemy would
+    # try to NULL out scan_id (which is NOT NULL) causing an IntegrityError.
+    AISummary.query.filter_by(scan_id=scan_id).delete()
+    ScanShare.query.filter_by(scan_id=scan_id).delete()
+    ZapScanProgress.query.filter_by(scan_id=scan_id).delete()
+    cloud = CloudScan.query.filter_by(scan_id=scan_id).first()
+    if cloud:
+        from app.models import CloudOrphan
+        CloudOrphan.query.filter_by(cloud_scan_id=cloud.id).delete()
+        db.session.delete(cloud)
+
     db.session.delete(scan)
     db.session.commit()
     
