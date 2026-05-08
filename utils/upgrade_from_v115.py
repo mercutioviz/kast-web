@@ -6,10 +6,13 @@ What this script does:
   2. Stops the v1.15 services (kast-web, kast-celery)
   3. Backs up the v2.0 database (if one already exists)
   4. Copies /var/lib/kast-web/kast.db  →  /var/lib/kast-web2/kast.db
-  5. Runs the three v2.0-only delta migrations against the copied DB:
-       migrate_cloud_v2.py  (cloud_credentials / cloud_scans / cloud_orphans tables)
-       migrate_ai_v1.py     (ai_settings / ai_summaries tables)
-       migrate_ai_byok.py   (anthropic_api_key_encrypted column on users)
+  5. Runs the six v2.0-only delta migrations against the copied DB:
+       migrate_cloud_v2.py       (cloud_credentials / cloud_scans / cloud_orphans tables)
+       migrate_ai_v1.py          (ai_settings / ai_summaries tables)
+       migrate_ai_byok.py        (anthropic_api_key_encrypted column on users)
+       migrate_ai_user_config.py (ai_model_override, ai_base_url columns on users)
+       migrate_ai_presets.py     (ai_model_presets, ai_endpoint_presets tables)
+       migrate_ai_scan_flag.py   (generate_ai_summary column on scans)
   6. Restarts the v2.0 services (kast-web2, kast-celery2)
   7. Runs a basic health check against http://127.0.0.1:8001/
   8. Reports a summary
@@ -46,9 +49,14 @@ V2_SERVICES   = ['kast-web2', 'kast-celery2']
 HEALTH_URL = 'http://127.0.0.1:8001/'
 
 DELTA_MIGRATIONS = [
+    # Phase D — cloud subsystem
     'utils/migrate_cloud_v2.py',
-    'utils/migrate_ai_v1.py',
-    'utils/migrate_ai_byok.py',
+    # Phase C / Phase E — AI feature, in dependency order
+    'utils/migrate_ai_v1.py',          # ai_settings, ai_summaries tables
+    'utils/migrate_ai_byok.py',        # users.anthropic_api_key_encrypted
+    'utils/migrate_ai_user_config.py', # users.ai_model_override, ai_base_url
+    'utils/migrate_ai_presets.py',     # ai_model_presets, ai_endpoint_presets tables
+    'utils/migrate_ai_scan_flag.py',   # scans.generate_ai_summary
 ]
 
 # ------------------------------------------------------------------ helpers
