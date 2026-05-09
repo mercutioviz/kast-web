@@ -661,11 +661,11 @@ check_existing_installation() {
     if [[ -d "$INSTALL_DIR" ]]; then
         print_warning "Existing installation detected at $INSTALL_DIR"
         
-        if [[ "$NON_INTERACTIVE" == "yes" ]]; then
-            error_exit "Non-interactive mode cannot handle existing installations. Please remove manually."
+        if [[ "$NON_INTERACTIVE" == "yes" ]] && [[ -z "$EXISTING_INSTALL_CHOICE" ]]; then
+            error_exit "Non-interactive mode with existing installation requires EXISTING_INSTALL_CHOICE=1 (upgrade) or EXISTING_INSTALL_CHOICE=2 (fresh install)."
         fi
-        
-        # Use pre-collected choice from collect_user_inputs()
+
+        # Use pre-collected choice from collect_user_inputs() or environment
         if [[ -n "$EXISTING_INSTALL_CHOICE" ]]; then
             case $EXISTING_INSTALL_CHOICE in
                 1)
