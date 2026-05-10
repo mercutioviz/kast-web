@@ -714,7 +714,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         <hr>
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-success"><i class="bi bi-check-circle"></i> Accepted</span>
-                            <button class="btn btn-outline-primary btn-sm ms-auto" onclick="aiGenerateSummary()">
+                            <button class="btn btn-outline-secondary btn-sm ms-auto" id="ai-copy-btn" onclick="aiCopySummary()">
+                                <i class="bi bi-clipboard"></i> Copy
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="aiGenerateSummary()">
                                 <i class="bi bi-arrow-clockwise"></i> Regenerate
                             </button>
                         </div>
@@ -1350,6 +1353,26 @@ function aiRenderSummary(data) {
             content.appendChild(btn);
         }
     }
+}
+
+function aiCopySummary() {
+    const text = document.getElementById('ai-summary-text-display').textContent || '';
+    const btn = document.getElementById('ai-copy-btn');
+    navigator.clipboard.writeText(text).then(function () {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+        btn.disabled = true;
+        setTimeout(function () { btn.innerHTML = orig; btn.disabled = false; }, 2000);
+    }).catch(function () {
+        // Fallback for restricted clipboard contexts
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    });
 }
 
 function aiGenerateSummary() {
