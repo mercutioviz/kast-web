@@ -1,3 +1,5 @@
+import logging
+
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 
@@ -10,6 +12,7 @@ from app.encryption import encrypt_value
 bp = Blueprint('ai', __name__)
 
 _service = AIService()
+logger = logging.getLogger(__name__)
 
 
 def _admin_required(f):
@@ -250,6 +253,7 @@ def get_summary(scan_id):
             'ai_enabled': _service.is_enabled(),
         })
 
+    cost_info = _service.estimate_cost(scan, user=current_user)
     return jsonify({
         'status': summary.status,
         'text': _service.display_text(summary),
@@ -261,20 +265,31 @@ def get_summary(scan_id):
         'generated_at': summary.generated_at.isoformat() if summary.generated_at else None,
         'error_message': summary.error_message,
         'prompt_version': summary.prompt_version,
+        'estimated_cost_usd': cost_info['cost_usd'],
+        'estimated_tokens_in': cost_info['tokens_in'],
+        'ai_enabled': _service.is_enabled(),
     })
 
 
 @bp.route('/api/ai/summary/<int:scan_id>/generate', methods=['POST'])
 @login_required
 def generate_summary(scan_id):
+    logger.info(
+        'generate_summary ENTER: scan_id=%s user_id=%s user_role=%s',
+        scan_id, current_user.id, current_user.role,
+    )
     scan = db.session.get(Scan, scan_id)
     if not scan:
+        logger.warning('generate_summary: scan %s not found', scan_id)
         return jsonify({'error': 'Scan not found'}), 404
     if scan.user_id != current_user.id and current_user.role not in ('admin', 'power_user'):
+        logger.warning('generate_summary: forbidden user_id=%s scan.user_id=%s', current_user.id, scan.user_id)
         return jsonify({'error': 'Forbidden'}), 403
     if scan.status != 'completed':
+        logger.warning('generate_summary: scan %s status=%s (not completed)', scan_id, scan.status)
         return jsonify({'error': 'Scan is not completed'}), 400
     if not _service.is_enabled():
+        logger.warning('generate_summary: AI is disabled')
         return jsonify({'error': 'AI is disabled'}), 400
 
     cost_info = _service.estimate_cost(scan)

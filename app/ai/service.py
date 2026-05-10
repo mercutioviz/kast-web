@@ -90,9 +90,14 @@ class AIService:
         user_base_url = (user.ai_base_url or None) if user else None
 
         def _make_client(api_key, base_url=None):
-            kwargs = {'api_key': api_key, 'timeout': 60.0}
+            kwargs = {'timeout': 60.0}
             if base_url:
+                # LiteLLM-compatible proxies require Bearer auth (Authorization: Bearer)
+                # rather than the standard Anthropic x-api-key header.
+                kwargs['auth_token'] = api_key
                 kwargs['base_url'] = base_url
+            else:
+                kwargs['api_key'] = api_key
             return anthropic.Anthropic(**kwargs)
 
         # 1. User's personal key; inherit env base_url if user has no override
