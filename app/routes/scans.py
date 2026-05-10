@@ -185,12 +185,19 @@ def detail(scan_id):
         
         plugin_statuses.append(plugin_data)
     
-    # Check if HTML report exists
+    # Check if HTML report exists, and whether it has an embedded AI summary section.
+    # Read only the first 8 KB — the AI section is always near the top of the kast template.
     report_path = None
+    report_has_ai_summary = False
     if scan.output_dir:
         potential_report = Path(scan.output_dir) / 'kast_report.html'
         if potential_report.exists():
             report_path = str(potential_report)
+            try:
+                with open(potential_report, 'r', errors='replace') as _rf:
+                    report_has_ai_summary = 'class="ai-summary"' in _rf.read(8192)
+            except OSError:
+                pass
     
     # Check if email functionality is enabled
     from app.models import SystemSettings, AISettings
@@ -215,6 +222,7 @@ def detail(scan_id):
         scan=scan,
         results=plugin_statuses,
         report_path=report_path,
+        report_has_ai_summary=report_has_ai_summary,
         format_duration=format_duration,
         email_enabled=email_enabled,
         cli_command=cli_command,

@@ -444,13 +444,22 @@ document.getElementById('zapProgressModal').addEventListener('hidden.bs.modal', 
     }
 });
 
-// Initialize Bootstrap tooltips
+// Initialize Bootstrap tooltips and popovers
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize all tooltips on the page
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+    tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
+
+    var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+    popoverTriggerList.map(function (el) { return new bootstrap.Popover(el, { sanitize: false }); });
+
+    // Close any open popover when clicking outside
+    document.addEventListener('click', function (e) {
+        popoverTriggerList.forEach(function (el) {
+            if (!el.contains(e.target)) {
+                bootstrap.Popover.getInstance(el)?.hide();
+            }
+        });
+    }, true);
 });
 </script>
 
@@ -645,7 +654,10 @@ document.addEventListener('DOMContentLoaded', function() {
         {% if ai_enabled and scan.status == 'completed' %}
         <div class="card shadow mt-4" id="ai-summary-card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="bi bi-stars"></i> AI Executive Summary</h5>
+                <div>
+                    <h5 class="mb-0"><i class="bi bi-stars"></i> AI Executive Summary</h5>
+                    <small class="text-warning fw-semibold"><i class="bi bi-person-badge me-1"></i>For SA use only &mdash; not part of the downloadable report</small>
+                </div>
                 <div id="ai-summary-status-badge"></div>
             </div>
             <div class="card-body">
@@ -658,6 +670,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     <p class="text-muted small mb-2">
                         Generate a concise executive narrative from this scan's findings —
                         suitable for sharing with a prospect.
+                    </p>
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        This summary is visible on this page only. To embed an AI summary in the
+                        PDF/HTML report, use <strong>Re-run &rsaquo; Report only</strong> and check
+                        <em>Generate AI executive summary</em>.
                     </p>
                     <p class="small mb-3">
                         Estimated cost: <strong id="ai-cost-estimate">calculating&hellip;</strong>
@@ -700,6 +718,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <i class="bi bi-arrow-clockwise"></i> Regenerate
                             </button>
                         </div>
+                        <p class="text-muted small mt-2 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            This summary is visible on this page only. To embed AI in the report,
+                            use <strong>Re-run &rsaquo; Report only &rsaquo; Generate AI executive summary</strong>.
+                        </p>
                     </div>
                 </div>
 
@@ -717,16 +740,16 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="card-body">
                 {% if scan.status == 'completed' and report_path %}
-                    <a href="{{ url_for('scans.view_report', scan_id=scan.id) }}" 
+                    <a href="{{ url_for('scans.view_report', scan_id=scan.id) }}"
                        class="btn btn-success w-100 mb-2">
                         <i class="bi bi-file-earmark-text"></i> View Report
                     </a>
                     <div class="btn-group w-100 mb-2" role="group">
-                        <a href="{{ url_for('scans.download_report', scan_id=scan.id, format='pdf') }}" 
+                        <a href="{{ url_for('scans.download_report', scan_id=scan.id, format='pdf') }}"
                            class="btn btn-outline-success">
                             <i class="bi bi-download"></i> Download Report (PDF)
                         </a>
-                        <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split" 
+                        <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split"
                                 data-bs-toggle="dropdown" aria-expanded="false">
                             <span class="visually-hidden">Toggle Dropdown</span>
                         </button>
@@ -742,6 +765,29 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </a>
                             </li>
                         </ul>
+                    </div>
+                    <!-- AI-in-report status indicator -->
+                    <div class="d-flex align-items-center mb-2 small">
+                        {% if report_has_ai_summary %}
+                        <span class="badge bg-success me-2"><i class="bi bi-stars me-1"></i>AI summary in report</span>
+                        {% else %}
+                        <span class="badge bg-secondary me-2"><i class="bi bi-stars me-1"></i>No AI summary in report</span>
+                        {% endif %}
+                        <button type="button" class="btn btn-link btn-sm p-0 text-muted"
+                                data-bs-toggle="popover"
+                                data-bs-trigger="click"
+                                data-bs-placement="left"
+                                data-bs-html="true"
+                                data-bs-title="About AI summaries"
+                                data-bs-content="
+                                    <p class='mb-2'><strong>AI Executive Summary (this page)</strong><br>
+                                    Generated on demand from this page. Visible here only — not embedded in the PDF or HTML report. Intended for SA review and internal use.</p>
+                                    <p class='mb-2'><strong>Report AI Summary</strong><br>
+                                    Embedded directly in the PDF and HTML report files by the kast engine. Uses a structured format (headline, narrative, key findings, recommended actions) designed for prospect-facing delivery.</p>
+                                    <p class='mb-0'><strong>To add AI to the report:</strong><br>
+                                    Click <em>Re-run &rsaquo; Report only</em> and check <em>Generate AI executive summary</em>. The report files will be regenerated with the AI section included.</p>">
+                            <i class="bi bi-question-circle"></i> What&rsquo;s this?
+                        </button>
                     </div>
                     {% if email_enabled %}
                         <button type="button" 
