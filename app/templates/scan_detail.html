@@ -1262,7 +1262,7 @@ function aiRenderSummary(data) {
         noneDiv.style.display = 'block';
         content.style.display = 'none';
         badge.innerHTML = '';
-        if (data.estimated_cost_usd !== undefined) {
+        if (data.estimated_cost_usd !== undefined && data.estimated_cost_usd !== null) {
             document.getElementById('ai-cost-estimate').textContent =
                 '$' + data.estimated_cost_usd.toFixed(4);
         }
@@ -1288,6 +1288,21 @@ function aiRenderSummary(data) {
         aiShowError(data.error_message || 'Generation failed.');
         noneDiv.style.display = 'block';
         content.style.display = 'none';
+    } else if (data.status === 'generating') {
+        badge.innerHTML = '<span class="badge bg-secondary">In progress</span>';
+        display.textContent = 'A previous generation attempt did not complete. Click Regenerate to try again.';
+        reviewControls.style.display = 'none';
+        acceptedControls.style.display = 'none';
+        // Show a one-off regenerate button inside the content area
+        const regenBtn = document.getElementById('ai-stale-regen-btn');
+        if (!regenBtn) {
+            const btn = document.createElement('button');
+            btn.id = 'ai-stale-regen-btn';
+            btn.className = 'btn btn-outline-primary btn-sm mt-2';
+            btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Regenerate';
+            btn.onclick = aiGenerateSummary;
+            content.appendChild(btn);
+        }
     }
 }
 
@@ -1308,10 +1323,18 @@ function aiGenerateSummary() {
     .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
     .then(({ ok, data }) => {
         aiSetLoading(false);
-        if (!ok) { aiShowError(data.error || 'Generation failed.'); return; }
+        if (!ok) {
+            document.getElementById('ai-summary-none').style.display = 'block';
+            aiShowError(data.error || 'Generation failed.');
+            return;
+        }
         aiRenderSummary(data);
     })
-    .catch(err => { aiSetLoading(false); aiShowError('Request failed: ' + err); });
+    .catch(err => {
+        aiSetLoading(false);
+        document.getElementById('ai-summary-none').style.display = 'block';
+        aiShowError('Request failed: ' + err);
+    });
 }
 
 function aiSubmitReview(action) {

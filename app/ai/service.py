@@ -274,9 +274,9 @@ class AIService:
 
         try:
             client = self._get_client(user=user)
-        except ValueError as exc:
+        except Exception as exc:
             summary.status = 'error'
-            summary.error_message = str(exc)
+            summary.error_message = str(exc) or f'{type(exc).__name__}: could not initialise API client'
             db.session.commit()
             return summary
 
