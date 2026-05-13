@@ -11,6 +11,11 @@ def _can_access_scan(scan):
     return scan.user_id == current_user.id or current_user.role in ('admin', 'power_user')
 
 
+def _json_error(message, status_code):
+    """Return a consistent JSON error response: {"error": message}."""
+    return jsonify({'error': message}), status_code
+
+
 @bp.route('/scans', methods=['GET'])
 @login_required
 def get_scans():
@@ -41,9 +46,9 @@ def get_scan(scan_id):
     """API endpoint to get a specific scan"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
-        return jsonify({'error': 'Scan not found'}), 404
+        return _json_error('Scan not found', 404)
     if not _can_access_scan(scan):
-        return jsonify({'error': 'Forbidden'}), 403
+        return _json_error('Forbidden', 403)
 
     results = [result.to_dict() for result in scan.results.all()]
 
@@ -65,10 +70,10 @@ def get_scan_status(scan_id):
 
     scan = db.session.get(Scan, scan_id)
     if not scan:
-        return jsonify({'error': 'Scan not found'}), 404
+        return _json_error('Scan not found', 404)
     if not _can_access_scan(scan):
-        return jsonify({'error': 'Forbidden'}), 403
-    
+        return _json_error('Forbidden', 403)
+
     logger.debug(f"Scan status: {scan.status}, target: {scan.target}")
     logger.debug(f"Output directory: {scan.output_dir}")
     
@@ -106,11 +111,11 @@ def get_scan_status(scan_id):
     if scan.plugins:
         # Specific plugins were selected
         plugin_list = scan.plugin_list
-        logger.info(f"Using SPECIFIC plugins from scan config: {plugin_list}")
+        logger.debug(f"Using SPECIFIC plugins from scan config: {plugin_list}")
     elif output_dir and output_dir.exists():
         # No specific plugins - scan all files in output directory
         # Only look for files matching the pattern: plugin.json or plugin_processed.json
-        logger.info("No specific plugins configured - discovering from output directory")
+        logger.debug("No specific plugins configured - discovering from output directory")
         plugin_set = set()
         for json_file in output_dir.glob("*.json"):
             filename = json_file.name
@@ -133,14 +138,14 @@ def get_scan_status(scan_id):
                 continue
             plugin_set.add(plugin_name)
         plugin_list = sorted(plugin_set)
-        logger.info(f"Discovered {len(plugin_list)} plugins from files: {plugin_list}")
+        logger.debug(f"Discovered {len(plugin_list)} plugins from files: {plugin_list}")
     else:
         # No plugins specified and no output directory yet
-        logger.info("No plugins configured and no output directory - empty plugin list")
+        logger.debug("No plugins configured and no output directory - empty plugin list")
         plugin_list = []
     
     # Check status for each plugin
-    logger.info(f"Checking status for {len(plugin_list)} plugins...")
+    logger.debug(f"Checking status for {len(plugin_list)} plugins...")
     for plugin in plugin_list:
         logger.debug(f"--- Plugin: {plugin} ---")
         plugin_status = {

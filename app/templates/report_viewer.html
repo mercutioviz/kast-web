@@ -36,10 +36,16 @@
 
 <div class="card shadow">
     <div class="card-body p-0">
-        <!-- Embedded Report -->
-        <div class="report-container">
-            {{ report_html|safe }}
-        </div>
+        <!-- Report rendered in a sandboxed iframe.
+             sandbox="allow-scripts" lets the report's own JS run (tree views,
+             collapsible sections) but isolates it in a unique origin so any
+             injected scripts cannot access the parent page's cookies or DOM. -->
+        <iframe
+            src="{{ url_for('scans.report_html_raw', scan_id=scan.id) }}"
+            sandbox="allow-scripts"
+            style="width:100%; min-height:85vh; border:none; display:block;"
+            title="Scan Report">
+        </iframe>
     </div>
     <div class="card-footer text-muted text-center small">
         <i class="bi bi-info-circle"></i> Viewed in KAST Web v{{ app_version }}
@@ -49,30 +55,8 @@
 
 {% block extra_css %}
 <style>
-    .report-container {
-        padding: 20px;
-        background: white;
-    }
-    /* Override any conflicting styles from the embedded report */
-    .report-container * {
-        max-width: 100%;
-    }
-    /* Tree view expand/collapse styles */
-    .tree-collapsed > .tree-children {
-        display: none;
-    }
-    .tree-toggle {
-        cursor: pointer;
-        user-select: none;
-        font-weight: bold;
-        margin-right: 5px;
-    }
-    .tree-toggle:hover {
-        color: #0d6efd;
+    .card-body {
+        padding: 0;
     }
 </style>
-{% endblock %}
-
-{% block extra_js %}
-<script src="{{ url_for('static', filename='js/report-viewer.js') }}"></script>
 {% endblock %}

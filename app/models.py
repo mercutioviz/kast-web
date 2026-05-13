@@ -1022,3 +1022,20 @@ class AISummary(db.Model):
 
     scan = db.relationship('Scan', backref=db.backref('ai_summary', uselist=False))
     reviewer = db.relationship('User', backref='reviewed_ai_summaries')
+
+
+class SchemaMigration(db.Model):
+    """Records which migration scripts have been applied to this database.
+
+    Created automatically by db.create_all() at startup; also maintained by
+    utils/migration_tracker.py so standalone migration scripts can record
+    themselves without going through Flask-SQLAlchemy.
+    """
+    __tablename__ = 'schema_migrations'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    script_name = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    applied_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f'<SchemaMigration {self.script_name!r}>'

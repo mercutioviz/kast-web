@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, send_file, abort, jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, send_file, abort, jsonify, Response
 from flask_login import login_required, current_user
 from app import db
 from app.models import Scan, ScanResult, ScanShare, User, AuditLog, AISummary, CloudScan, ZapScanProgress
@@ -281,58 +281,74 @@ def delete(scan_id):
 @bp.route('/<int:scan_id>/report')
 @login_required
 def view_report(scan_id):
-    """View HTML report"""
+    """View HTML report (renders wrapper page; report content served via report_html_raw)."""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')
         return redirect(url_for('scans.list'))
-    
-    # Check access permission
+
     if not check_scan_access_simple(scan):
         flash('You do not have permission to view this report', 'danger')
         return redirect(url_for('scans.list'))
-    
+
     if not scan.output_dir:
         flash('No output directory found for this scan', 'warning')
         return redirect(url_for('scans.detail', scan_id=scan_id))
-    
+
     report_path = Path(scan.output_dir) / 'kast_report.html'
-    
     if not report_path.exists():
         flash('Report file not found', 'warning')
         return redirect(url_for('scans.detail', scan_id=scan_id))
-    
-    # Read and display report
-    with open(report_path, 'r') as f:
-        report_html = f.read()
-    
-    # Fix relative paths in the HTML to work with Flask routes
-    # Replace asset paths to use Flask's static folder
+
+    return render_template('report_viewer.html', scan=scan)
+
+
+@bp.route('/<int:scan_id>/report-html')
+@login_required
+def report_html_raw(scan_id):
+    """Serve the processed report HTML for sandboxed iframe embedding.
+
+    Applies the same asset-path substitution as the old inline viewer, then
+    returns the HTML directly so it can be embedded in a sandboxed <iframe>.
+    The sandbox attribute on the iframe prevents any injected scripts from
+    accessing the parent page's cookies or DOM.
+    """
     import re
-    
-    # Map of asset filenames to their location in Flask's static folder
-    # For now, we're primarily handling the logo
+
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        abort(404)
+    if not check_scan_access_simple(scan):
+        abort(403)
+    if not scan.output_dir:
+        abort(404)
+
+    report_path = Path(scan.output_dir) / 'kast_report.html'
+    if not report_path.exists():
+        abort(404)
+
+    with open(report_path, 'r', errors='replace') as f:
+        report_html = f.read()
+
     def replace_asset_path(match):
-        attr = match.group(1)  # 'src' or 'href'
-        filename = match.group(2)  # e.g., 'kast-logo.png'
-        
-        # Map known assets to Flask static paths
+        attr = match.group(1)
+        filename = match.group(2)
         if 'logo' in filename.lower() and filename.endswith('.png'):
             return f'{attr}="{url_for("static", filename="images/kast-logo.png")}"'
-        
-        # For other assets, try to serve from scan directory first
         return f'{attr}="{url_for("scans.serve_scan_file", scan_id=scan_id, filename="assets/" + filename)}"'
-    
-    # Pattern to match src="../assets/..." or href="../assets/..."
-    report_html = re.sub(r'(src|href)=["\']\.\.\/assets\/([^"\']+)["\']', replace_asset_path, report_html)
-    
-    # Also handle src="./assets/..." or href="./assets/..."
-    report_html = re.sub(r'(src|href)=["\']\.\/assets\/([^"\']+)["\']', replace_asset_path, report_html)
-    
-    # Also handle src="assets/..." or href="assets/..." (no relative prefix)
-    report_html = re.sub(r'(src|href)=["\']assets\/([^"\']+)["\']', replace_asset_path, report_html)
-    
-    return render_template('report_viewer.html', scan=scan, report_html=report_html)
+
+    for pattern in [
+        r'(src|href)=["\']\.\.\/assets\/([^"\']+)["\']',
+        r'(src|href)=["\']\.\/assets\/([^"\']+)["\']',
+        r'(src|href)=["\']assets\/([^"\']+)["\']',
+    ]:
+        report_html = re.sub(pattern, replace_asset_path, report_html)
+
+    return Response(
+        report_html,
+        content_type='text/html; charset=utf-8',
+        headers={'X-Content-Type-Options': 'nosniff'},
+    )
 
 @bp.route('/<int:scan_id>/download')
 @login_required

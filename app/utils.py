@@ -185,74 +185,87 @@ def execute_kast_scan(scan_id, target, scan_mode, plugins=None, parallel=False, 
         db.session.commit()
         return {'success': False, 'error': str(e)}
 
+def extract_plugin_error(plugin_data, disposition):
+    """Extract error message from plugin JSON data for failed plugins."""
+    if disposition != 'fail':
+        return None
+
+    error_msg = None
+    for key in ('error', 'message', 'error_message'):
+        if key in plugin_data:
+            error_msg = str(plugin_data[key])
+            break
+
+    if error_msg is None and 'findings' in plugin_data:
+        findings = plugin_data['findings']
+        if isinstance(findings, dict):
+            for key in ('error', 'message'):
+                if key in findings:
+                    error_msg = str(findings[key])
+                    break
+
+    if error_msg is None:
+        for key in ('details', 'reason'):
+            if key in plugin_data:
+                error_msg = str(plugin_data[key])
+                break
+
+    if error_msg and len(error_msg) > 1000:
+        error_msg = error_msg[:997] + '...'
+
+    return error_msg
+
+
 def parse_scan_results(scan_id, output_dir):
-    """
-    Parse scan results from output directory and store in database
-    
-    Args:
-        scan_id: Database scan ID
-        output_dir: Path to scan output directory
-    """
+    """Parse *_processed.json files from output_dir and upsert into scan_results table."""
     from app import db
     from app.models import ScanResult
-    
+
     try:
         output_path = Path(output_dir)
         if not output_path.exists():
             current_app.logger.warning(f"Output directory does not exist: {output_dir}")
             return
-        
-        # Look for processed JSON files
+
         for json_file in output_path.glob("*_processed.json"):
             try:
                 with open(json_file, 'r') as f:
                     data = json.load(f)
-                
-                plugin_name = data.get('plugin_name', json_file.stem.replace('_processed', ''))
-                
-                # Count findings correctly - look at results array within findings
-                findings_data = data.get('findings', {})
-                if isinstance(findings_data, dict):
-                    # findings is a dict with a 'results' key containing the actual findings
-                    findings_count = len(findings_data.get('results', []))
-                else:
-                    # fallback: findings is a list
-                    findings_count = len(findings_data) if isinstance(findings_data, list) else 0
-                
-                # Get file modification time as executed_at
+
+                plugin_name = extract_plugin_name_from_file(json_file)
+                disposition = data.get('disposition', 'unknown')
+                findings_count = data.get('findings_count', 0)
+                error_message = extract_plugin_error(data, disposition)
                 file_mtime = datetime.fromtimestamp(json_file.stat().st_mtime)
-                
-                # Check if result already exists
-                existing_result = ScanResult.query.filter_by(
-                    scan_id=scan_id,
-                    plugin_name=plugin_name
+
+                existing = ScanResult.query.filter_by(
+                    scan_id=scan_id, plugin_name=plugin_name
                 ).first()
-                
-                if existing_result:
-                    # Update existing result
-                    existing_result.status = data.get('disposition', 'unknown')
-                    existing_result.findings_count = findings_count
-                    existing_result.processed_output_path = str(json_file)
-                    existing_result.executed_at = file_mtime
+
+                if existing:
+                    existing.status = disposition
+                    existing.findings_count = findings_count
+                    existing.processed_output_path = str(json_file)
+                    existing.executed_at = file_mtime
+                    existing.error_message = error_message
                 else:
-                    # Create new scan result entry
-                    result = ScanResult(
+                    db.session.add(ScanResult(
                         scan_id=scan_id,
                         plugin_name=plugin_name,
-                        status=data.get('disposition', 'unknown'),
+                        status=disposition,
                         findings_count=findings_count,
                         processed_output_path=str(json_file),
-                        executed_at=file_mtime
-                    )
-                    db.session.add(result)
-            
+                        executed_at=file_mtime,
+                        error_message=error_message,
+                    ))
+
             except Exception as e:
-                current_app.logger.error(f"Error parsing {json_file}: {str(e)}")
-        
+                current_app.logger.error(f"Error parsing {json_file}: {e}")
+
         db.session.commit()
-    
+
     except Exception as e:
-        current_app.logger.exception(f"Error parsing scan results: {str(e)}")
+        current_app.logger.exception(f"Error parsing scan results: {e}")
 
 def format_duration(seconds):
     """Format duration in seconds to human-readable string"""
