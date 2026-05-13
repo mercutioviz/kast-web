@@ -23,6 +23,7 @@
                             <th>Status</th>
                             <th>Last Login</th>
                             <th>Login Count</th>
+                            <th>Failed Attempts</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -68,10 +69,19 @@
                             </td>
                             <td>{{ user.login_count }}</td>
                             <td>
+                                {% if user.failed_login_attempts >= 10 %}
+                                    <span class="badge bg-danger">{{ user.failed_login_attempts }} (locked)</span>
+                                {% elif user.failed_login_attempts > 0 %}
+                                    <span class="badge bg-warning text-dark">{{ user.failed_login_attempts }}</span>
+                                {% else %}
+                                    <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if user.id != current_user.id %}
                                 <div class="btn-group" role="group">
                                     <form method="POST" action="{{ url_for('auth.toggle_user_active', user_id=user.id) }}" class="d-inline">
-                                        <button type="submit" class="btn btn-sm btn-outline-secondary" 
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary"
                                                 title="{% if user.is_active %}Deactivate User{% else %}Activate User{% endif %}"
                                                 onclick="return confirm('Are you sure you want to {% if user.is_active %}deactivate{% else %}activate{% endif %} this user?')">
                                             {% if user.is_active %}
@@ -81,8 +91,17 @@
                                             {% endif %}
                                         </button>
                                     </form>
+                                    {% if user.failed_login_attempts > 0 %}
+                                    <form method="POST" action="{{ url_for('auth.reset_failed_attempts', user_id=user.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning"
+                                                title="Reset Failed Attempts"
+                                                onclick="return confirm('Reset failed login attempts for {{ user.username }}?')">
+                                            <i class="fas fa-unlock"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
                                     <form method="POST" action="{{ url_for('auth.delete_user', user_id=user.id) }}" class="d-inline">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" 
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"
                                                 title="Delete User"
                                                 onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone!')">
                                             <i class="fas fa-trash"></i>

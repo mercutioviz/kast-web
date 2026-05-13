@@ -6,12 +6,17 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 from urllib.parse import urlparse
 from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from app import db
 from app.models import User, SystemSettings
 from app.forms import LoginForm, RegistrationForm, ChangePasswordForm
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+_LOCKOUT_THRESHOLD = 10
+# Pre-hashed dummy value — forces constant-time path when username does not exist.
+_DUMMY_HASH = generate_password_hash('dummy-value-for-timing-safety')
 
 
 @bp.route('/login', methods=['GET', 'POST'])
@@ -25,15 +30,28 @@ def login():
     
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
-        
-        # Check if user exists and password is correct
-        if user is None or not user.check_password(form.password.data):
-            # Track failed login attempts
+
+        # Enforce lockout before touching the password hash.
+        if user and user.failed_login_attempts >= _LOCKOUT_THRESHOLD:
+            flash(
+                'Account locked after too many failed login attempts. '
+                'Contact an administrator to reset your account.',
+                'danger',
+            )
+            return redirect(url_for('auth.login'))
+
+        # Always run a password check to avoid timing oracle on username existence.
+        if user:
+            password_ok = user.check_password(form.password.data)
+        else:
+            check_password_hash(_DUMMY_HASH, form.password.data)
+            password_ok = False
+
+        if not password_ok:
             if user:
                 user.failed_login_attempts += 1
                 user.last_failed_login = datetime.utcnow()
                 db.session.commit()
-            
             flash('Invalid username or password', 'danger')
             return redirect(url_for('auth.login'))
         
@@ -323,6 +341,26 @@ def delete_user(user_id):
     username = user.username
     db.session.delete(user)
     db.session.commit()
-    
+
     flash(f'User {username} has been deleted.', 'success')
+    return redirect(url_for('auth.list_users'))
+
+
+@bp.route('/users/<int:user_id>/reset-failed-attempts', methods=['POST'])
+@login_required
+def reset_failed_attempts(user_id):
+    """Reset failed-login counter so a locked-out account can log in again (admin only)."""
+    if not current_user.is_admin:
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('main.index'))
+
+    user = db.session.get(User, user_id)
+    if not user:
+        flash('User not found.', 'danger')
+        return redirect(url_for('auth.list_users'))
+
+    user.failed_login_attempts = 0
+    db.session.commit()
+
+    flash(f'Failed login attempts for {user.username} have been reset.', 'success')
     return redirect(url_for('auth.list_users'))

@@ -1,6 +1,7 @@
 """
-Encryption utilities for sensitive data storage
-Uses Fernet symmetric encryption with key derived from SECRET_KEY
+Encryption utilities for sensitive data storage.
+Uses Fernet symmetric encryption with a key derived from ENCRYPTION_KEY (preferred)
+or SECRET_KEY (backwards-compatible fallback).
 """
 from cryptography.fernet import Fernet
 from flask import current_app
@@ -10,12 +11,9 @@ import json
 
 
 def get_encryption_key():
-    """
-    Derive encryption key from Flask SECRET_KEY
-    Uses SHA256 to ensure consistent 32-byte key
-    """
-    secret = current_app.config['SECRET_KEY'].encode()
-    key = hashlib.sha256(secret).digest()
+    """Derive Fernet key from ENCRYPTION_KEY env var, falling back to SECRET_KEY."""
+    key_source = current_app.config.get('ENCRYPTION_KEY') or current_app.config['SECRET_KEY']
+    key = hashlib.sha256(key_source.encode()).digest()
     return base64.urlsafe_b64encode(key)
 
 

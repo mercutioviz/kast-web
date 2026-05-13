@@ -1,7 +1,10 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 basedir = os.path.abspath(os.path.dirname(__file__))
+
+_INSECURE_DEFAULT_KEY = 'dev-secret-key-change-in-production'
 
 # Application version — read from VERSION file at repo root, fall back to 'unknown'
 try:
@@ -11,8 +14,10 @@ except Exception:
 
 class Config:
     """Base configuration"""
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    
+    SECRET_KEY = os.environ.get('SECRET_KEY') or _INSECURE_DEFAULT_KEY
+    ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY')
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
+
     # Database configuration
     # Use absolute path to ensure consistent database location
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
@@ -82,7 +87,15 @@ class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
-    # In production, ensure SECRET_KEY is set via environment variable
+
+    @classmethod
+    def init_app(cls, app):
+        super().init_app(app)
+        if app.config.get('SECRET_KEY') == _INSECURE_DEFAULT_KEY:
+            raise RuntimeError(
+                "SECRET_KEY is set to the insecure default value. "
+                "Set a strong SECRET_KEY in the environment before starting in production."
+            )
 
 class TestingConfig(Config):
     """Testing configuration"""
