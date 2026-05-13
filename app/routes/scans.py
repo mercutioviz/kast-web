@@ -337,12 +337,26 @@ def report_html_raw(scan_id):
     with open(report_path, 'r', errors='replace') as f:
         report_html = f.read()
 
+    # Inject a <base> tag so that all relative URLs in the report (CSS,
+    # images, JS) resolve through the serve_scan_file route rather than
+    # failing against the report-html endpoint URL.  This handles both
+    # bare filenames (href="kast_style.css") and sub-paths.
+    base_url = f'/scans/{scan_id}/'
+    base_tag = f'<base href="{base_url}">'
+    # Insert right after <head> (or at start if no head tag)
+    if '<head>' in report_html:
+        report_html = report_html.replace('<head>', f'<head>\n    {base_tag}', 1)
+    elif '<head ' in report_html:
+        report_html = re.sub(r'(<head[^>]*>)', r'\1\n    ' + base_tag, report_html, count=1)
+    else:
+        report_html = base_tag + '\n' + report_html
+
     def replace_asset_path(match):
         attr = match.group(1)
         filename = match.group(2)
-        if 'logo' in filename.lower() and filename.endswith('.png'):
-            return f'{attr}="{url_for("static", filename="images/kast-logo.png")}"'
-        return f'{attr}="{url_for("scans.serve_scan_file", scan_id=scan_id, filename="assets/" + filename)}"'
+        # Strip assets/ prefix — files live in the scan root, not a subdir
+        bare = filename.split('/')[-1] if '/' in filename else filename
+        return f'{attr}="{url_for("scans.serve_scan_file", scan_id=scan_id, filename=bare)}"'
 
     for pattern in [
         r'(src|href)=["\']\.\.\/assets\/([^"\']+)["\']',
@@ -406,9 +420,9 @@ def serve_scan_file(scan_id, filename):
         abort(404)
     
     # Check access permission
-    if not check_scan_access(scan):
+    if not check_scan_access_simple(scan):
         abort(403)
-    
+
     # Security: only allow specific file types
     allowed_extensions = {'.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg'}
     file_path = Path(scan.output_dir) / filename
