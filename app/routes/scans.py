@@ -313,14 +313,16 @@ def view_report(scan_id):
 @bp.route('/<int:scan_id>/report-html')
 @login_required
 def report_html_raw(scan_id):
-    """Serve the processed report HTML for sandboxed iframe embedding.
+    """Serve report HTML with all local assets inlined.
 
-    Applies the same asset-path substitution as the old inline viewer, then
-    returns the HTML directly so it can be embedded in a sandboxed <iframe>.
-    The sandbox attribute on the iframe prevents any injected scripts from
-    accessing the parent page's cookies or DOM.
+    CSS is inlined as <style> blocks and images are embedded as base64 data
+    URIs so the sandboxed iframe never needs to make additional authenticated
+    requests.  Without this, SameSite=Lax cookies are not sent from a null-
+    origin sandbox, causing @login_required to block every asset request.
     """
     import re
+    import base64
+    import mimetypes as _mimetypes
 
     scan = db.session.get(Scan, scan_id)
     if not scan:
@@ -337,33 +339,61 @@ def report_html_raw(scan_id):
     with open(report_path, 'r', errors='replace') as f:
         report_html = f.read()
 
-    # Inject a <base> tag so that all relative URLs in the report (CSS,
-    # images, JS) resolve through the serve_scan_file route rather than
-    # failing against the report-html endpoint URL.  This handles both
-    # bare filenames (href="kast_style.css") and sub-paths.
-    base_url = f'/scans/{scan_id}/'
-    base_tag = f'<base href="{base_url}">'
-    # Insert right after <head> (or at start if no head tag)
-    if '<head>' in report_html:
-        report_html = report_html.replace('<head>', f'<head>\n    {base_tag}', 1)
-    elif '<head ' in report_html:
-        report_html = re.sub(r'(<head[^>]*>)', r'\1\n    ' + base_tag, report_html, count=1)
-    else:
-        report_html = base_tag + '\n' + report_html
+    output_dir = Path(scan.output_dir).resolve()
 
-    def replace_asset_path(match):
-        attr = match.group(1)
-        filename = match.group(2)
-        # Strip assets/ prefix — files live in the scan root, not a subdir
-        bare = filename.split('/')[-1] if '/' in filename else filename
-        return f'{attr}="{url_for("scans.serve_scan_file", scan_id=scan_id, filename=bare)}"'
+    def _safe_path(filename):
+        """Return resolved path only if it stays inside output_dir."""
+        bare = filename.lstrip('./').split('/')[-1] if '/' in filename.lstrip('./') else filename.lstrip('./')
+        p = (output_dir / bare).resolve()
+        if str(p).startswith(str(output_dir)) and p.is_file():
+            return p
+        return None
 
-    for pattern in [
-        r'(src|href)=["\']\.\.\/assets\/([^"\']+)["\']',
-        r'(src|href)=["\']\.\/assets\/([^"\']+)["\']',
-        r'(src|href)=["\']assets\/([^"\']+)["\']',
+    # Inline CSS: replace <link rel="stylesheet" href="..."> with <style>...</style>
+    def inline_css(match):
+        href = match.group(1)
+        if href.startswith(('http://', 'https://', '//', 'data:')):
+            return match.group(0)
+        p = _safe_path(href)
+        if p:
+            try:
+                with open(p, 'r', errors='replace') as f:
+                    content = f.read()
+                return f'<style>\n{content}\n</style>'
+            except OSError:
+                pass
+        return match.group(0)
+
+    for css_pat in [
+        r'<link\s+rel=["\']stylesheet["\']\s+href=["\']([^"\']+)["\'][^>]*/?>',
+        r'<link\s+href=["\']([^"\']+)["\'][^>]*rel=["\']stylesheet["\'][^>]*/?>',
     ]:
-        report_html = re.sub(pattern, replace_asset_path, report_html)
+        report_html = re.sub(css_pat, inline_css, report_html, flags=re.IGNORECASE)
+
+    # Inline images: replace src="..." with base64 data URIs
+    def inline_image(match):
+        attr = match.group(1)
+        src = match.group(2)
+        if src.startswith(('http://', 'https://', '//', 'data:')):
+            return match.group(0)
+        p = _safe_path(src)
+        if p:
+            try:
+                with open(p, 'rb') as f:
+                    b64 = base64.b64encode(f.read()).decode()
+                mime, _ = _mimetypes.guess_type(str(p))
+                mime = mime or 'image/png'
+                return f'{attr}="data:{mime};base64,{b64}"'
+            except OSError:
+                pass
+        return match.group(0)
+
+    report_html = re.sub(
+        r'(src)=["\']([^"\']+\.(?:png|jpg|jpeg|gif|svg|webp))["\']',
+        inline_image,
+        report_html,
+        flags=re.IGNORECASE,
+    )
 
     return Response(
         report_html,
