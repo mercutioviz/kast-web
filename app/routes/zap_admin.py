@@ -454,6 +454,19 @@ def config_edit(config_id):
         form.is_active.data = config.is_active
         form.is_default.data = config.is_default
 
+        decryption_failed = (
+            (config.execution_mode == 'local' and config.local_config_decryption_failed) or
+            (config.execution_mode == 'remote' and config.remote_config_decryption_failed) or
+            (config.execution_mode == 'cloud' and config.cloud_config_decryption_failed)
+        )
+        if decryption_failed:
+            flash(
+                'The stored configuration for this entry could not be decrypted (the encryption '
+                'key has changed since it was saved). Please re-enter all settings below and save '
+                'to update the stored values.',
+                'warning'
+            )
+
         if config.execution_mode == 'local':
             local_conf = config.local_config
             form.docker_image.data = local_conf.get('docker_image', '')

@@ -647,37 +647,68 @@ class ZapConfiguration(db.Model):
         """Decrypt and return local config"""
         if self.local_config_encrypted:
             from app.encryption import decrypt_json
-            return decrypt_json(self.local_config_encrypted)
+            try:
+                return decrypt_json(self.local_config_encrypted)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'ZapConfiguration %s local_config decryption failed (key rotation?)', self.id)
+                return {}
         return {}
-    
+
+    @property
+    def local_config_decryption_failed(self):
+        """True if encrypted data exists but cannot be decrypted with the current key."""
+        return bool(self.local_config_encrypted) and not self.local_config
+
     @local_config.setter
     def local_config(self, value):
         """Encrypt and store local config"""
         from app.encryption import encrypt_json
         self.local_config_encrypted = encrypt_json(value)
-    
+
     @property
     def remote_config(self):
         """Decrypt and return remote config"""
         if self.remote_config_encrypted:
             from app.encryption import decrypt_json
-            return decrypt_json(self.remote_config_encrypted)
+            try:
+                return decrypt_json(self.remote_config_encrypted)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'ZapConfiguration %s remote_config decryption failed (key rotation?)', self.id)
+                return {}
         return {}
-    
+
+    @property
+    def remote_config_decryption_failed(self):
+        return bool(self.remote_config_encrypted) and not self.remote_config
+
     @remote_config.setter
     def remote_config(self, value):
         """Encrypt and store remote config"""
         from app.encryption import encrypt_json
         self.remote_config_encrypted = encrypt_json(value)
-    
+
     @property
     def cloud_config(self):
         """Decrypt and return cloud config"""
         if self.cloud_config_encrypted:
             from app.encryption import decrypt_json
-            return decrypt_json(self.cloud_config_encrypted)
+            try:
+                return decrypt_json(self.cloud_config_encrypted)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'ZapConfiguration %s cloud_config decryption failed (key rotation?)', self.id)
+                return {}
         return {}
-    
+
+    @property
+    def cloud_config_decryption_failed(self):
+        return bool(self.cloud_config_encrypted) and not self.cloud_config
+
     @cloud_config.setter
     def cloud_config(self, value):
         """Encrypt and store cloud config"""
