@@ -8,6 +8,19 @@ from app.cloud_provider_data import (
     GCP_REGIONS, GCP_MACHINE_TYPES
 )
 
+def _validate_password_complexity(form, field):
+    p = field.data or ''
+    errors = []
+    if not any(c.isupper() for c in p):
+        errors.append('one uppercase letter')
+    if not any(c.islower() for c in p):
+        errors.append('one lowercase letter')
+    if not any(c.isdigit() for c in p):
+        errors.append('one digit')
+    if errors:
+        raise ValidationError(f'Password must contain at least: {", ".join(errors)}.')
+
+
 class MultiCheckboxField(SelectMultipleField):
     """Custom field for multiple checkboxes"""
     widget = ListWidget(prefix_label=False)
@@ -211,7 +224,8 @@ class RegistrationForm(FlaskForm):
         'Password',
         validators=[
             DataRequired(message='Password is required'),
-            Length(min=8, message='Password must be at least 8 characters long')
+            Length(min=8, message='Password must be at least 8 characters long'),
+            _validate_password_complexity
         ],
         render_kw={'placeholder': 'Enter password', 'class': 'form-control', 'autocomplete': 'new-password'}
     )
@@ -276,7 +290,8 @@ class ChangePasswordForm(FlaskForm):
         'New Password',
         validators=[
             DataRequired(message='New password is required'),
-            Length(min=8, message='Password must be at least 8 characters long')
+            Length(min=8, message='Password must be at least 8 characters long'),
+            _validate_password_complexity
         ],
         render_kw={'placeholder': 'Enter new password', 'class': 'form-control', 'autocomplete': 'new-password'}
     )

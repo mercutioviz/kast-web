@@ -25,6 +25,10 @@
                 <a href="{{ url_for('config_profiles.edit_profile', profile_id=profile.id) }}" class="btn btn-primary">
                     <i class="fas fa-edit"></i> Edit
                 </a>
+                <a href="{{ url_for('config_profiles.export_profile', profile_id=profile.id) }}"
+                   class="btn btn-outline-secondary" title="Download as YAML">
+                    <i class="bi bi-download"></i> Export
+                </a>
                 <button type="button" class="btn btn-info" onclick="duplicateProfile()">
                     <i class="fas fa-copy"></i> Duplicate
                 </button>

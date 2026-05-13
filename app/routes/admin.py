@@ -338,6 +338,51 @@ def clear_audit_log():
     return redirect(url_for('admin.audit_log'))
 
 
+@bp.route('/api/scan-trend')
+@login_required
+@admin_required
+def api_scan_trend():
+    """30-day daily scan counts for dashboard trend chart."""
+    from collections import defaultdict
+    import calendar
+
+    today = datetime.utcnow().date()
+    start = today - timedelta(days=29)
+
+    rows = db.session.execute(
+        text(
+            "SELECT date(started_at) as day, status, count(*) as cnt "
+            "FROM scans "
+            "WHERE date(started_at) >= :start "
+            "GROUP BY date(started_at), status"
+        ),
+        {'start': start.isoformat()}
+    ).fetchall()
+
+    # Build day-keyed buckets
+    completed_by_day = defaultdict(int)
+    failed_by_day = defaultdict(int)
+    for row in rows:
+        day, status, cnt = row[0], row[1], row[2]
+        if status == 'completed':
+            completed_by_day[day] += cnt
+        elif status == 'failed':
+            failed_by_day[day] += cnt
+
+    labels, completed, failed, total = [], [], [], []
+    for i in range(30):
+        d = start + timedelta(days=i)
+        key = d.isoformat()
+        c = completed_by_day.get(key, 0)
+        f = failed_by_day.get(key, 0)
+        labels.append(d.strftime('%b %-d'))
+        completed.append(c)
+        failed.append(f)
+        total.append(c + f)
+
+    return jsonify({'labels': labels, 'completed': completed, 'failed': failed, 'total': total})
+
+
 @bp.route('/api/stats')
 @login_required
 @admin_required

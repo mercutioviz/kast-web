@@ -104,6 +104,10 @@ class Scan(db.Model):
 
     # AI summary options
     generate_ai_summary = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
+
+    # SA annotations
+    notes = db.Column(db.Text)
+    tags = db.Column(db.Text)  # comma-separated
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')

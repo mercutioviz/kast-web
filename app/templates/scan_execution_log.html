@@ -85,8 +85,22 @@
                         Complete KAST command output including all STDOUT and STDERR
                     </small>
                 </div>
+                <!-- Log search toolbar -->
+                <div class="card-body border-bottom py-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="text" id="logSearch" class="form-control form-control-sm" style="max-width:320px;"
+                               placeholder="Search log..." autocomplete="off">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="searchPrev" title="Previous match">
+                            <i class="bi bi-chevron-up"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="searchNext" title="Next match">
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                        <span id="searchCount" class="text-muted small"></span>
+                    </div>
+                </div>
                 <div class="card-body p-0">
-                    <pre class="log-viewer mb-0"><code>{{ log_content }}</code></pre>
+                    <pre class="log-viewer mb-0"><code id="logCode">{{ log_content }}</code></pre>
                 </div>
             </div>
         </div>
@@ -148,4 +162,72 @@
     background: #666;
 }
 </style>
+
+<script>
+(function () {
+    var searchInput = document.getElementById('logSearch');
+    var prevBtn = document.getElementById('searchPrev');
+    var nextBtn = document.getElementById('searchNext');
+    var countEl = document.getElementById('searchCount');
+    var codeEl = document.getElementById('logCode');
+
+    var originalText = codeEl.textContent;
+    var matches = [];
+    var current = -1;
+
+    function escapeHtml(s) {
+        return s.replace(/[&<>"]/g, function (c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+        });
+    }
+
+    function highlight(term) {
+        if (!term) {
+            codeEl.innerHTML = escapeHtml(originalText);
+            matches = [];
+            current = -1;
+            countEl.textContent = '';
+            return;
+        }
+        var escapedTerm = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        var html = escapeHtml(originalText).replace(
+            new RegExp(escapedTerm, 'gi'),
+            '<mark class="log-match" style="background:#ffe680;color:#000;border-radius:2px;">$&</mark>'
+        );
+        codeEl.innerHTML = html;
+        matches = Array.from(codeEl.querySelectorAll('mark.log-match'));
+        current = matches.length > 0 ? 0 : -1;
+        updateCount();
+        scrollToCurrent();
+    }
+
+    function updateCount() {
+        if (matches.length === 0) {
+            countEl.textContent = searchInput.value ? '0 matches' : '';
+        } else {
+            countEl.textContent = (current + 1) + ' of ' + matches.length;
+        }
+    }
+
+    function scrollToCurrent() {
+        if (current >= 0 && matches[current]) {
+            matches[current].scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function navigate(dir) {
+        if (!matches.length) return;
+        current = (current + dir + matches.length) % matches.length;
+        updateCount();
+        scrollToCurrent();
+    }
+
+    searchInput.addEventListener('input', function () { highlight(this.value.trim()); });
+    searchInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); navigate(e.shiftKey ? -1 : 1); }
+    });
+    prevBtn.addEventListener('click', function () { navigate(-1); });
+    nextBtn.addEventListener('click', function () { navigate(1); });
+}());
+</script>
 {% endblock %}

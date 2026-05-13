@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, current_app
+from flask import Blueprint, render_template, redirect, url_for, flash, current_app, request
 from flask_login import login_required, current_user
 from app import db
 from app.models import Scan, ReportLogo, SystemSettings, ScanConfigProfile
@@ -119,12 +119,32 @@ def index():
     except Exception:
         ai_enabled = False
 
+    # Clone pre-fill: if ?clone=<scan_id> is in the URL, load that scan's fields
+    clone_source = None
+    clone_preselected_plugins = []
+    clone_id = request.args.get('clone', type=int)
+    if clone_id:
+        from app.models import Scan as _Scan
+        _src = db.session.get(_Scan, clone_id)
+        if _src and (_src.user_id == current_user.id or current_user.is_admin):
+            clone_source = _src
+            clone_preselected_plugins = _src.plugin_list
+
+    # Build profile data JSON for quick-select preview (id -> {name, description})
+    profile_data = {
+        str(p.id): {'name': p.name, 'description': p.description or ''}
+        for p in profiles
+    }
+
     return render_template('index.html', form=form, recent_scans=recent_scans,
                          can_run_active=current_user.can_run_active_scans,
                          plugins_with_types=plugins_with_types,
                          results_dir=results_dir,
                          db_path=db_path,
-                         ai_enabled=ai_enabled)
+                         ai_enabled=ai_enabled,
+                         clone_source=clone_source,
+                         clone_preselected_plugins=clone_preselected_plugins,
+                         profile_data=profile_data)
 
 @bp.route('/scan/new', methods=['POST'])
 @login_required
@@ -260,6 +280,10 @@ def create_scan():
                 current_app.logger.warning(f"Invalid zap_config_id value: {form.zap_config_id.data}")
                 zap_config_id = None
         
+        # Capture tags from form (plain text field, not a WTForm field)
+        raw_tags = request.form.get('tags', '').strip()
+        tags_value = ','.join(t.strip() for t in raw_tags.split(',') if t.strip()) or None
+
         # Create scan record (assign to current user)
         scan = Scan(
             user_id=current_user.id,
@@ -275,6 +299,7 @@ def create_scan():
             config_overrides=config_overrides,
             zap_plan_id=zap_plan_id,
             zap_config_id=zap_config_id,
+            tags=tags_value,
             status='pending',
             config_json=json.dumps({
                 'target': form.target.data,

@@ -1,12 +1,13 @@
 """
 Routes for managing scan configuration profiles
 """
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, Response
 from flask_login import login_required, current_user
 from app import db
 from app.models import ScanConfigProfile, AuditLog
 from app.forms import ScanConfigProfileForm
 from app.utils import admin_required, power_user_required
+import re
 import yaml
 import json
 
@@ -237,6 +238,82 @@ def duplicate_profile(profile_id):
         db.session.rollback()
         flash(f'Error duplicating profile: {str(e)}', 'danger')
         return redirect(url_for('config_profiles.view_profile', profile_id=profile_id))
+
+
+@bp.route('/<int:profile_id>/export')
+@login_required
+@power_user_required
+def export_profile(profile_id):
+    """Download a config profile as a YAML file."""
+    profile = ScanConfigProfile.query.get_or_404(profile_id)
+    slug = re.sub(r'[^a-z0-9]+', '-', profile.name.lower()).strip('-')
+    filename = f'kast-profile-{slug}.yaml'
+    AuditLog.log(
+        user_id=current_user.id,
+        action='config_profile_export',
+        resource_type='config_profile',
+        resource_id=profile.id,
+        details=f"Exported config profile '{profile.name}'"
+    )
+    return Response(
+        profile.config_yaml,
+        mimetype='text/yaml',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@bp.route('/import', methods=['POST'])
+@login_required
+@power_user_required
+def import_profile():
+    """Import a config profile from an uploaded YAML file."""
+    uploaded = request.files.get('yaml_file')
+    if not uploaded or not uploaded.filename:
+        flash('No file selected.', 'danger')
+        return redirect(url_for('config_profiles.list_profiles'))
+
+    try:
+        raw = uploaded.read().decode('utf-8')
+        yaml.safe_load(raw)  # validate syntax
+    except UnicodeDecodeError:
+        flash('File must be UTF-8 encoded text.', 'danger')
+        return redirect(url_for('config_profiles.list_profiles'))
+    except yaml.YAMLError as e:
+        flash(f'Invalid YAML: {e}', 'danger')
+        return redirect(url_for('config_profiles.list_profiles'))
+
+    # Derive a name: strip extension, replace underscores/hyphens with spaces, title-case
+    base = re.sub(r'\.(yaml|yml)$', '', uploaded.filename, flags=re.IGNORECASE)
+    base = re.sub(r'[-_]+', ' ', base).strip().title() or 'Imported Profile'
+    # If name already exists append "(Imported)"
+    candidate = base
+    if ScanConfigProfile.query.filter_by(name=candidate).first():
+        candidate = f'{base} (Imported)'
+        if ScanConfigProfile.query.filter_by(name=candidate).first():
+            from datetime import datetime as _dt
+            candidate = f'{base} (Imported {_dt.utcnow().strftime("%Y%m%d%H%M%S")})'
+
+    profile = ScanConfigProfile(
+        name=candidate,
+        description=f'Imported from {uploaded.filename}',
+        config_yaml=raw,
+        created_by=current_user.id,
+        allow_standard_users=False,
+        is_system_default=False,
+    )
+    db.session.add(profile)
+    db.session.commit()
+
+    AuditLog.log(
+        user_id=current_user.id,
+        action='config_profile_import',
+        resource_type='config_profile',
+        resource_id=profile.id,
+        details=f"Imported config profile '{profile.name}' from {uploaded.filename}"
+    )
+
+    flash(f'Profile "{profile.name}" imported successfully.', 'success')
+    return redirect(url_for('config_profiles.view_profile', profile_id=profile.id))
 
 
 @bp.route('/<int:profile_id>/validate', methods=['POST'])

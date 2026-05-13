@@ -6,6 +6,8 @@ from app.forms import ShareWithUserForm, GeneratePublicLinkForm, TransferOwnersh
 from app.utils import format_duration
 from pathlib import Path
 from datetime import datetime, timedelta
+import csv
+import io
 import os
 import shutil
 
@@ -66,26 +68,30 @@ def list():
     # Get filter parameters
     status_filter = request.args.get('status', '')
     target_filter = request.args.get('target', '')
-    
+    tag_filter = request.args.get('tag', '').strip()
+
     # Build query - filter by user unless admin
     if current_user.is_admin:
         query = Scan.query
     else:
         query = Scan.query.filter_by(user_id=current_user.id)
-    
+
     if status_filter:
         query = query.filter(Scan.status == status_filter)
-    
+
     if target_filter:
         query = query.filter(Scan.target.contains(target_filter))
-    
+
+    if tag_filter:
+        query = query.filter(Scan.tags.contains(tag_filter))
+
     # Order by most recent first
     query = query.order_by(Scan.started_at.desc())
-    
+
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     scans = pagination.items
-    
+
     from app.models import AISettings
     ai_enabled = False
     try:
@@ -99,6 +105,7 @@ def list():
         pagination=pagination,
         status_filter=status_filter,
         target_filter=target_filter,
+        tag_filter=tag_filter,
         format_duration=format_duration,
         ai_enabled=ai_enabled,
     )
@@ -701,6 +708,223 @@ def rerun(scan_id):
         flash(f'Error starting scan: {str(e)}', 'danger')
 
     return redirect(url_for('scans.detail', scan_id=new_scan.id))
+
+
+# ============================================================================
+# BULK OPERATIONS
+# ============================================================================
+
+@bp.route('/bulk', methods=['POST'])
+@login_required
+def bulk_action():
+    """Bulk delete or re-run selected scans."""
+    action = request.form.get('action')
+    scan_ids = request.form.getlist('scan_ids[]', type=int)
+
+    if not scan_ids:
+        flash('No scans selected.', 'warning')
+        return redirect(url_for('scans.list'))
+
+    if action == 'delete':
+        deleted = 0
+        for scan_id in scan_ids:
+            scan = db.session.get(Scan, scan_id)
+            if not scan:
+                continue
+            has_access, _ = check_scan_access(scan, 'edit')
+            if not has_access:
+                continue
+
+            output_dir = scan.output_dir
+            AISummary.query.filter_by(scan_id=scan_id).delete()
+            ScanShare.query.filter_by(scan_id=scan_id).delete()
+            ZapScanProgress.query.filter_by(scan_id=scan_id).delete()
+            cloud = CloudScan.query.filter_by(scan_id=scan_id).first()
+            if cloud:
+                from app.models import CloudOrphan
+                CloudOrphan.query.filter_by(cloud_scan_id=cloud.id).delete()
+                db.session.delete(cloud)
+            db.session.delete(scan)
+            db.session.commit()
+
+            if output_dir:
+                output_path = Path(output_dir)
+                if output_path.exists() and output_path.is_dir():
+                    try:
+                        shutil.rmtree(output_path)
+                    except Exception:
+                        pass
+            deleted += 1
+
+        flash(f'Deleted {deleted} scan(s).', 'success')
+
+    elif action == 'rerun':
+        rerun_mode = request.form.get('rerun_mode', 'full')
+        gen_ai = request.form.get('generate_ai_summary') == '1'
+
+        from app.tasks import execute_scan_task, regenerate_report_task
+        queued = 0
+        for scan_id in scan_ids:
+            scan = db.session.get(Scan, scan_id)
+            if not scan:
+                continue
+            has_access, _ = check_scan_access(scan, 'edit')
+            if not has_access:
+                continue
+
+            if rerun_mode == 'report_only':
+                if scan.status != 'completed' or not scan.output_dir:
+                    continue
+                try:
+                    regenerate_report_task.delay(scan_id, generate_ai_summary=gen_ai)
+                    queued += 1
+                except Exception:
+                    pass
+            else:
+                if scan.scan_mode == 'active' and not current_user.can_run_active_scans:
+                    continue
+                new_scan = Scan(
+                    user_id=current_user.id,
+                    target=scan.target,
+                    scan_mode=scan.scan_mode,
+                    plugins=scan.plugins,
+                    parallel=scan.parallel,
+                    verbose=scan.verbose,
+                    dry_run=scan.dry_run,
+                    generate_ai_summary=gen_ai,
+                    status='pending',
+                    config_json=scan.config_json,
+                )
+                db.session.add(new_scan)
+                db.session.commit()
+                try:
+                    task = execute_scan_task.delay(
+                        new_scan.id, new_scan.target, new_scan.scan_mode,
+                        plugins=new_scan.plugin_list if new_scan.plugins else None,
+                        parallel=new_scan.parallel,
+                        verbose=new_scan.verbose,
+                        dry_run=new_scan.dry_run,
+                    )
+                    new_scan.celery_task_id = task.id
+                    db.session.commit()
+                    queued += 1
+                except Exception:
+                    pass
+
+        flash(f'Queued {queued} scan(s) for re-run.', 'success')
+    else:
+        flash('Unknown action.', 'danger')
+
+    return redirect(url_for('scans.list'))
+
+
+# ============================================================================
+# CSV EXPORT
+# ============================================================================
+
+@bp.route('/export.csv')
+@login_required
+def export_csv():
+    """Export scan list as CSV (respects same filters as list view)."""
+    status_filter = request.args.get('status', '')
+    target_filter = request.args.get('target', '')
+    tag_filter = request.args.get('tag', '').strip()
+
+    if current_user.is_admin:
+        query = Scan.query
+    else:
+        query = Scan.query.filter_by(user_id=current_user.id)
+
+    if status_filter:
+        query = query.filter(Scan.status == status_filter)
+    if target_filter:
+        query = query.filter(Scan.target.contains(target_filter))
+    if tag_filter:
+        query = query.filter(Scan.tags.contains(tag_filter))
+
+    scans = query.order_by(Scan.started_at.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID', 'Target', 'Mode', 'Status', 'Started', 'Completed',
+                     'Duration(s)', 'Plugins', 'Tags', 'Notes'])
+    for s in scans:
+        writer.writerow([
+            s.id,
+            s.target,
+            s.scan_mode,
+            s.status,
+            s.started_at.strftime('%Y-%m-%d %H:%M:%S') if s.started_at else '',
+            s.completed_at.strftime('%Y-%m-%d %H:%M:%S') if s.completed_at else '',
+            round(s.duration, 1) if s.duration else '',
+            s.plugins or '',
+            s.tags or '',
+            (s.notes or '').replace('\n', ' '),
+        ])
+
+    filename = f'kast-scans-{datetime.utcnow().strftime("%Y%m%d")}.csv'
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+# ============================================================================
+# CLONE SCAN
+# ============================================================================
+
+@bp.route('/<int:scan_id>/clone')
+@login_required
+def clone(scan_id):
+    """Redirect to home page with scan fields pre-filled for cloning."""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        flash('Scan not found.', 'danger')
+        return redirect(url_for('scans.list'))
+    if not check_scan_access_simple(scan):
+        flash('You do not have permission to clone this scan.', 'danger')
+        return redirect(url_for('scans.list'))
+    return redirect(url_for('main.index', clone=scan_id))
+
+
+# ============================================================================
+# NOTES & TAGS AJAX SAVE
+# ============================================================================
+
+@bp.route('/<int:scan_id>/notes', methods=['POST'])
+@login_required
+def save_notes(scan_id):
+    """Save SA notes on a scan (owner / editor / admin)."""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    has_access, _ = check_scan_access(scan, 'edit')
+    if not has_access:
+        return jsonify({'ok': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(silent=True) or {}
+    scan.notes = data.get('notes', '')
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/<int:scan_id>/tags', methods=['POST'])
+@login_required
+def save_tags(scan_id):
+    """Save comma-separated tags on a scan (owner / editor / admin)."""
+    scan = db.session.get(Scan, scan_id)
+    if not scan:
+        return jsonify({'ok': False, 'error': 'Not found'}), 404
+    has_access, _ = check_scan_access(scan, 'edit')
+    if not has_access:
+        return jsonify({'ok': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(silent=True) or {}
+    raw = data.get('tags', '')
+    # Normalise: strip whitespace around each tag, drop empties, rejoin
+    tags = ','.join(t.strip() for t in raw.split(',') if t.strip())
+    scan.tags = tags or None
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 # ============================================================================
