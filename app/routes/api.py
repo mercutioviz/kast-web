@@ -1,25 +1,33 @@
 from flask import Blueprint, jsonify, request
-from flask_login import login_required
+from flask_login import login_required, current_user
 from app import db
 from app.models import Scan, ScanResult, User
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
+
+def _can_access_scan(scan):
+    """Return True if the current user may read this scan."""
+    return scan.user_id == current_user.id or current_user.role in ('admin', 'power_user')
+
+
 @bp.route('/scans', methods=['GET'])
+@login_required
 def get_scans():
     """API endpoint to get list of scans"""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     status = request.args.get('status', '')
-    
+
     query = Scan.query
-    
+    if current_user.role not in ('admin', 'power_user'):
+        query = query.filter(Scan.user_id == current_user.id)
     if status:
         query = query.filter(Scan.status == status)
-    
+
     query = query.order_by(Scan.started_at.desc())
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
     return jsonify({
         'scans': [scan.to_dict() for scan in pagination.items],
         'total': pagination.total,
@@ -28,40 +36,41 @@ def get_scans():
     })
 
 @bp.route('/scans/<int:scan_id>', methods=['GET'])
+@login_required
 def get_scan(scan_id):
     """API endpoint to get a specific scan"""
     scan = db.session.get(Scan, scan_id)
     if not scan:
         return jsonify({'error': 'Scan not found'}), 404
-    
+    if not _can_access_scan(scan):
+        return jsonify({'error': 'Forbidden'}), 403
+
     results = [result.to_dict() for result in scan.results.all()]
-    
+
     return jsonify({
         'scan': scan.to_dict(),
         'results': results
     })
 
 @bp.route('/scans/<int:scan_id>/status', methods=['GET'])
+@login_required
 def get_scan_status(scan_id):
     """API endpoint to get scan status and results (for polling)"""
     from pathlib import Path
     import json
     from datetime import datetime
     import logging
-    
-    # Set up logging for debugging
+
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    
-    logger.info(f"========== STATUS CHECK: Scan ID {scan_id} ==========")
-    
+
     scan = db.session.get(Scan, scan_id)
     if not scan:
-        logger.warning(f"Scan {scan_id} not found")
         return jsonify({'error': 'Scan not found'}), 404
+    if not _can_access_scan(scan):
+        return jsonify({'error': 'Forbidden'}), 403
     
-    logger.info(f"Scan status: {scan.status}, target: {scan.target}")
-    logger.info(f"Output directory: {scan.output_dir}")
+    logger.debug(f"Scan status: {scan.status}, target: {scan.target}")
+    logger.debug(f"Output directory: {scan.output_dir}")
     
     # Parse any new results during the scan
     if scan.status == 'running' and scan.output_dir:
@@ -290,12 +299,12 @@ def get_scan_status(scan_id):
     for ps in plugin_statuses:
         status = ps['status']
         status_summary[status] = status_summary.get(status, 0) + 1
-    logger.info(f"Response summary: {len(plugin_statuses)} total plugins - {status_summary}")
-    logger.info(f"========== END STATUS CHECK ==========\n")
+    logger.debug(f"Response summary: {len(plugin_statuses)} total plugins - {status_summary}")
     
     return jsonify(response)
 
 @bp.route('/plugins', methods=['GET'])
+@login_required
 def get_plugins():
     """API endpoint to get available plugins"""
     from app.utils import get_available_plugins
@@ -307,6 +316,7 @@ def get_plugins():
     })
 
 @bp.route('/stats', methods=['GET'])
+@login_required
 def get_stats():
     """API endpoint to get scan statistics"""
     total_scans = Scan.query.count()

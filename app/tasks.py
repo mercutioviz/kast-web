@@ -628,22 +628,19 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
         return {'success': False, 'error': str(e)}
     
     finally:
-        # DEBUGGING: Temporarily disabled cleanup to preserve /tmp files for troubleshooting
         # Clean up temporary config file if it was created
-        # if config_file_path and os.path.exists(config_file_path):
-        #     try:
-        #         os.unlink(config_file_path)
-        #         current_app.logger.info(f"Cleaned up temporary config file: {config_file_path}")
-        #     except Exception as e:
-        #         current_app.logger.warning(f"Could not delete temporary config file: {e}")
-        
+        if config_file_path and os.path.exists(config_file_path):
+            try:
+                os.unlink(config_file_path)
+            except Exception as e:
+                current_app.logger.warning(f"Could not delete temporary config file: {e}")
+
         # Clean up temporary ZAP plan file if it was created
-        # if zap_plan_file and os.path.exists(zap_plan_file):
-        #     try:
-        #         os.unlink(zap_plan_file)
-        #         current_app.logger.info(f"Cleaned up temporary ZAP plan file: {zap_plan_file}")
-        #     except Exception as e:
-        #         current_app.logger.warning(f"Could not delete temporary ZAP plan file: {e}")
+        if zap_plan_file and os.path.exists(zap_plan_file):
+            try:
+                os.unlink(zap_plan_file)
+            except Exception as e:
+                current_app.logger.warning(f"Could not delete temporary ZAP plan file: {e}")
 
         # Schedule cloud teardown regardless of scan outcome
         if cloud_scan_id is not None:

@@ -3,7 +3,7 @@ app/cloud/terraform_manager — Terraform subprocess wrapper for cloud provision
 
 Ported from kast/kast/scripts/terraform_manager.py with these adaptations:
   - kast.config imports replaced; Flask current_app.logger used for all logging.
-  - Terraform state files live under /var/lib/kast-web2/cloud_state/<scan_id>/
+  - Terraform state files live under /var/lib/kast-web/cloud_state/<scan_id>/
     (owned by www-data, survives /opt git resets).
   - tfvars injected from the CloudCredential + ZapConfiguration.cloud_config
     rather than from kast's ZAP cloud config YAML.
@@ -20,7 +20,7 @@ from pathlib import Path
 from flask import current_app
 
 
-_CLOUD_STATE_BASE = "/var/lib/kast-web2/cloud_state"
+_CLOUD_STATE_BASE = "/var/lib/kast-web/cloud_state"
 
 
 class TerraformManager:
