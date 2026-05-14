@@ -1,5 +1,12 @@
 /* Custom styles for KAST Web */
 
+/* Admin page content wrapper — consistent max-width across all admin pages */
+.admin-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 15px;
+}
+
 :root {
     --primary-color: #0d6efd;
     --success-color: #198754;

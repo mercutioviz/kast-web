@@ -3,6 +3,7 @@
 {% block title %}System Settings - KAST Web{% endblock %}
 
 {% block content %}
+<div class="admin-content">
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-gear"></i> System Settings</h2>
     <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">
@@ -323,4 +324,5 @@ document.getElementById('testKastPermissionsBtn').addEventListener('click', func
     });
 });
 </script>
+</div>
 {% endblock %}
