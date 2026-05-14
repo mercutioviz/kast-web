@@ -195,8 +195,13 @@
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {% if request.endpoint and 'zap_admin' in request.endpoint %}active{% endif %}" href="{{ url_for('zap_admin.plans_list') }}">
-                    <i class="bi bi-shield-check"></i> ZAP
+                <a class="nav-link {% if request.endpoint and 'zap_admin' in request.endpoint and 'plan' in request.endpoint %}active{% endif %}" href="{{ url_for('zap_admin.plans_list') }}">
+                    <i class="bi bi-shield-check"></i> ZAP Plans
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint and 'zap_admin' in request.endpoint and 'config' in request.endpoint %}active{% endif %}" href="{{ url_for('zap_admin.configs_list') }}">
+                    <i class="bi bi-server"></i> ZAP Configs
                 </a>
             </li>
             <li class="nav-item">
