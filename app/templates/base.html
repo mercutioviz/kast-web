@@ -74,13 +74,6 @@
                                 <i class="fas fa-tasks"></i> All Scans
                             </a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('zap_admin.plans_list') }}">
-                                <i class="bi bi-shield-check"></i> ZAP Plans
-                            </a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('zap_admin.configs_list') }}">
-                                <i class="bi bi-server"></i> ZAP Configurations
-                            </a></li>
-                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('ai.admin_ai_settings') }}">
                                 <i class="fas fa-robot"></i> AI Settings
                             </a></li>
@@ -90,6 +83,19 @@
                             </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('cloud.admin_cloud_scans') }}">
                                 <i class="bi bi-cloud-check"></i> Cloud Scans
+                            </a></li>
+                        </ul>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="zapDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-shield-check"></i> ZAP
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('zap_admin.plans_list') }}">
+                                <i class="bi bi-file-earmark-code"></i> Automation Plans
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('zap_admin.configs_list') }}">
+                                <i class="bi bi-server"></i> Configurations
                             </a></li>
                         </ul>
                     </li>
