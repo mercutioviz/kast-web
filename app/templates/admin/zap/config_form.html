@@ -842,38 +842,16 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
         updateRemoteConnectionPreview();
         updateCloudCommandPreview();
         
-        // Auto-populate CIDRs and filter credentials when switching to cloud mode
+        // Auto-populate CIDRs when switching to cloud mode
         if (modeSelect.value === 'cloud') {
             autoPopulateCidrs();
-            filterCredentialsByProvider();
         }
     });
     cloudProviderSelect.addEventListener('change', () => {
         updateCloudProviderVisibility();
         updateCloudCommandPreview();
-        filterCredentialsByProvider();
     });
 
-    // Filter credential dropdown to show only credentials matching selected provider
-    const credentialSelect = document.getElementById('cloud_credential_id');
-
-    function filterCredentialsByProvider() {
-        if (!credentialSelect) return;
-        const provider = cloudProviderSelect.value;
-        const options = credentialSelect.querySelectorAll('option');
-        let firstMatch = null;
-        options.forEach(opt => {
-            if (!opt.value || opt.value === '0') return;
-            const match = !provider || opt.dataset.provider === provider;
-            opt.hidden = !match;
-            if (match && !firstMatch) firstMatch = opt;
-        });
-        // If current selection is now hidden, reset to placeholder
-        const selected = credentialSelect.options[credentialSelect.selectedIndex];
-        if (selected && selected.hidden) {
-            credentialSelect.value = '0';
-        }
-    }
     gcpRegionSelect.addEventListener('change', updateGcpZone);
     cidrTextarea.addEventListener('blur', normalizeCidrs);
     cidrTextarea.addEventListener('input', validateCidrs);
@@ -1151,7 +1129,6 @@ gcloud compute instances create kast-zap-vm \\
             updateRemoteConnectionPreview();
         } else if (initialMode === 'cloud') {
             updateCloudCommandPreview();
-            filterCredentialsByProvider();
             {% if mode == 'create' %}
             autoPopulateCidrs();
             {% endif %}
