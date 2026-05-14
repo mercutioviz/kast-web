@@ -1,0 +1,93 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kast-web"
+dynamic = ["version"]
+description = "Web frontend for KAST — Kali Automated Scan Tool"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+keywords = ["security", "scanning", "zap", "web", "penetration-testing"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Framework :: Flask",
+    "Intended Audience :: Information Technology",
+]
+dependencies = [
+    "Flask>=3.0",
+    "Flask-SQLAlchemy>=3.1",
+    "Flask-WTF>=1.2",
+    "WTForms>=3.1",
+    "python-dotenv>=1.0",
+    "celery>=5.3",
+    "redis>=5.0",
+    "Flask-SocketIO>=5.3",
+    "Flask-Login>=0.6",
+    "Flask-Bcrypt>=1.0",
+    "email-validator>=2.1",
+    "Flask-Migrate>=4.0",
+    "Flask-Admin>=1.6",
+    "psutil>=5.9",
+    "PyYAML>=6.0",
+    "gunicorn>=21.2",
+    "gevent>=24.11",
+    "eventlet>=0.36",
+    "cryptography>=41.0",
+    "requests>=2.31",
+    "paramiko>=3.0",
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-flask>=1.3",
+]
+
+[project.scripts]
+kast-web = "kast_web_cli:main"
+
+# ---------------------------------------------------------------------------
+# Setuptools build configuration
+# ---------------------------------------------------------------------------
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.setuptools]
+py-modules = [
+    "config",
+    "wsgi",
+    "celery_worker",
+    "gunicorn_config",
+    "kast_web_cli",
+]
+
+[tool.setuptools.package-data]
+"app" = [
+    "templates/**/*",
+    "static/**/*",
+]
+
+# ---------------------------------------------------------------------------
+# Pytest configuration (replaces pytest.ini)
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "live_aws: hits real AWS infrastructure (deselect with -m 'not live_aws')",
+    "live_azure: hits real Azure infrastructure (deselect with -m 'not live_azure')",
+    "live_gcp: hits real GCP infrastructure (deselect with -m 'not live_gcp')",
+    "integration: requires live Redis and a running Celery worker",
+]
