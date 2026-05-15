@@ -1,6 +1,6 @@
 # kast-web
 
-Web frontend for [KAST](https://github.com/your-org/kast) — the Kali Automated Scan Tool. Submit and manage ZAP-powered web-application security scans through a browser, provision ephemeral cloud scanning infrastructure, and share polished reports with stakeholders.
+Web frontend for [KAST](https://github.com/mercutioviz/kast) — the Kali Automated Scan Tool. Submit and manage passive application security scans that integrate your favorite CLI tools: whatweb, wafw00f, katana, and more. Coordinate ZAP-powered web-application security scans through a browser, provision ephemeral cloud scanning infrastructure, and share polished reports with stakeholders.
 
 **Version:** 2.0.2  **Requires:** kast 3.0+
 
@@ -32,7 +32,7 @@ Web frontend for [KAST](https://github.com/your-org/kast) — the Kali Automated
 
 ## Quick start
 
-### Docker (recommended)
+### Docker (recommended for quick start; use the production employment method for a more permanent installation)
 
 The Docker image handles both the web server and the Celery worker via a single image and a CMD override.
 
@@ -216,12 +216,12 @@ Flask application (app/)
   └── templates/      Jinja2 + Bootstrap 5
 
 Redis ◄──────────────────────────────────────────────────────┐
-  │                                                           │
-  ▼                                                           │
+  │                                                          │
+  ▼                                                          │
 Celery worker  ←── kast-web worker                           │
-  ├── execute_scan_task        shells out to kast CLI         │
-  ├── cloud_provision_task     Terraform + SSH                │
-  ├── cloud_teardown_task      Terraform destroy              │
+  ├── execute_scan_task        shells out to kast CLI        │
+  ├── cloud_provision_task     Terraform + SSH               │
+  ├── cloud_teardown_task      Terraform destroy             │
   └── cloud_orphan_cleanup_task  (Beat schedule, 15 min)     │
                                                              │
 kast CLI (/usr/local/bin/kast) ──────────────────────────────┘
