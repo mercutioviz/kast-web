@@ -51,6 +51,8 @@
                             <td>
                                 {% if user.role == 'admin' %}
                                     <span class="badge bg-danger">Admin</span>
+                                {% elif user.role == 'power_user' %}
+                                    <span class="badge bg-warning text-dark">Power User</span>
                                 {% elif user.role == 'user' %}
                                     <span class="badge bg-primary">User</span>
                                 {% elif user.role == 'viewer' %}

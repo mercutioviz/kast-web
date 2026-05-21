@@ -71,6 +71,23 @@ def create_app(config_name='default'):
         from flask_wtf.csrf import generate_csrf
         return {'csrf_token': generate_csrf}
     
+    # Error handlers
+    @app.errorhandler(403)
+    def forbidden(e):
+        from flask import render_template
+        return render_template('errors/403.html'), 403
+
+    @app.errorhandler(404)
+    def not_found(e):
+        from flask import render_template
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        from flask import render_template
+        db.session.rollback()
+        return render_template('errors/500.html'), 500
+
     # Register blueprints
     from app.routes import main, scans, api, auth, admin, logos, config_profiles, zap_admin
     from app.cloud import routes as cloud_routes

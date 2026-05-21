@@ -509,6 +509,18 @@
     updatePreview();
 }());
 
+// Spinner on form submit
+(function () {
+    var form = document.querySelector('form[action="{{ url_for('main.create_scan') }}"]');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+        var btn = document.getElementById('submitBtn');
+        if (!btn || btn.disabled) return;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Starting scan…';
+    });
+}());
+
 // Target field — strip scheme and trailing slashes on blur or paste
 (function () {
     var targetEl = document.querySelector('input[name="target"]');

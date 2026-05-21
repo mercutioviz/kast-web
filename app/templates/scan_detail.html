@@ -136,22 +136,6 @@ function updatePluginResults(results) {
     });
 }
 
-function formatDuration(seconds) {
-    if (!seconds) return 'N/A';
-    
-    if (seconds < 60) {
-        return `${Math.floor(seconds)}s`;
-    } else if (seconds < 3600) {
-        const minutes = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${minutes}m ${secs}s`;
-    } else {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        return `${hours}h ${minutes}m`;
-    }
-}
-
 function startPolling() {
     // Poll every 3 seconds
     pollInterval = setInterval(updateScanStatus, 3000);
@@ -1117,9 +1101,10 @@ function loadShares() {
                         <td>${permission}</td>
                         <td>${expires}${expired}</td>
                         <td>
-                            <form method="POST" action="/scans/{{ scan.id }}/share/${share.id}/revoke" 
-                                  style="display: inline;" 
+                            <form method="POST" action="/scans/{{ scan.id }}/share/${share.id}/revoke"
+                                  style="display: inline;"
                                   onsubmit="return confirm('Revoke this share?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-danger">
                                     <i class="bi bi-x-circle"></i> Revoke
                                 </button>

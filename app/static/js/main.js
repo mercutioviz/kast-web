@@ -1,13 +1,15 @@
 // Main JavaScript for KAST Web
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto-dismiss alerts after 5 seconds
+    // Auto-dismiss alerts: 10s for warnings, never for errors, 5s for everything else
     const alerts = document.querySelectorAll('.alert:not(.alert-permanent)');
     alerts.forEach(function(alert) {
+        if (alert.classList.contains('alert-danger')) return;
+        const delay = alert.classList.contains('alert-warning') ? 10000 : 5000;
         setTimeout(function() {
             const bsAlert = new bootstrap.Alert(alert);
             bsAlert.close();
-        }, 5000);
+        }, delay);
     });
 
     // Confirm delete actions

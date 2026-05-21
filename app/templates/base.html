@@ -84,6 +84,22 @@
                             <li><a class="dropdown-item" href="{{ url_for('cloud.admin_cloud_scans') }}">
                                 <i class="bi bi-cloud-check"></i> Cloud Scans
                             </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.settings') }}">
+                                <i class="bi bi-gear"></i> Settings
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.activity') }}">
+                                <i class="bi bi-list-check"></i> Activity Log
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.audit_log') }}">
+                                <i class="bi bi-journal-text"></i> Audit Log
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.system_info') }}">
+                                <i class="bi bi-info-circle"></i> System Info
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('db_admin.index') }}">
+                                <i class="fas fa-database"></i> Database Explorer
+                            </a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">

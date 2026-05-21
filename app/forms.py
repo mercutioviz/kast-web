@@ -224,7 +224,7 @@ class RegistrationForm(FlaskForm):
         'Password',
         validators=[
             DataRequired(message='Password is required'),
-            Length(min=8, message='Password must be at least 8 characters long'),
+            Length(min=8, max=128, message='Password must be between 8 and 128 characters'),
             _validate_password_complexity
         ],
         render_kw={'placeholder': 'Enter password', 'class': 'form-control', 'autocomplete': 'new-password'}
@@ -290,7 +290,7 @@ class ChangePasswordForm(FlaskForm):
         'New Password',
         validators=[
             DataRequired(message='New password is required'),
-            Length(min=8, message='Password must be at least 8 characters long'),
+            Length(min=8, max=128, message='Password must be between 8 and 128 characters'),
             _validate_password_complexity
         ],
         render_kw={'placeholder': 'Enter new password', 'class': 'form-control', 'autocomplete': 'new-password'}

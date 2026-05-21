@@ -51,7 +51,7 @@
 </div>
 
 <!-- Bulk action toolbar (shown when ≥1 checkbox checked) -->
-<div id="bulkToolbar" class="alert alert-secondary d-flex align-items-center gap-3 mb-3" style="display:none!important;">
+<div id="bulkToolbar" class="alert alert-secondary d-flex align-items-center gap-3 mb-3 d-none">
     <span id="bulkCount" class="fw-bold"></span>
     <button type="button" class="btn btn-danger btn-sm" onclick="bulkDelete()">
         <i class="bi bi-trash"></i> Delete Selected
@@ -373,9 +373,9 @@ function updateToolbar() {
     var ids = getCheckedIds();
     if (ids.length > 0) {
         bulkCount.textContent = ids.length + ' selected';
-        bulkToolbar.style.removeProperty('display');
+        bulkToolbar.classList.remove('d-none');
     } else {
-        bulkToolbar.style.setProperty('display', 'none', 'important');
+        bulkToolbar.classList.add('d-none');
     }
     if (selectAll) {
         var all = document.querySelectorAll('.scan-checkbox');

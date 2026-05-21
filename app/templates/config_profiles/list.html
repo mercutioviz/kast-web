@@ -59,8 +59,9 @@
                            class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-edit"></i> Edit
                         </a>
-                        <form method="POST" action="{{ url_for('config_profiles.duplicate_profile', profile_id=profile.id) }}" 
+                        <form method="POST" action="{{ url_for('config_profiles.duplicate_profile', profile_id=profile.id) }}"
                               class="d-inline" onsubmit="return confirm('Create a duplicate of this profile?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-sm btn-outline-info">
                                 <i class="fas fa-copy"></i>
                             </button>
