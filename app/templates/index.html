@@ -484,6 +484,24 @@
     updatePreview();
 }());
 
+// Target field — strip scheme and trailing slashes on blur or paste
+(function () {
+    var targetEl = document.querySelector('input[name="target"]');
+    if (!targetEl) return;
+
+    function normaliseTarget() {
+        var v = targetEl.value.trim();
+        v = v.replace(/^https?:\/\//i, '');
+        v = v.replace(/\/+$/, '');
+        targetEl.value = v;
+    }
+
+    targetEl.addEventListener('blur', normaliseTarget);
+    targetEl.addEventListener('paste', function () {
+        setTimeout(normaliseTarget, 0);
+    });
+}());
+
 {% if clone_source %}
 // Clone pre-fill
 document.addEventListener('DOMContentLoaded', function () {
