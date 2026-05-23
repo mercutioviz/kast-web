@@ -192,7 +192,7 @@
         var escapedTerm = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         var html = escapeHtml(originalText).replace(
             new RegExp(escapedTerm, 'gi'),
-            '<mark class="log-match" style="background:#ffe680;color:#000;border-radius:2px;">$&</mark>'
+            '<mark class="log-match">$&</mark>'
         );
         codeEl.innerHTML = html;
         matches = Array.from(codeEl.querySelectorAll('mark.log-match'));

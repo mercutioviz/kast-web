@@ -16,7 +16,7 @@
 }
 
 body {
-    background-color: #f8f9fa;
+    background-color: var(--bs-body-bg);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -67,7 +67,7 @@ main {
 
 /* Table styling */
 .table-hover tbody tr:hover {
-    background-color: rgba(0, 0, 0, 0.025);
+    background-color: rgba(var(--bs-emphasis-color-rgb), 0.05);
 }
 
 /* Alert styling */
@@ -111,7 +111,7 @@ footer {
 }
 
 .form-check:hover {
-    background-color: rgba(0, 0, 0, 0.025);
+    background-color: rgba(var(--bs-emphasis-color-rgb), 0.05);
 }
 
 /* Responsive adjustments */
@@ -147,28 +147,31 @@ footer {
 
 /* Code blocks */
 code {
-    background-color: #f8f9fa;
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
     padding: 0.2rem 0.4rem;
     border-radius: 0.25rem;
     font-size: 87.5%;
 }
 
-/* Override for code inside dark backgrounds */
-.bg-dark code,
-pre.bg-dark code {
-    background-color: transparent;
-    color: inherit;
-}
-
 pre {
-    background-color: #f8f9fa;
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
     padding: 1rem;
     border-radius: 0.25rem;
     overflow-x: auto;
 }
 
-pre.bg-dark {
-    background-color: #212529;
+/* Execution log search highlight */
+mark.log-match {
+    background: #ffe680;
+    color: #000;
+    border-radius: 2px;
+}
+
+[data-bs-theme="dark"] mark.log-match {
+    background: #7a5c00;
+    color: #fff;
 }
 
 /* Pagination */
@@ -182,7 +185,7 @@ pre.bg-dark {
 
 .page-link:hover {
     color: var(--primary-color);
-    background-color: #e9ecef;
+    background-color: var(--bs-secondary-bg);
 }
 
 .page-item.active .page-link {

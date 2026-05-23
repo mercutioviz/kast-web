@@ -1,9 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <!-- Set theme before CSS renders to avoid flash of wrong theme -->
+    <script>
+        (function () {
+            var t = localStorage.getItem('kw-theme') ||
+                (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-bs-theme', t);
+        }());
+    </script>
     <title>{% block title %}KAST Web{% endblock %}</title>
     
     <!-- Favicon -->
@@ -124,6 +132,11 @@
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav ms-auto">
+                    <li class="nav-item me-1">
+                        <button id="themeToggle" type="button" class="btn btn-link nav-link px-2" title="Toggle dark/light mode" aria-label="Toggle dark/light mode">
+                            <i id="themeIcon" class="bi bi-moon-fill"></i>
+                        </button>
+                    </li>
                     {% if current_user.is_authenticated %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
@@ -190,5 +203,27 @@
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     
     {% block extra_js %}{% endblock %}
+
+    <script>
+        (function () {
+            var btn = document.getElementById('themeToggle');
+            var icon = document.getElementById('themeIcon');
+
+            function applyTheme(theme) {
+                document.documentElement.setAttribute('data-bs-theme', theme);
+                localStorage.setItem('kw-theme', theme);
+                icon.className = theme === 'dark' ? 'bi bi-sun-fill text-warning' : 'bi bi-moon-fill';
+            }
+
+            // Sync icon with current theme (set by the early <head> script)
+            var current = document.documentElement.getAttribute('data-bs-theme') || 'light';
+            icon.className = current === 'dark' ? 'bi bi-sun-fill text-warning' : 'bi bi-moon-fill';
+
+            btn.addEventListener('click', function () {
+                var next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+                applyTheme(next);
+            });
+        }());
+    </script>
 </body>
 </html>
