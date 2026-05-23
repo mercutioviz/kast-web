@@ -86,7 +86,7 @@
                 </thead>
                 <tbody>
                     {% for scan in scans %}
-                        <tr>
+                        <tr data-scan-id="{{ scan.id }}" data-scan-status="{{ scan.status }}">
                             <td>
                                 <input class="form-check-input scan-checkbox" type="checkbox" value="{{ scan.id }}">
                             </td>
@@ -109,21 +109,23 @@
                                     {{ scan.scan_mode }}
                                 </span>
                             </td>
-                            <td>
+                            <td class="scan-status-cell">
                                 {% if scan.status == 'completed' %}
                                     <span class="badge bg-success">
                                         <i class="bi bi-check-circle"></i> Completed
                                     </span>
                                 {% elif scan.status == 'running' %}
                                     <span class="badge bg-primary">
-                                        <i class="bi bi-arrow-repeat"></i> Running
+                                        <span class="spinner-border spinner-border-sm me-1" style="width:0.65em;height:0.65em;border-width:0.12em;" role="status" aria-hidden="true"></span> Running
                                     </span>
                                 {% elif scan.status == 'failed' %}
                                     <span class="badge bg-danger">
                                         <i class="bi bi-x-circle"></i> Failed
                                     </span>
                                 {% else %}
-                                    <span class="badge bg-secondary">{{ scan.status }}</span>
+                                    <span class="badge bg-secondary">
+                                        <span class="spinner-border spinner-border-sm me-1" style="width:0.65em;height:0.65em;border-width:0.12em;" role="status" aria-hidden="true"></span> {{ scan.status }}
+                                    </span>
                                 {% endif %}
                             </td>
                             <td>
@@ -137,7 +139,7 @@
                             <td>
                                 <small>{{ scan.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</small>
                             </td>
-                            <td>
+                            <td class="scan-duration-cell">
                                 <small>{{ format_duration(scan.duration) }}</small>
                             </td>
                             <td>
@@ -146,12 +148,11 @@
                                        class="btn btn-outline-primary" title="View Details">
                                         <i class="bi bi-eye"></i>
                                     </a>
-                                    {% if scan.status == 'completed' and scan.output_dir %}
-                                        <a href="{{ url_for('scans.view_report', scan_id=scan.id) }}"
-                                           class="btn btn-outline-success" title="View Report">
-                                            <i class="bi bi-file-earmark-text"></i>
-                                        </a>
-                                    {% endif %}
+                                    <a href="{{ url_for('scans.view_report', scan_id=scan.id) }}"
+                                       class="btn btn-outline-success scan-report-btn{% if not (scan.status == 'completed' and scan.output_dir) %} d-none{% endif %}"
+                                       title="View Report">
+                                        <i class="bi bi-file-earmark-text"></i>
+                                    </a>
                                     <button type="button"
                                             class="btn btn-outline-info rerun-btn"
                                             title="Re-run Scan"
@@ -470,4 +471,90 @@ document.getElementById('rerunModal').addEventListener('show.bs.modal', function
     }
 });
 </script>
+
+{% block extra_js %}
+<script>
+(function () {
+    var POLL_MS = 5000;
+    var TERMINAL = { completed: true, failed: true, cancelled: true };
+
+    // Collect IDs of non-terminal scans on this page
+    var watching = [];
+    document.querySelectorAll('tr[data-scan-id]').forEach(function (row) {
+        if (!TERMINAL[row.getAttribute('data-scan-status')]) {
+            watching.push(row.getAttribute('data-scan-id'));
+        }
+    });
+
+    if (!watching.length) return;
+
+    var timer = null;
+
+    function badge(status) {
+        var spin = '<span class="spinner-border spinner-border-sm me-1" style="width:0.65em;height:0.65em;border-width:0.12em;" role="status" aria-hidden="true"></span>';
+        if (status === 'completed') return '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Completed</span>';
+        if (status === 'running')   return '<span class="badge bg-primary">' + spin + ' Running</span>';
+        if (status === 'failed')    return '<span class="badge bg-danger"><i class="bi bi-x-circle"></i> Failed</span>';
+        return '<span class="badge bg-secondary">' + spin + ' ' + status + '</span>';
+    }
+
+    function poll() {
+        fetch('/scans/api/statuses?ids=' + watching.join(','))
+            .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+            .then(function (data) {
+                var stillActive = [];
+                watching.forEach(function (id) {
+                    var info = data[id];
+                    if (!info) { stillActive.push(id); return; }
+
+                    var row = document.querySelector('tr[data-scan-id="' + id + '"]');
+                    if (!row) return;
+
+                    var prev = row.getAttribute('data-scan-status');
+                    if (info.status !== prev) {
+                        row.querySelector('.scan-status-cell').innerHTML = badge(info.status);
+                        row.setAttribute('data-scan-status', info.status);
+
+                        if (info.duration_s !== null && info.duration_s !== undefined) {
+                            row.querySelector('.scan-duration-cell').innerHTML = '<small>' + formatDuration(info.duration_s) + '</small>';
+                        }
+
+                        if (info.has_report) {
+                            var btn = row.querySelector('.scan-report-btn');
+                            if (btn) btn.classList.remove('d-none');
+                        }
+
+                        var rerunBtn = row.querySelector('.rerun-btn');
+                        if (rerunBtn && info.has_report) {
+                            rerunBtn.setAttribute('data-completed', 'true');
+                        }
+                    }
+
+                    if (!TERMINAL[info.status]) stillActive.push(id);
+                });
+
+                watching = stillActive;
+                if (watching.length) scheduleNext();
+            })
+            .catch(function () {
+                if (watching.length) scheduleNext();
+            });
+    }
+
+    function scheduleNext() {
+        timer = setTimeout(poll, POLL_MS);
+    }
+
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            clearTimeout(timer);
+        } else if (watching.length) {
+            poll();
+        }
+    });
+
+    scheduleNext();
+}());
+</script>
+{% endblock %}
 {% endblock %}

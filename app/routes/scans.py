@@ -915,6 +915,47 @@ def export_csv():
 
 
 # ============================================================================
+# LIVE STATUS POLLING API
+# ============================================================================
+
+@bp.route('/api/statuses')
+@login_required
+def api_statuses():
+    """Batch status endpoint for live polling on the scan history page.
+
+    GET /scans/api/statuses?ids=1,2,3
+    Returns {str(id): {status, duration_s, has_report}, ...} for IDs the
+    current user is allowed to see.  Capped at 50 IDs per request.
+    """
+    raw = request.args.get('ids', '')
+    try:
+        scan_ids = [int(x) for x in raw.split(',') if x.strip()]
+    except ValueError:
+        return jsonify({}), 400
+
+    scan_ids = scan_ids[:50]
+    if not scan_ids:
+        return jsonify({})
+
+    if current_user.is_admin:
+        scans = Scan.query.filter(Scan.id.in_(scan_ids)).all()
+    else:
+        scans = Scan.query.filter(
+            Scan.id.in_(scan_ids),
+            Scan.user_id == current_user.id
+        ).all()
+
+    result = {}
+    for scan in scans:
+        result[str(scan.id)] = {
+            'status': scan.status,
+            'duration_s': scan.duration,
+            'has_report': bool(scan.output_dir and scan.status == 'completed'),
+        }
+    return jsonify(result)
+
+
+# ============================================================================
 # CLONE SCAN
 # ============================================================================
 
