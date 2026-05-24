@@ -9,7 +9,7 @@ Static reference data for the test harness. Source of truth for case files in `c
 | kast-web (test) | `http://127.0.0.1:8001` |
 | Login page | `http://127.0.0.1:8001/auth/login` |
 | Juice Shop (scan target) | `http://127.0.0.1:3000` |
-| Hackazon (scan target) | `http://127.0.0.1:8888` |
+| WebGoat (scan target) | `http://127.0.0.1:8888` |
 | Test DB (sqlite) | `/var/lib/kast-web-test/kast.db` |
 | Test results dir | `/var/lib/kast-web-test/results` |
 | Test Redis DB | `redis://127.0.0.1:6379/1` |
@@ -33,7 +33,7 @@ Admin password is in `.env.test` (`TEST_ADMIN_PASSWORD=...`). Use the same passw
 | Name | Image | Loopback port |
 |---|---|---|
 | kw-test-juiceshop | bkimminich/juice-shop | 3000 |
-| kw-test-hackazon | mutzel/all-in-one-hackazon | 8888 |
+| kw-test-webgoat | webgoat/goatandwolf | 8888 |
 
 ## Process pidfiles
 
@@ -45,7 +45,7 @@ Admin password is in `.env.test` (`TEST_ADMIN_PASSWORD=...`). Use the same passw
 ## Scan-target conventions
 
 Active scans go against `127.0.0.1:3000` (Juice Shop) — well-known vulns, expects to be attacked.
-Passive scans default to `127.0.0.1:8888` (Hackazon) so we exercise both targets across the suite.
+Passive scans default to `127.0.0.1:8888` (WebGoat) so we exercise both targets across the suite.
 Never set the target to anything else from a test case.
 
 ## Outcomes vocabulary

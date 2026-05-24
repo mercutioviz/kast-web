@@ -78,6 +78,13 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
+# gunicorn isn't in requirements.txt (prod installs it separately); ensure it's
+# present in the test venv.
+if ! command -v gunicorn >/dev/null 2>&1; then
+    log "installing gunicorn into test venv"
+    pip install gunicorn >/dev/null
+fi
+
 # 5. Redis check --------------------------------------------------------------
 redis-cli ping >/dev/null 2>&1 || die "redis is not reachable on localhost:6379"
 
@@ -97,7 +104,7 @@ start_container() {
         -p "127.0.0.1:${host_port}:${container_port}" "$image" >/dev/null
 }
 start_container kw-test-juiceshop bkimminich/juice-shop "$TEST_JUICESHOP_PORT" 3000
-start_container kw-test-hackazon  mutzel/all-in-one-hackazon "$TEST_HACKAZON_PORT" 80
+start_container kw-test-webgoat   webgoat/goatandwolf "$TEST_WEBGOAT_PORT" 8080
 
 # 7. Seed admin (db.create_all happens inside seed via create_app) ------------
 log "seeding $TEST_ADMIN_USERNAME"

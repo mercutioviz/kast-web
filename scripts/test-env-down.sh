@@ -46,7 +46,7 @@ stop_pid() {
 stop_pid "$FLASK_PID_FILE" gunicorn
 stop_pid "$CELERY_PID_FILE" celery
 
-for name in kw-test-juiceshop kw-test-hackazon; do
+for name in kw-test-juiceshop kw-test-webgoat; do
     if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then
         log "stopping container $name"
         docker stop "$name" >/dev/null

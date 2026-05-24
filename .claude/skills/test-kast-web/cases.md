@@ -6,7 +6,7 @@ preconditions, steps, expected behaviour, and the kind of evidence to capture.
 Tiers are cumulative: `regression` runs smoke first; `full` runs regression first.
 
 > **Where to scan against:** only `http://127.0.0.1:3000` (Juice Shop) or
-> `http://127.0.0.1:8888` (Hackazon). Never any other target.
+> `http://127.0.0.1:8888` (WebGoat). Never any other target.
 
 ---
 
@@ -85,8 +85,8 @@ Must pass before any release. Aborts on first blocker.
 ### TC-SCAN-001 — passive scan happy path
 - **Tier:** smoke
 - **Role:** t_user
-- **Pre:** hackazon container up at 127.0.0.1:8888
-- **Steps:** login as t_user → / → target `http://127.0.0.1:8888` → mode `passive` → submit
+- **Pre:** WebGoat container up at 127.0.0.1:8888
+- **Steps:** login as t_user → / → target `http://127.0.0.1:8888/WebGoat` → mode `passive` → submit
 - **Expect:** redirect to scan detail; status goes pending → running → complete within 5 min (poll /scans/api/statuses); at least one plugin result row in DB
 - **Evidence:** final status; sqlite row from `scans` and `scan_results`
 
@@ -144,7 +144,7 @@ Must pass before any release. Aborts on first blocker.
 ### TC-AUTHZ-SMOKE-002 — t_viewer cannot submit a scan
 - **Tier:** smoke
 - **Role:** t_viewer
-- **Steps:** POST / with valid scan form (target hackazon, mode passive)
+- **Steps:** POST / with valid scan form (target WebGoat, mode passive)
 - **Expect:** 403 or flash denial; no new row in `scans` table
 - **Evidence:** HTTP status; sqlite count before/after
 
