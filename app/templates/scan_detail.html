@@ -420,13 +420,17 @@ function renderZapProgressContent(zap) {
     document.getElementById('zapProgressContent').innerHTML = content;
 }
 
-// Stop ZAP progress updates when modal is closed
-document.getElementById('zapProgressModal').addEventListener('hidden.bs.modal', function() {
-    if (zapProgressUpdateInterval) {
-        clearInterval(zapProgressUpdateInterval);
-        zapProgressUpdateInterval = null;
-    }
-});
+// Stop ZAP progress updates when modal is closed (modal only exists for ZAP/active scans)
+(function () {
+    var zapModal = document.getElementById('zapProgressModal');
+    if (!zapModal) return;
+    zapModal.addEventListener('hidden.bs.modal', function() {
+        if (zapProgressUpdateInterval) {
+            clearInterval(zapProgressUpdateInterval);
+            zapProgressUpdateInterval = null;
+        }
+    });
+}());
 
 // Initialize Bootstrap tooltips and popovers
 document.addEventListener('DOMContentLoaded', function() {
