@@ -423,14 +423,281 @@ Smoke +:
 
 # Full tier (~2-3 hr, ~250 cases)
 
-> Populated in a follow-up commit. Includes:
-> - Full authz matrix (~94 routes × 4 roles)
-> - Active scans against juice-shop
-> - ZAP container start/stop/logs/status/remove
-> - Cloud admin (credential CRUD + encryption round-trip; scans / orphans page; check-cloud-tools). No live terraform apply.
-> - AI plumbing (settings + preset CRUD + no-key error states)
-> - All API endpoints (statuses, stats, scan-trend, logos/api/list, etc.)
-> - 404/403/500 error templates
-> - File browser deep paths
-> - Backup restore round trip
-> - Audit log clear
+Regression + everything below.
+
+## Authorization matrix — route × role
+
+This is the bulk of the full tier. Rather than 94 routes × 4 roles enumerated
+case-by-case, group routes by **access class** and assert one matrix per class.
+Each class is a single test case; "pass" means every (route × role) cell matches
+expected.
+
+For each route in a class, log in as each role and issue the listed method.
+"Expect" is the HTTP status the role should see. Treat 302 to /auth/login as
+equivalent to 401 for anonymous.
+
+### TC-AUTHZ-FULL-001 — public routes (anonymous OK)
+- **Routes:**
+  - `GET /auth/login`
+  - `GET /auth/register` (when allow_registration on)
+  - `GET /about`
+- **Expect by role:** anonymous 200; all logged-in roles 200 or 302-to-/
+- **Evidence:** status matrix
+
+### TC-AUTHZ-FULL-002 — any-authenticated routes
+- **Routes:**
+  - `GET /`
+  - `GET /scans/`
+  - `GET /auth/profile`
+  - `GET /auth/change-password`
+  - `GET /scans/export.csv`
+  - `GET /api/list` (logos)
+  - `GET /api/stats`
+  - `GET /api/scan-trend`
+- **Expect:** anonymous 302 to /auth/login; all 4 logged-in roles 200
+- **Evidence:** status matrix
+
+### TC-AUTHZ-FULL-003 — power_user+ routes (scan submission with overrides, transfer)
+- **Routes:**
+  - `POST /` with `scan_mode=active`
+  - `POST /` with `config_overrides=...`
+  - `POST /scans/<id>/transfer`
+- **Expect:** anonymous 302; t_viewer 403; t_user 403 or silent-drop; t_power 200/302; t_admin 200/302
+- **Evidence:** status matrix; DB side-effect check
+
+### TC-AUTHZ-FULL-004 — admin-only routes
+- **Routes:** every route under `/admin/*`, `/auth/users*`, `/auth/users/<id>/*`, `/zap/configs*` write methods, `/zap/plans*` write methods, `/admin/cloud/credentials*`, `/admin/cloud/orphans*`, `/admin/cloud/scans*`, `/admin/import-scan`, `/admin/quick-action/*`, `/admin/clear-audit-log`, `/admin/test-smtp`, `/admin/test-kast-permissions`, `/admin/system-info*`
+- **Expect:** anonymous 302; t_viewer / t_user / t_power 403; t_admin 200/302
+- **Evidence:** status matrix
+
+### TC-AUTHZ-FULL-005 — owner-or-admin routes (scan mutation)
+- **Routes:** all `POST /scans/<id>/...` write methods (delete, notes, tags, rerun, share, transfer, regenerate-report, send-email)
+- **Setup:** scan owned by t_user
+- **Expect by accessor:** anonymous 302; t_viewer 403; t_user2 403; t_user 200/302; t_power 403 (not owner, not admin); t_admin 200/302
+- **Evidence:** status matrix
+
+### TC-AUTHZ-FULL-006 — viewer read-only
+- **Role:** t_viewer
+- **Setup:** scans owned by other users; shares granted to t_viewer
+- **Expect:** can GET /scans/, /scans/<shared_id>, /scans/<shared_id>/report-html; cannot POST anything
+- **Evidence:** status matrix
+
+## Scan lifecycle — full
+
+### TC-SCAN-FULL-200 — active scan against juice-shop
+- **Role:** t_power
+- **Pre:** kw-test-juiceshop container up
+- **Steps:** submit scan target `http://127.0.0.1:3000` mode `active`; wait up to 10 min
+- **Expect:** completes (not failed); produces ≥1 high/medium finding
+- **Evidence:** DB scan_results rows; finding counts
+
+### TC-SCAN-FULL-201 — active vs passive finding deltas
+- **Role:** t_power
+- **Pre:** completed passive + active scans against juice-shop
+- **Expect:** active scan reports a superset of passive findings (or at least different plugin set)
+- **Evidence:** finding count diff
+
+### TC-SCAN-FULL-300 — files browser deep navigation
+- **Role:** t_user
+- **Steps:** /scans/<id>/files; click into nested subdirs via /scans/<id>/files/<subpath>; view individual files
+- **Expect:** traversal stays inside scan dir (no `..` escapes); each file renders
+- **Evidence:** path stability; spot-check a known file
+
+### TC-SCAN-FULL-301 — regenerate-report
+- **Role:** t_user
+- **Steps:** POST /scans/<id>/regenerate-report
+- **Expect:** 200; HTML report updated mtime; report still loads
+- **Evidence:** filesystem mtime; report HTTP 200
+
+## ZAP — container ops + IP detect
+
+### TC-ZAP-FULL-200 — container lifecycle
+- **Role:** t_admin
+- **Pre:** local ZAP config with execution_mode=local
+- **Steps:** /zap/configs/<id>/start-container → status (≤30s, expect "running") → logs (200 with output) → stop-container → status (stopped) → remove-container
+- **Expect:** all transitions succeed; container removed at end
+- **Evidence:** `docker ps -a` between steps
+
+### TC-ZAP-FULL-300 — detect-ip endpoint
+- **Role:** t_admin
+- **Steps:** GET /zap/detect-ip
+- **Expect:** JSON with at least one IP for host interface
+- **Evidence:** JSON
+
+### TC-ZAP-FULL-301 — check-cloud-tools
+- **Role:** t_admin
+- **Steps:** GET /zap/check-cloud-tools
+- **Expect:** JSON with terraform / ssh availability booleans
+- **Evidence:** JSON
+
+## Cloud admin — non-destructive
+
+### TC-CLOUD-FULL-100 — AWS credential CRUD + encryption round-trip
+- **Role:** t_admin
+- **Steps:** /admin/cloud/credentials/new → provider AWS → fill access_key/secret_key → save; check DB row's `credentials_encrypted` column is opaque (not plaintext); edit credential and verify decrypted form prepopulates; delete
+- **Expect:** plaintext keys never appear in DB column; UI decrypts correctly
+- **Evidence:** sqlite query on column; rendered form values
+
+### TC-CLOUD-FULL-101 — Azure credential CRUD
+- Same shape as 100, provider=Azure (subscription_id, tenant_id, client_id, client_secret)
+
+### TC-CLOUD-FULL-102 — GCP credential CRUD
+- Same shape, provider=GCP, service_account_json blob
+
+### TC-CLOUD-FULL-110 — orphans page renders
+- **Role:** t_admin
+- **Steps:** GET /admin/cloud/orphans
+- **Expect:** 200; renders even with empty table; no JS console errors
+- **Evidence:** screenshot
+
+### TC-CLOUD-FULL-111 — scans page renders
+- **Role:** t_admin
+- **Steps:** GET /admin/cloud/scans
+- **Expect:** 200; empty-state messaging if no cloud scans
+- **Evidence:** screenshot
+
+> **Out of scope (live):** terraform apply, real instance provisioning,
+> `cloud_provision_task` end-to-end. Cover those in a manual pre-release gate.
+
+## AI plumbing — no live calls
+
+### TC-AI-FULL-100 — settings page renders + saves
+- **Role:** t_admin
+- **Steps:** /admin/ai/settings → toggle enable flag → save → revert
+- **Expect:** DB AISettings row reflects toggle
+- **Evidence:** DB
+
+### TC-AI-FULL-101 — model preset CRUD
+- **Role:** t_admin
+- **Steps:** add → toggle → delete a model preset
+- **Expect:** DB AIModelPreset row created/toggled/deleted; UI matches
+- **Evidence:** DB
+
+### TC-AI-FULL-102 — endpoint preset CRUD
+- **Role:** t_admin
+- Same shape as 101 for AIEndpointPreset
+
+### TC-AI-FULL-103 — summary endpoint with no key configured
+- **Role:** t_user
+- **Steps:** POST /api/ai/summary/<scan_id>/generate without saving an API key first
+- **Expect:** 4xx response with a clear "no API key" error (no 500, no leaked stack trace)
+- **Evidence:** JSON error body
+
+### TC-AI-FULL-104 — per-user API key save
+- **Role:** t_user
+- **Steps:** /auth/save-api-key → POST a placeholder key
+- **Expect:** DB users.anthropic_api_key_encrypted populated (opaque); revealing or clearing it works
+- **Evidence:** DB; encryption opaque
+
+## API endpoints (full)
+
+### TC-API-FULL-100 — /api/stats shape
+- **Role:** t_admin
+- **Expect:** JSON keys cover total scans, users, running, failed; values numeric
+- **Evidence:** JSON
+
+### TC-API-FULL-101 — /api/scan-trend shape
+- **Role:** t_admin
+- **Expect:** JSON list of `{date, count}` for last N days
+- **Evidence:** JSON
+
+### TC-API-FULL-102 — /api/statuses scoping
+- Covered by TC-REG-205 — re-run here for full
+
+### TC-API-FULL-103 — /api/list (logos)
+- **Role:** t_admin
+- **Expect:** array of logo objects; only `can_delete=true` for admin or own uploads
+- **Evidence:** JSON
+
+### TC-API-FULL-104 — /api/<logo_id>/info
+- **Role:** t_admin
+- **Expect:** 200 for existing; 404 for missing
+- **Evidence:** status
+
+### TC-API-FULL-105 — /api/cloud/orphans
+- **Role:** t_admin
+- **Expect:** JSON list (possibly empty)
+- **Evidence:** JSON
+
+### TC-API-FULL-106 — /api/scans, /api/scans/<id>, /api/scans/<id>/status
+- **Role:** t_admin
+- **Expect:** shapes consistent; status endpoint matches scans table
+
+### TC-API-FULL-107 — /api/plugins
+- **Role:** t_admin
+- **Expect:** list of plugin metadata
+
+### TC-API-FULL-108 — /api/users/active
+- **Role:** t_admin
+- **Expect:** list of currently-active users (logged in within session-lifetime window)
+
+## Admin — full
+
+### TC-ADM-FULL-200 — backup → restore round trip
+- **Role:** t_admin
+- **Steps:** trigger backup; record file path; stop Flask; replace `kast.db` with the backup; restart; verify a known scan still present
+- **Expect:** DB round-trips cleanly
+- **Evidence:** DB row check
+- **Notes:** invasive; only in full tier, and only with `--keep-env`
+
+### TC-ADM-FULL-201 — clear audit log
+- **Role:** t_admin
+- **Steps:** /admin/audit-log → clear; observe the **clear action itself** logged as a new entry
+- **Expect:** previous rows gone; one new row recording the clear
+- **Evidence:** DB count before/after
+
+### TC-ADM-FULL-202 — import-scan
+- **Role:** t_admin
+- **Pre:** export a completed scan as zip
+- **Steps:** /admin/import-scan → upload the zip
+- **Expect:** new scan row in DB with imported data; report renders
+- **Evidence:** DB; rendered report
+
+## Config profiles — full
+
+### TC-CFG-FULL-200 — export / import round trip
+- **Role:** t_admin
+- **Steps:** create profile → /configs/<id>/export → save file → /configs/import → upload that file
+- **Expect:** new profile matches exported one byte-for-byte (apart from id/timestamps)
+- **Evidence:** DB row compare
+
+## Sharing — full
+
+### TC-SHARE-FULL-100 — shares index page
+- **Role:** t_user
+- **Steps:** GET /scans/<id>/shares
+- **Expect:** rows for active shares; revoke buttons present
+- **Evidence:** DOM
+
+### TC-SHARE-FULL-101 — send-email on completed scan
+- **Role:** t_user
+- **Steps:** POST /scans/<id>/send-email with recipient
+- **Expect:** if SMTP configured, success flash; if not, graceful error (no 500)
+- **Evidence:** flash text; HTTP status
+
+## Errors
+
+### TC-ERR-100 — 404 template
+- **Role:** anonymous
+- **Steps:** GET /no-such-route
+- **Expect:** 404; custom 404 template renders (not Flask default)
+- **Evidence:** DOM contains app-specific text
+
+### TC-ERR-101 — 403 template
+- **Role:** t_user
+- **Steps:** GET /admin/settings
+- **Expect:** 403 or 302 with denial flash; if 403, template renders
+- **Evidence:** DOM
+
+### TC-ERR-102 — 500 template
+- **Pre:** force a 500 (e.g. invalid scan id with malformed path that hits an unhandled branch); only feasible if you can reliably trigger one
+- **Notes:** skip if you can't safely trigger; do not introduce a debug-only 500 route
+
+## Cross-cutting — full
+
+### TC-XCUT-FULL-100 — audit-log entry written for every sensitive action
+- **Role:** t_admin
+- **Steps:** exhaustive: for every route in TC-AUTHZ-FULL-004 plus owner-or-admin writes, perform the action, then query AuditLog for an entry with matching `action` and `user_id` within 5s
+- **Expect:** every sensitive action produces an audit row
+- **Evidence:** DB AuditLog full diff
+
