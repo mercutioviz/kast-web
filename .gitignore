@@ -29,6 +29,7 @@ instance/
 
 # Environment variables
 .env
+.env.test
 
 # Database
 *.db
@@ -53,6 +54,8 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+tests/runs/
+.playwright-mcp/
 
 # Celery
 celerybeat-schedule
