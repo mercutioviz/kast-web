@@ -1136,8 +1136,8 @@ def backup_database():
                 'message': f'Database file not found: {db_path}'
             }), 400
         
-        # Create backups directory if it doesn't exist
-        backup_dir = os.path.join(os.getcwd(), 'backups')
+        # Backups live next to the DB so the directory is always writable by the app user.
+        backup_dir = os.path.join(os.path.dirname(os.path.abspath(db_path)), 'backups')
         os.makedirs(backup_dir, exist_ok=True)
         
         # Generate backup filename with timestamp
