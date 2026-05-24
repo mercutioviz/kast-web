@@ -60,3 +60,7 @@ celerybeat.pid
 
 # Assets
 app/static/uploads/
+
+# AI
+HANDOFF.md
+
