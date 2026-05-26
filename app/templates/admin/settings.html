@@ -268,6 +268,9 @@ document.getElementById('testSmtpBtn').addEventListener('click', function() {
     // Send test request
     fetch('{{ url_for("admin.test_smtp") }}', {
         method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
         body: formData
     })
     .then(response => response.json())
@@ -304,6 +307,9 @@ document.getElementById('testKastPermissionsBtn').addEventListener('click', func
     // Send test request
     fetch('{{ url_for("admin.test_kast_permissions") }}', {
         method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
         body: formData
     })
     .then(response => response.json())
