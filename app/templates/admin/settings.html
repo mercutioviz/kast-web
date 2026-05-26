@@ -23,6 +23,7 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="{{ url_for('admin.settings') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <!-- General Settings -->
                     <h6 class="mb-3">General Settings</h6>
                     

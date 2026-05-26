@@ -87,6 +87,7 @@
                                 {% if user.id != current_user.id %}
                                 <div class="btn-group" role="group">
                                     <form method="POST" action="{{ url_for('auth.toggle_user_active', user_id=user.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-sm btn-outline-secondary"
                                                 title="{% if user.is_active %}Deactivate User{% else %}Activate User{% endif %}"
                                                 onclick="return confirm('Are you sure you want to {% if user.is_active %}deactivate{% else %}activate{% endif %} this user?')">
@@ -99,6 +100,7 @@
                                     </form>
                                     {% if user.failed_login_attempts > 0 %}
                                     <form method="POST" action="{{ url_for('auth.reset_failed_attempts', user_id=user.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-sm btn-outline-warning"
                                                 title="Reset Failed Attempts"
                                                 onclick="return confirm('Reset failed login attempts for {{ user.username }}?')">
@@ -107,6 +109,7 @@
                                     </form>
                                     {% endif %}
                                     <form method="POST" action="{{ url_for('auth.delete_user', user_id=user.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button type="submit" class="btn btn-sm btn-outline-danger"
                                                 title="Delete User"
                                                 onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone!')">

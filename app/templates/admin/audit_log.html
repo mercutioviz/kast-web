@@ -187,6 +187,7 @@
     </div>
     <div class="card-body">
         <form method="post" action="{{ url_for('admin.clear_audit_log') }}" onsubmit="return confirm('Are you sure you want to delete old audit log entries? This action cannot be undone.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="row g-3 align-items-end">
                 <div class="col-auto">
                     <label for="days" class="form-label">Delete entries older than:</label>

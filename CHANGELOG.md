@@ -7,6 +7,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.9] — 2026-05-26
+
+### Fixed
+
+- **Admin POST forms missed by v2.0.8 global CSRF rollout** — adding `CSRFProtect` to the app factory in v2.0.8 broke any raw `<form method="POST">` that wasn't using WTForms' `{{ form.hidden_tag() }}`. Symptom: clicking the affected button returned 400 Bad Request ("The CSRF token is missing"). Added `<input type="hidden" name="csrf_token">` to: toggle-active / reset-failed-attempts / delete-user on `/auth/users`, share-with-user and generate-public-link on the scan detail page, set-default / delete / upload on `/logos`, the `/admin/settings` save form, and the `/admin/audit-log` clear form. All `fetch()`-based AJAX calls were already passing `X-CSRFToken` and are unaffected.
+
+---
+
 ## [2.0.8] — 2026-05-26
 
 ### Added

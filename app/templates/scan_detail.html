@@ -967,6 +967,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <!-- Share with User Tab -->
                     <div class="tab-pane fade show active" id="share-user" role="tabpanel">
                         <form method="POST" action="{{ url_for('scans.share_with_user', scan_id=scan.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <div class="mb-3">
                                 <label for="user_id" class="form-label">Select User</label>
                                 <select class="form-select" id="user_id" name="user_id" required>
@@ -1005,6 +1006,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         
                         <form method="POST" action="{{ url_for('scans.generate_public_link', scan_id=scan.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <div class="mb-3">
                                 <label for="expires_in_days_public" class="form-label">Expires in (days)</label>
                                 <input type="number" class="form-control" id="expires_in_days_public" 
