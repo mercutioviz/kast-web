@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}Batch Scan - KAST Web{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 offset-lg-1">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h4 class="mb-0"><i class="bi bi-stack"></i> Batch Scan</h4>
+                <a href="{{ url_for('main.index') }}" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-arrow-left"></i> Single scan
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-info-circle fs-5"></i>
+                    <div>
+                        Same settings will be applied to every target. Up to <strong>{{ max_batch_targets }}</strong> targets per batch.
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ url_for('main.batch_scan') }}" id="batchScanForm">
+                    {{ form.hidden_tag() }}
+
+                    <div class="mb-3">
+                        {{ form.targets.label(class="form-label fw-bold") }}
+                        {{ form.targets() }}
+                        {% if form.targets.errors %}
+                            <div class="text-danger small mt-1">
+                                {% for error in form.targets.errors %}{{ error }}<br>{% endfor %}
+                            </div>
+                        {% endif %}
+                        <div class="form-text">One target per line. Each target is a hostname or <code>host:port</code> (e.g., <code>example.com</code>, <code>127.0.0.1:8080</code>).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        {{ form.scan_mode.label(class="form-label fw-bold") }}
+                        <select name="scan_mode" id="scan_mode" class="form-select" {% if not can_run_active %}onchange="checkActiveScanPermission(this)"{% endif %}>
+                            <option value="passive" selected>Passive - Non-intrusive reconnaissance</option>
+                            <option value="active" {% if not can_run_active %}disabled{% endif %}>Active - Direct interaction with target</option>
+                        </select>
+                        {% if not can_run_active %}
+                        <div class="alert alert-warning mt-2 mb-0" id="active-scan-warning" style="display: none;">
+                            <i class="bi bi-exclamation-triangle"></i> <strong>This user is not allowed to run active scans.</strong>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-3">
+                        {{ form.plugins.label(class="form-label fw-bold") }}
+                        <div class="form-text mb-2">
+                            All plugins are selected by default. Uncheck any you don't want to run.
+                            <button type="button" class="btn btn-sm btn-link p-0" onclick="toggleAllVisiblePlugins()">Toggle All</button>
+                        </div>
+                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                            {% if plugins_with_types %}
+                                {% for plugin_name, plugin_desc, plugin_type in plugins_with_types %}
+                                    <div class="form-check plugin-item" data-plugin-type="{{ plugin_type }}">
+                                        <input class="form-check-input" type="checkbox" name="plugins" value="{{ plugin_name }}" id="plugin_{{ plugin_name }}" checked>
+                                        <label class="form-check-label" for="plugin_{{ plugin_name }}">
+                                            {{ plugin_desc }}
+                                            {% if plugin_type == 'active' %}
+                                                <span class="badge bg-warning text-dark ms-1">Active</span>
+                                            {% endif %}
+                                        </label>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted mb-0">No plugins available.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        {{ form.logo_id.label(class="form-label fw-bold") }}
+                        {{ form.logo_id(class="form-select") }}
+                    </div>
+
+                    <div class="mb-3">
+                        {{ form.config_profile_id.label(class="form-label fw-bold") }}
+                        {{ form.config_profile_id(class="form-select") }}
+                    </div>
+
+                    {% if current_user.is_power_user or current_user.is_admin %}
+                    <div class="mb-3">
+                        {{ form.config_overrides.label(class="form-label fw-bold") }}
+                        <span class="badge bg-warning text-dark ms-2">Power User</span>
+                        {{ form.config_overrides(class="form-control font-monospace") }}
+                        <div class="form-text">Format: <code>key1=value1,key2=value2</code></div>
+                    </div>
+                    {% endif %}
+
+                    <div id="zapConfigSection" style="display: none;">
+                        <div class="card mb-3 border-info">
+                            <div class="card-header bg-info text-white">
+                                <i class="bi bi-shield-check"></i> ZAP Configuration
+                            </div>
+                            <div class="card-body">
+                                {% if current_user.is_power_user or current_user.is_admin %}
+                                <div class="mb-3">
+                                    {{ form.zap_plan_id.label(class="form-label fw-bold") }}
+                                    {{ form.zap_plan_id(class="form-select") }}
+                                </div>
+                                {% endif %}
+                                <div class="mb-0">
+                                    {{ form.zap_config_id.label(class="form-label fw-bold") }}
+                                    {{ form.zap_config_id(class="form-select") }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <a class="text-decoration-none" data-bs-toggle="collapse" href="#advancedOptions">
+                                <i class="bi bi-gear"></i> Advanced Options
+                            </a>
+                        </div>
+                        <div id="advancedOptions" class="collapse">
+                            <div class="card-body">
+                                <div class="form-check mb-2">
+                                    {{ form.parallel(class="form-check-input") }}
+                                    {{ form.parallel.label(class="form-check-label") }}
+                                </div>
+                                <div class="mb-3">
+                                    {{ form.max_workers.label(class="form-label") }}
+                                    {{ form.max_workers(class="form-control") }}
+                                </div>
+                                <div class="form-check mb-2">
+                                    {{ form.verbose(class="form-check-input") }}
+                                    {{ form.verbose.label(class="form-check-label") }}
+                                </div>
+                                <div class="form-check">
+                                    {{ form.dry_run(class="form-check-input") }}
+                                    {{ form.dry_run.label(class="form-check-label") }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="batch_tags" class="form-label fw-bold">Tags <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" class="form-control" id="batch_tags" name="tags" placeholder="e.g. q2-review, batch-2026-05">
+                        <div class="form-text">Comma-separated tags applied to every scan in this batch.</div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="button" id="batchSubmitBtn" class="btn btn-primary btn-lg">
+                            Start Batch
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="batchConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Confirm Active Batch Scan</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are about to start an <strong>active</strong> batch scan against the following targets:</p>
+                <ul id="confirmTargetList" class="font-monospace small mb-3"></ul>
+                <div class="alert alert-warning mb-0">
+                    Active scans directly interact with the target and may trigger security alerts. Make sure you have authorization for every target.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirmBatchBtn" class="btn btn-warning">Confirm &amp; Start</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function checkActiveScanPermission(selectElement) {
+    const warning = document.getElementById('active-scan-warning');
+    if (selectElement.value === 'active') {
+        if (warning) warning.style.display = 'block';
+        selectElement.value = 'passive';
+    } else if (warning) {
+        warning.style.display = 'none';
+    }
+}
+
+function toggleAllVisiblePlugins() {
+    const items = document.querySelectorAll('.plugin-item');
+    const visible = Array.from(items).filter(i => i.style.display !== 'none')
+        .map(i => i.querySelector('input[name="plugins"]'));
+    const allChecked = visible.every(cb => cb.checked);
+    visible.forEach(cb => { cb.checked = !allChecked; });
+    updateZapConfigVisibility();
+}
+
+function filterPluginsByScanMode() {
+    const mode = document.getElementById('scan_mode').value;
+    document.querySelectorAll('.plugin-item').forEach(item => {
+        const t = item.getAttribute('data-plugin-type');
+        const cb = item.querySelector('input[name="plugins"]');
+        if (mode === 'passive' && t === 'active') {
+            item.style.display = 'none';
+            cb.checked = false;
+            cb.disabled = true;
+        } else {
+            item.style.display = '';
+            cb.disabled = false;
+        }
+    });
+    updateZapConfigVisibility();
+}
+
+function updateZapConfigVisibility() {
+    const zapCheckbox = document.getElementById('plugin_zap');
+    const zapConfigSection = document.getElementById('zapConfigSection');
+    if (!zapCheckbox || !zapConfigSection) return;
+    const item = zapCheckbox.closest('.plugin-item');
+    const visible = item && item.style.display !== 'none';
+    zapConfigSection.style.display = (visible && zapCheckbox.checked) ? 'block' : 'none';
+}
+
+function parseTargetsTextarea() {
+    const raw = document.querySelector('textarea[name="targets"]').value || '';
+    const seen = new Set();
+    const out = [];
+    raw.split('\n').forEach(line => {
+        const t = line.trim();
+        if (!t || seen.has(t)) return;
+        seen.add(t);
+        out.push(t);
+    });
+    return out;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const scanModeSelect = document.getElementById('scan_mode');
+    if (scanModeSelect) {
+        scanModeSelect.addEventListener('change', filterPluginsByScanMode);
+    }
+    document.querySelectorAll('input[name="plugins"]').forEach(cb => {
+        cb.addEventListener('change', updateZapConfigVisibility);
+    });
+    filterPluginsByScanMode();
+
+    const form = document.getElementById('batchScanForm');
+    const submitBtn = document.getElementById('batchSubmitBtn');
+    const modalEl = document.getElementById('batchConfirmModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const confirmBtn = document.getElementById('confirmBatchBtn');
+    const targetList = document.getElementById('confirmTargetList');
+
+    submitBtn.addEventListener('click', function() {
+        const mode = document.getElementById('scan_mode').value;
+        const targets = parseTargetsTextarea();
+        if (mode === 'active' && targets.length > 0) {
+            targetList.innerHTML = '';
+            targets.forEach(t => {
+                const li = document.createElement('li');
+                li.textContent = t;
+                targetList.appendChild(li);
+            });
+            modal.show();
+        } else {
+            form.submit();
+        }
+    });
+
+    confirmBtn.addEventListener('click', function() {
+        modal.hide();
+        form.submit();
+    });
+});
+</script>
+{% endblock %}

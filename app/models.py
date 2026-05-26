@@ -108,6 +108,9 @@ class Scan(db.Model):
     # SA annotations
     notes = db.Column(db.Text)
     tags = db.Column(db.Text)  # comma-separated
+
+    # Batch grouping (UUID hex shared by all scans in one batch submission)
+    batch_id = db.Column(db.String(36), index=True, nullable=True)
     
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')

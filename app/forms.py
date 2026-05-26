@@ -1,3 +1,5 @@
+import re
+
 from flask_wtf import FlaskForm
 from wtforms import StringField, SelectField, BooleanField, SelectMultipleField, SubmitField, IntegerField, PasswordField, TextAreaField, FieldList, FormField
 from wtforms.validators import DataRequired, Regexp, Length, NumberRange, Email, EqualTo, ValidationError, Optional
@@ -7,6 +9,45 @@ from app.cloud_provider_data import (
     AZURE_REGIONS, AZURE_VM_SIZES,
     GCP_REGIONS, GCP_MACHINE_TYPES
 )
+
+# Shared target regex (domain name, optional :port). Used by ScanConfigForm.target
+# and BatchScanForm.targets per-line validation.
+TARGET_REGEX = re.compile(
+    r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?'
+    r'(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*'
+    r'(:\d{1,5})?$'
+)
+
+MAX_BATCH_TARGETS = 50
+
+
+def parse_batch_targets(raw):
+    """
+    Split a batch-targets textarea into a list.
+
+    Returns (clean_targets, duplicates, line_errors) where:
+      clean_targets — deduplicated list in original order
+      duplicates    — list of targets that appeared more than once (each listed once)
+      line_errors   — list of (line_number, line_text) for lines that fail the regex
+    """
+    seen = set()
+    clean = []
+    duplicates = []
+    line_errors = []
+    for idx, raw_line in enumerate((raw or '').splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if not TARGET_REGEX.match(line):
+            line_errors.append((idx, line))
+            continue
+        if line in seen:
+            if line not in duplicates:
+                duplicates.append(line)
+            continue
+        seen.add(line)
+        clean.append(line)
+    return clean, duplicates, line_errors
 
 def _validate_password_complexity(form, field):
     p = field.data or ''
@@ -35,8 +76,8 @@ class ScanConfigForm(FlaskForm):
             DataRequired(message='Target domain is required'),
             Length(min=3, max=255, message='Domain must be between 3 and 255 characters'),
             Regexp(
-                r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$',
-                message='Please enter a valid domain name (e.g., example.com)'
+                r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*(:\d{1,5})?$',
+                message='Please enter a valid domain or host:port (e.g., example.com or 127.0.0.1:8080)'
             )
         ],
         render_kw={'placeholder': 'example.com', 'class': 'form-control'}
@@ -150,6 +191,131 @@ class ScanConfigForm(FlaskForm):
     )
     
     submit = SubmitField('Start Scan', render_kw={'class': 'btn btn-primary btn-lg'})
+
+
+def _validate_batch_targets(form, field):
+    """Validator for BatchScanForm.targets — count, per-line regex, dedupe is informational."""
+    clean, _duplicates, line_errors = parse_batch_targets(field.data)
+    if line_errors:
+        bad = ', '.join(f'line {n} ("{t}")' for n, t in line_errors[:5])
+        more = '' if len(line_errors) <= 5 else f' (+{len(line_errors) - 5} more)'
+        raise ValidationError(f'Invalid target on {bad}{more}.')
+    if not clean:
+        raise ValidationError('Enter at least one target (one per line).')
+    if len(clean) > MAX_BATCH_TARGETS:
+        raise ValidationError(
+            f'Too many targets: {len(clean)} (max {MAX_BATCH_TARGETS}).'
+        )
+
+
+class BatchScanForm(FlaskForm):
+    """Form for configuring a batch scan (multiple targets, identical settings)."""
+
+    targets = TextAreaField(
+        'Targets (one per line)',
+        validators=[
+            DataRequired(message='At least one target is required'),
+            _validate_batch_targets,
+        ],
+        render_kw={
+            'placeholder': 'example.com\n10.0.0.1:8080\nstaging.example.com',
+            'class': 'form-control font-monospace',
+            'rows': '8',
+        },
+    )
+
+    scan_mode = SelectField(
+        'Scan Mode',
+        choices=[
+            ('passive', 'Passive - Non-intrusive reconnaissance'),
+            ('active', 'Active - Direct interaction with target'),
+        ],
+        default='passive',
+        validators=[DataRequired()],
+        render_kw={'class': 'form-select'},
+    )
+
+    plugins = MultiCheckboxField(
+        'Select Plugins',
+        choices=[],
+        render_kw={'class': 'form-check-input'},
+    )
+
+    parallel = BooleanField(
+        'Run plugins in parallel',
+        default=True,
+        render_kw={'class': 'form-check-input'},
+    )
+
+    verbose = BooleanField(
+        'Verbose output',
+        default=True,
+        render_kw={'class': 'form-check-input'},
+    )
+
+    dry_run = BooleanField(
+        'Dry run (preview only)',
+        default=False,
+        render_kw={'class': 'form-check-input'},
+    )
+
+    generate_ai_summary = BooleanField(
+        'Auto-generate AI executive summary after scan',
+        default=False,
+        render_kw={'class': 'form-check-input'},
+    )
+
+    max_workers = IntegerField(
+        'Max Workers',
+        default=5,
+        validators=[
+            NumberRange(min=1, max=32, message='Max workers must be between 1 and 32'),
+        ],
+        render_kw={'class': 'form-control', 'min': '1', 'max': '32', 'placeholder': '5'},
+    )
+
+    logo_id = SelectField(
+        'Report Logo',
+        coerce=int,
+        choices=[],
+        render_kw={'class': 'form-select'},
+    )
+
+    config_profile_id = SelectField(
+        'Configuration Profile',
+        coerce=int,
+        choices=[],
+        render_kw={'class': 'form-select'},
+    )
+
+    config_overrides = StringField(
+        'Configuration Overrides (Advanced)',
+        validators=[
+            Length(max=1000, message='Overrides must not exceed 1000 characters'),
+        ],
+        render_kw={
+            'placeholder': 'e.g., plugins.katana.rate_limit=50,plugins.ftap.concurrency=5',
+            'class': 'form-control font-monospace',
+        },
+    )
+
+    zap_plan_id = SelectField(
+        'ZAP Automation Plan',
+        coerce=int,
+        validators=[Optional()],
+        choices=[],
+        render_kw={'class': 'form-select', 'data-plugin': 'zap'},
+    )
+
+    zap_config_id = SelectField(
+        'ZAP Execution Configuration',
+        coerce=int,
+        validators=[Optional()],
+        choices=[],
+        render_kw={'class': 'form-select', 'data-plugin': 'zap'},
+    )
+
+    submit = SubmitField('Start Batch', render_kw={'class': 'btn btn-primary btn-lg'})
 
 
 class LoginForm(FlaskForm):

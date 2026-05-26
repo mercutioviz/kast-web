@@ -422,6 +422,13 @@
                         </button>
                     </div>
                 </form>
+                {% if can_run_active %}
+                <div class="text-center mt-3">
+                    <a href="{{ url_for('main.batch_scan') }}" class="btn btn-outline-primary">
+                        <i class="bi bi-stack"></i> Batch scan (multiple targets)
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>

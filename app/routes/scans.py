@@ -69,6 +69,7 @@ def list():
     status_filter = request.args.get('status', '')
     target_filter = request.args.get('target', '')
     tag_filter = request.args.get('tag', '').strip()
+    batch_id_filter = request.args.get('batch_id', '').strip()
 
     # Build query - filter by user unless admin
     if current_user.is_admin:
@@ -85,12 +86,32 @@ def list():
     if tag_filter:
         query = query.filter(Scan.tags.contains(tag_filter))
 
+    if batch_id_filter:
+        query = query.filter(Scan.batch_id == batch_id_filter)
+
     # Order by most recent first
     query = query.order_by(Scan.started_at.desc())
 
     # Paginate
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     scans = pagination.items
+
+    batch_summary = None
+    if batch_id_filter:
+        if current_user.is_admin:
+            batch_q = Scan.query.filter_by(batch_id=batch_id_filter)
+        else:
+            batch_q = Scan.query.filter_by(batch_id=batch_id_filter, user_id=current_user.id)
+        batch_scans_all = batch_q.all()
+        counts = {'total': len(batch_scans_all), 'pending': 0, 'running': 0,
+                  'completed': 0, 'failed': 0}
+        for s in batch_scans_all:
+            counts[s.status] = counts.get(s.status, 0) + 1
+        batch_summary = {
+            'batch_id': batch_id_filter,
+            'batch_id_short': batch_id_filter[:8],
+            'counts': counts,
+        }
 
     from app.models import AISettings
     ai_enabled = False
@@ -106,6 +127,8 @@ def list():
         status_filter=status_filter,
         target_filter=target_filter,
         tag_filter=tag_filter,
+        batch_id_filter=batch_id_filter,
+        batch_summary=batch_summary,
         format_duration=format_duration,
         ai_enabled=ai_enabled,
     )
@@ -873,6 +896,7 @@ def export_csv():
     status_filter = request.args.get('status', '')
     target_filter = request.args.get('target', '')
     tag_filter = request.args.get('tag', '').strip()
+    batch_id_filter = request.args.get('batch_id', '').strip()
 
     if current_user.is_admin:
         query = Scan.query
@@ -885,6 +909,8 @@ def export_csv():
         query = query.filter(Scan.target.contains(target_filter))
     if tag_filter:
         query = query.filter(Scan.tags.contains(tag_filter))
+    if batch_id_filter:
+        query = query.filter(Scan.batch_id == batch_id_filter)
 
     scans = query.order_by(Scan.started_at.desc()).all()
 
