@@ -7,6 +7,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.8] — 2026-05-26
+
+### Added
+
+- **Batch scan (v1)** — admin/power_user-only `/scan/batch` page. Submit one textarea of targets (one per line, up to 50) and the same scan settings are applied to every target. Each target becomes its own `Scan` row, all sharing a `batch_id` UUID. The scan history page recognises `?batch_id=<uuid>` and renders an aggregate header (total / pending / running / completed / failed). Active-mode submissions show a Bootstrap confirmation modal listing every target before dispatch. Active and cloud-ZAP batches are staggered with `apply_async(countdown=i*8)` to avoid thundering-herd provisioning.
+- **`utils/migrate_batch_id.py`** — idempotent migration adding the `batch_id VARCHAR(36)` column and index to `scans`.
+
+### Security
+
+- **Global CSRF protection** — `flask-wtf` `CSRFProtect` is now registered on the app factory; all state-changing fetch/AJAX calls include `X-CSRFToken`. Previously WTForms-rendered forms had CSRF tokens, but raw `fetch()` calls bypassed protection.
+
+### Fixed
+
+- **Target validation accepts `host:port`** — the new-scan and batch-scan forms now accept hostnames with an optional `:<port>` suffix (e.g. `127.0.0.1:8080`), matching what the kast CLI has accepted since 2.14. Previously the regex rejected port suffixes despite the backend handling them.
+
+---
+
 ## [2.0.2] — 2026-05-15
 
 Requires **kast 3.0+**.
