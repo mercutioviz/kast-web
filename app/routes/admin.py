@@ -759,6 +759,95 @@ def parse_kast_plugins(kast_path):
     return plugins, error
 
 
+def _parse_kast_version(version_string):
+    """Parse 'KAST version 3.0.20' → (3, 0, 20). Returns None on failure."""
+    if not version_string:
+        return None
+    match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_string)
+    if not match:
+        return None
+    return tuple(int(p) for p in match.groups())
+
+
+def get_kast_external_tool_updates(kast_path, kast_version_string, results_dir):
+    """Run `kast doctor --check-updates --json` and extract the External Tool Updates section.
+
+    Requires kast >= 3.0.20. Returns a structured dict, never raises.
+    """
+    import subprocess
+
+    min_version = (3, 0, 20)
+    parsed = _parse_kast_version(kast_version_string)
+    if parsed is None or parsed < min_version:
+        return {
+            'available': False,
+            'reason': f'requires kast >= {".".join(str(p) for p in min_version)} '
+                      f'(found {kast_version_string or "unknown"})'
+        }
+
+    try:
+        result = subprocess.run(
+            [kast_path, 'doctor', '--check-updates', '--results-dir', results_dir, '--json'],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+    except subprocess.TimeoutExpired:
+        return {'available': False, 'reason': 'kast doctor timed out after 30 seconds'}
+    except Exception as e:
+        return {'available': False, 'reason': f'kast doctor failed to run: {e}'}
+
+    if result.returncode != 0:
+        return {
+            'available': False,
+            'reason': f'kast doctor exited with code {result.returncode}: '
+                      f'{(result.stderr or "").strip()[:200]}'
+        }
+
+    try:
+        payload = json.loads(result.stdout)
+    except (ValueError, TypeError) as e:
+        return {'available': False, 'reason': f'could not parse kast doctor JSON: {e}'}
+
+    tools = []
+    for entry in payload.get('results', []):
+        if entry.get('section') != 'External Tool Updates':
+            continue
+
+        detail = entry.get('detail', '') or ''
+        current = latest = None
+        # Best-effort parse of "1.4.0 → 1.6.1 available"
+        m = re.search(r'(\S+)\s*(?:→|->)\s*(\S+)', detail)
+        if m:
+            current, latest = m.group(1), m.group(2)
+
+        tools.append({
+            'name': entry.get('name', ''),
+            'status': entry.get('status', ''),
+            'detail': detail,
+            'hint': entry.get('hint', '') or '',
+            'current': current,
+            'latest': latest,
+        })
+
+    # Sort: warn first (needs attention), then fail (couldn't check), then ok
+    status_order = {'warn': 0, 'fail': 1, 'ok': 2}
+    tools.sort(key=lambda t: (status_order.get(t['status'], 99), t['name']))
+
+    updates_available = sum(1 for t in tools if t['status'] == 'warn')
+    ok_count = sum(1 for t in tools if t['status'] == 'ok')
+    fail_count = sum(1 for t in tools if t['status'] == 'fail')
+
+    return {
+        'available': True,
+        'checked_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+        'tools': tools,
+        'updates_available': updates_available,
+        'ok_count': ok_count,
+        'fail_count': fail_count,
+    }
+
+
 @bp.route('/system-info')
 @login_required
 @admin_required
@@ -859,7 +948,13 @@ def system_info():
                 # Add error if plugin parsing failed
                 if parse_error:
                     info['plugin_error'] = parse_error
-                
+
+                # External tool update status (kast >= 3.0.20)
+                results_dir = os.environ.get('KAST_RESULTS_DIR', '/var/lib/kast-web/results')
+                info['tool_updates'] = get_kast_external_tool_updates(
+                    kast_path, version, results_dir
+                )
+
                 return info
             else:
                 return {'path': kast_path, 'exists': False}

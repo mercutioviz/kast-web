@@ -728,6 +728,12 @@
         <h2 class="accordion-header">
             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#kastInfo">
                 <i class="bi bi-shield-check me-2"></i> KAST CLI Information
+                {% if info.kast_cli.tool_updates and info.kast_cli.tool_updates.available and info.kast_cli.tool_updates.updates_available %}
+                <span class="badge bg-warning-subtle text-warning-emphasis ms-2 border border-warning-subtle" title="External tool updates available">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    {{ info.kast_cli.tool_updates.updates_available }} tool update{{ 's' if info.kast_cli.tool_updates.updates_available != 1 else '' }} available
+                </span>
+                {% endif %}
             </button>
         </h2>
         <div id="kastInfo" class="accordion-collapse collapse" data-bs-parent="#systemInfoAccordion">
@@ -787,12 +793,90 @@
                             </table>
                         </div>
                         <small class="text-muted">
-                            <i class="bi bi-info-circle"></i> 
-                            Priority levels: Higher numbers run first. 
-                            <span class="badge bg-danger">7+</span> Critical, 
-                            <span class="badge bg-warning text-dark">5-6</span> Important, 
+                            <i class="bi bi-info-circle"></i>
+                            Priority levels: Higher numbers run first.
+                            <span class="badge bg-danger">7+</span> Critical,
+                            <span class="badge bg-warning text-dark">5-6</span> Important,
                             <span class="badge bg-secondary">&lt;5</span> Standard
                         </small>
+                    </div>
+                    {% endif %}
+
+                    {# External Tool Updates (kast >= 3.0.20) #}
+                    {% if info.kast_cli.tool_updates %}
+                    <div class="mt-4">
+                        <h6 class="mb-3"><i class="bi bi-arrow-up-circle"></i> External Tool Updates</h6>
+                        {% if not info.kast_cli.tool_updates.available %}
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle"></i>
+                                External-tool update check unavailable: {{ info.kast_cli.tool_updates.reason }}
+                            </small>
+                        {% elif not info.kast_cli.tool_updates.tools %}
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle"></i>
+                                No external tools reported.
+                            </small>
+                        {% else %}
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped table-hover align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 18%;">Tool</th>
+                                        <th style="width: 22%;">Status</th>
+                                        <th style="width: 20%;">Current &rarr; Latest</th>
+                                        <th style="width: 40%;">Update Command</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for tool in info.kast_cli.tool_updates.tools %}
+                                    <tr>
+                                        <td><code class="text-primary">{{ tool.name }}</code></td>
+                                        <td>
+                                            {% if tool.status == 'warn' %}
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+                                                    <i class="bi bi-exclamation-triangle"></i> Update available
+                                                </span>
+                                            {% elif tool.status == 'ok' %}
+                                                <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">
+                                                    <i class="bi bi-check-circle"></i> Up to date
+                                                </span>
+                                            {% elif tool.status == 'fail' %}
+                                                <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
+                                                    <i class="bi bi-question-circle"></i> Check failed
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
+                                                    {{ tool.status }}
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if tool.current and tool.latest %}
+                                                <code>{{ tool.current }}</code> &rarr; <code>{{ tool.latest }}</code>
+                                            {% elif tool.detail %}
+                                                <small class="text-muted">{{ tool.detail }}</small>
+                                            {% else %}
+                                                <small class="text-muted">&mdash;</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if tool.hint %}
+                                                <code class="user-select-all">{{ tool.hint }}</code>
+                                            {% else %}
+                                                <small class="text-muted">&mdash;</small>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i>
+                            Checked {{ info.kast_cli.tool_updates.checked_at }}.
+                            Update commands are informational &mdash; run them in a terminal on the kast-web host.
+                        </small>
+                        {% endif %}
                     </div>
                     {% endif %}
                 {% else %}
