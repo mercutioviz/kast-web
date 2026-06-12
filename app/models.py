@@ -111,12 +111,16 @@ class Scan(db.Model):
 
     # Batch grouping (UUID hex shared by all scans in one batch submission)
     batch_id = db.Column(db.String(36), index=True, nullable=True)
-    
+
+    # Remote execution: NULL = run locally on the kast-web host
+    runner_id = db.Column(db.Integer, db.ForeignKey('scan_runners.id'), index=True, nullable=True)
+
     # Relationships
     results = db.relationship('ScanResult', backref='scan', lazy='dynamic', cascade='all, delete-orphan')
     config_profile = db.relationship('ScanConfigProfile', backref='scans')
     zap_plan = db.relationship('ZapAutomationPlan', backref='scans')
     zap_config = db.relationship('ZapConfiguration', backref='scans')
+    runner = db.relationship('ScanRunner', backref='scans')
     
     def __repr__(self):
         return f'<Scan {self.id}: {self.target} ({self.status})>'
@@ -215,6 +219,33 @@ class Scan(db.Model):
             'duration': self.duration,
             'source': self.source
         }
+
+
+class ScanRunner(db.Model):
+    """Remote host that executes kast scans over SSH on behalf of kast-web.
+
+    The private key is stored encrypted (Fernet via app.encryption) and decrypted
+    only at scan-dispatch time. The SSH user must have permission to run kast at
+    kast_binary_path and write under remote_output_root.
+    """
+    __tablename__ = 'scan_runners'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), nullable=False, unique=True)
+    hostname = db.Column(db.String(255), nullable=False)
+    port = db.Column(db.Integer, nullable=False, default=22)
+    username = db.Column(db.String(80), nullable=False)
+    ssh_private_key_encrypted = db.Column(db.Text, nullable=False)
+    kast_binary_path = db.Column(db.String(500), nullable=False, default='/usr/local/bin/kast')
+    remote_output_root = db.Column(db.String(500), nullable=False, default='/tmp/kast-runs')
+    region_label = db.Column(db.String(80))
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ScanRunner {self.name} ({self.username}@{self.hostname}:{self.port})>'
+
 
 class ScanResult(db.Model):
     """Model for storing individual plugin results"""

@@ -47,6 +47,17 @@
                         {% endif %}
                     </div>
 
+                    {% if current_user.is_power_user or current_user.is_admin %}
+                    <div class="mb-3">
+                        {{ form.runner_id.label(class="form-label fw-bold") }}
+                        {{ form.runner_id(class="form-select") }}
+                        <div class="form-text">
+                            All targets in this batch will run on the selected runner.
+                            <strong>Local</strong> uses this kast-web host.
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <div class="mb-3">
                         {{ form.plugins.label(class="form-label fw-bold") }}
                         <div class="form-text mb-2">

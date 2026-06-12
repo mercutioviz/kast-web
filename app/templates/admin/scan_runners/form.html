@@ -1,0 +1,96 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}{% if runner %}Edit Runner{% else %}New Runner{% endif %} - Admin Panel{% endblock %}
+{% block admin_title %}{% if runner %}Edit Scan Runner{% else %}New Scan Runner{% endif %}{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item"><a href="{{ url_for('admin.scan_runners_list') }}">Scan Runners</a></li>
+<li class="breadcrumb-item active">{% if runner %}{{ runner.name }}{% else %}New{% endif %}</li>
+{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="POST" novalidate>
+                {{ form.hidden_tag() }}
+
+                <div class="mb-3">
+                    {{ form.name.label(class="form-label fw-bold") }}
+                    {{ form.name() }}
+                    {% for e in form.name.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    <div class="form-text">A short label, e.g. <code>canada-1</code>.</div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        {{ form.hostname.label(class="form-label fw-bold") }}
+                        {{ form.hostname() }}
+                        {% for e in form.hostname.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        {{ form.port.label(class="form-label fw-bold") }}
+                        {{ form.port() }}
+                        {% for e in form.port.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    {{ form.username.label(class="form-label fw-bold") }}
+                    {{ form.username() }}
+                    {% for e in form.username.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                </div>
+
+                <div class="mb-3">
+                    {{ form.ssh_private_key.label(class="form-label fw-bold") }}
+                    {{ form.ssh_private_key() }}
+                    {% for e in form.ssh_private_key.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    <div class="form-text">
+                        Paste the PEM-encoded private key. Stored encrypted (Fernet) in the database.
+                        {% if runner %}Leave blank to keep the existing key.{% endif %}
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        {{ form.kast_binary_path.label(class="form-label fw-bold") }}
+                        {{ form.kast_binary_path() }}
+                        {% for e in form.kast_binary_path.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        {{ form.remote_output_root.label(class="form-label fw-bold") }}
+                        {{ form.remote_output_root() }}
+                        {% for e in form.remote_output_root.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+                        <div class="form-text">Each scan gets a <code>/scan-&lt;id&gt;</code> subdir here.</div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    {{ form.region_label.label(class="form-label fw-bold") }}
+                    {{ form.region_label() }}
+                    <div class="form-text">Free-text, just for humans. e.g. <code>ca-central-1</code>.</div>
+                </div>
+
+                <div class="form-check mb-3">
+                    {{ form.enabled(class="form-check-input") }}
+                    {{ form.enabled.label(class="form-check-label") }}
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <a href="{{ url_for('admin.scan_runners_list') }}" class="btn btn-secondary">Cancel</a>
+                    {{ form.submit() }}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

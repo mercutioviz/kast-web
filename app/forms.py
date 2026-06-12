@@ -189,7 +189,16 @@ class ScanConfigForm(FlaskForm):
             'data-plugin': 'zap'  # For conditional display via JavaScript
         }
     )
-    
+
+    runner_id = SelectField(
+        'Run on',
+        coerce=int,
+        validators=[Optional()],
+        choices=[(0, 'Local (this host)')],  # Populated dynamically with enabled ScanRunners
+        default=0,
+        render_kw={'class': 'form-select'},
+    )
+
     submit = SubmitField('Start Scan', render_kw={'class': 'btn btn-primary btn-lg'})
 
 
@@ -313,6 +322,15 @@ class BatchScanForm(FlaskForm):
         validators=[Optional()],
         choices=[],
         render_kw={'class': 'form-select', 'data-plugin': 'zap'},
+    )
+
+    runner_id = SelectField(
+        'Run on',
+        coerce=int,
+        validators=[Optional()],
+        choices=[(0, 'Local (this host)')],
+        default=0,
+        render_kw={'class': 'form-select'},
     )
 
     submit = SubmitField('Start Batch', render_kw={'class': 'btn btn-primary btn-lg'})
@@ -569,6 +587,68 @@ class ImportScanForm(FlaskForm):
     )
     
     submit = SubmitField('Import Scan', render_kw={'class': 'btn btn-success'})
+
+
+class ScanRunnerForm(FlaskForm):
+    """Form for registering / editing a remote scan runner (admin only)."""
+
+    name = StringField(
+        'Name',
+        validators=[
+            DataRequired(message='Name is required'),
+            Length(min=1, max=80),
+            Regexp(r'^[A-Za-z0-9 _.\-]+$', message='Letters, digits, spaces, dot, underscore, dash only'),
+        ],
+        render_kw={'class': 'form-control', 'placeholder': 'e.g. canada-1'},
+    )
+    hostname = StringField(
+        'Hostname or IP',
+        validators=[DataRequired(), Length(max=255)],
+        render_kw={'class': 'form-control', 'placeholder': '3.99.130.11'},
+    )
+    port = IntegerField(
+        'SSH Port',
+        default=22,
+        validators=[NumberRange(min=1, max=65535)],
+        render_kw={'class': 'form-control'},
+    )
+    username = StringField(
+        'SSH Username',
+        validators=[DataRequired(), Length(max=80)],
+        render_kw={'class': 'form-control', 'placeholder': 'admin'},
+    )
+    ssh_private_key = TextAreaField(
+        'SSH Private Key (PEM)',
+        validators=[Optional(), Length(max=10000)],
+        render_kw={
+            'class': 'form-control font-monospace',
+            'rows': '6',
+            'placeholder': '-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----',
+        },
+    )
+    kast_binary_path = StringField(
+        'kast Binary Path',
+        default='/usr/local/bin/kast',
+        validators=[DataRequired(), Length(max=500)],
+        render_kw={'class': 'form-control'},
+    )
+    remote_output_root = StringField(
+        'Remote Output Root',
+        default='/tmp/kast-runs',
+        validators=[DataRequired(), Length(max=500)],
+        render_kw={'class': 'form-control'},
+    )
+    region_label = StringField(
+        'Region Label',
+        validators=[Optional(), Length(max=80)],
+        render_kw={'class': 'form-control', 'placeholder': 'ca-central-1'},
+    )
+    enabled = BooleanField(
+        'Enabled',
+        default=True,
+        render_kw={'class': 'form-check-input'},
+    )
+    submit = SubmitField('Save Runner', render_kw={'class': 'btn btn-primary'})
 
 
 class ScanConfigProfileForm(FlaskForm):

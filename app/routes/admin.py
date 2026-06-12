@@ -11,7 +11,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from functools import wraps
 from app import db
-from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo, ZapAutomationPlan, ZapConfiguration, CloudCredential, CloudScan, CloudOrphan, AISettings, AISummary
+from app.models import User, Scan, AuditLog, SystemSettings, ScanResult, ScanShare, ReportLogo, ZapAutomationPlan, ZapConfiguration, CloudCredential, CloudScan, CloudOrphan, AISettings, AISummary, ScanRunner
 from sqlalchemy import func, text
 from datetime import datetime, timedelta
 import json
@@ -747,15 +747,15 @@ def parse_kast_plugins(kast_path):
         # Don't forget the last plugin
         if current_plugin and current_plugin.get('name'):
             plugins.append(current_plugin)
-        
+
         if not plugins and result.stdout:
             error = f"Could not parse plugin output. Raw output:\n{result.stdout[:500]}"
-            
+
     except subprocess.TimeoutExpired:
         error = "Command timed out after 5 seconds"
     except Exception as e:
         error = f"Exception during parsing: {str(e)}"
-    
+
     return plugins, error
 
 
@@ -944,7 +944,7 @@ def system_info():
                     'plugin_count': len(plugins),
                     'plugins': plugins
                 }
-                
+
                 # Add error if plugin parsing failed
                 if parse_error:
                     info['plugin_error'] = parse_error
@@ -1317,5 +1317,165 @@ def import_scan():
     if preview_dir:
         preview_data = get_import_preview(preview_dir)
         form.scan_directory.data = preview_dir
-    
+
     return render_template('admin/import_scan.html', form=form, preview=preview_data)
+
+
+# ============================================================
+# Scan Runners (remote kast execution over SSH)
+# ============================================================
+
+@bp.route('/scan-runners')
+@login_required
+@admin_required
+def scan_runners_list():
+    runners = ScanRunner.query.order_by(ScanRunner.name).all()
+    return render_template('admin/scan_runners/list.html', runners=runners)
+
+
+@bp.route('/scan-runners/new', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def scan_runners_new():
+    from app.forms import ScanRunnerForm
+    from app.encryption import encrypt_value
+
+    form = ScanRunnerForm()
+    if form.validate_on_submit():
+        key_blob = (form.ssh_private_key.data or '').strip()
+        if not key_blob:
+            flash('SSH private key is required when creating a runner.', 'danger')
+            return render_template('admin/scan_runners/form.html', form=form, runner=None)
+
+        runner = ScanRunner(
+            name=form.name.data.strip(),
+            hostname=form.hostname.data.strip(),
+            port=form.port.data or 22,
+            username=form.username.data.strip(),
+            ssh_private_key_encrypted=encrypt_value(key_blob),
+            kast_binary_path=form.kast_binary_path.data.strip(),
+            remote_output_root=form.remote_output_root.data.strip(),
+            region_label=(form.region_label.data or '').strip() or None,
+            enabled=bool(form.enabled.data),
+        )
+        try:
+            db.session.add(runner)
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Failed to save runner: {exc}', 'danger')
+            return render_template('admin/scan_runners/form.html', form=form, runner=None)
+
+        AuditLog.log(
+            user_id=current_user.id,
+            action='scan_runner_created',
+            resource_type='scan_runner',
+            resource_id=runner.id,
+            details=f'Created runner {runner.name} ({runner.username}@{runner.hostname}:{runner.port})',
+        )
+        flash(f"Runner '{runner.name}' created.", 'success')
+        return redirect(url_for('admin.scan_runners_list'))
+
+    return render_template('admin/scan_runners/form.html', form=form, runner=None)
+
+
+@bp.route('/scan-runners/<int:runner_id>/edit', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def scan_runners_edit(runner_id):
+    from app.forms import ScanRunnerForm
+    from app.encryption import encrypt_value
+
+    runner = db.session.get(ScanRunner, runner_id)
+    if not runner:
+        flash('Runner not found.', 'danger')
+        return redirect(url_for('admin.scan_runners_list'))
+
+    form = ScanRunnerForm(obj=runner)
+    # Don't pre-fill the key field — leave blank means "keep existing"
+    if request.method == 'GET':
+        form.ssh_private_key.data = ''
+
+    if form.validate_on_submit():
+        runner.name = form.name.data.strip()
+        runner.hostname = form.hostname.data.strip()
+        runner.port = form.port.data or 22
+        runner.username = form.username.data.strip()
+        runner.kast_binary_path = form.kast_binary_path.data.strip()
+        runner.remote_output_root = form.remote_output_root.data.strip()
+        runner.region_label = (form.region_label.data or '').strip() or None
+        runner.enabled = bool(form.enabled.data)
+
+        new_key = (form.ssh_private_key.data or '').strip()
+        if new_key:
+            runner.ssh_private_key_encrypted = encrypt_value(new_key)
+
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            flash(f'Failed to update runner: {exc}', 'danger')
+            return render_template('admin/scan_runners/form.html', form=form, runner=runner)
+
+        AuditLog.log(
+            user_id=current_user.id,
+            action='scan_runner_updated',
+            resource_type='scan_runner',
+            resource_id=runner.id,
+            details=f'Updated runner {runner.name}' + (' (key rotated)' if new_key else ''),
+        )
+        flash(f"Runner '{runner.name}' updated.", 'success')
+        return redirect(url_for('admin.scan_runners_list'))
+
+    return render_template('admin/scan_runners/form.html', form=form, runner=runner)
+
+
+@bp.route('/scan-runners/<int:runner_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def scan_runners_delete(runner_id):
+    runner = db.session.get(ScanRunner, runner_id)
+    if not runner:
+        flash('Runner not found.', 'danger')
+        return redirect(url_for('admin.scan_runners_list'))
+
+    # Refuse if any scans reference this runner — keep history intact.
+    in_use = Scan.query.filter_by(runner_id=runner.id).count()
+    if in_use:
+        flash(f"Cannot delete runner '{runner.name}': {in_use} scan(s) reference it. Disable it instead.", 'warning')
+        return redirect(url_for('admin.scan_runners_list'))
+
+    name = runner.name
+    db.session.delete(runner)
+    db.session.commit()
+
+    AuditLog.log(
+        user_id=current_user.id,
+        action='scan_runner_deleted',
+        resource_type='scan_runner',
+        resource_id=runner_id,
+        details=f'Deleted runner {name}',
+    )
+    flash(f"Runner '{name}' deleted.", 'success')
+    return redirect(url_for('admin.scan_runners_list'))
+
+
+@bp.route('/scan-runners/<int:runner_id>/test', methods=['POST'])
+@login_required
+@admin_required
+def scan_runners_test(runner_id):
+    from app.scan_runners.remote_executor import test_runner
+
+    runner = db.session.get(ScanRunner, runner_id)
+    if not runner:
+        return jsonify({'success': False, 'error': 'Runner not found'}), 404
+
+    result = test_runner(runner)
+    AuditLog.log(
+        user_id=current_user.id,
+        action='scan_runner_tested',
+        resource_type='scan_runner',
+        resource_id=runner.id,
+        details=f"Test result: success={result.get('success')} version={result.get('kast_version')!r}",
+    )
+    return jsonify(result)

@@ -460,29 +460,81 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             log_file.write(f"  {' '.join(cmd)}\n\n")
             log_file.write("="*80 + "\n\n")
         
-        # Execute scan and capture output
-        current_app.logger.info(f"Starting subprocess with Popen...")
-        current_app.logger.info(f"Environment variables count: {len(env)}")
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env  # Pass environment with cloud credentials
-        )
-        
-        current_app.logger.info(f"Subprocess PID: {process.pid}")
-        current_app.logger.info(f"Subprocess started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Update task state to show progress
-        self.update_state(state='PROGRESS', meta={'status': 'running', 'scan_id': scan_id})
-        
-        # Wait for process to complete
-        current_app.logger.info(f"Waiting for subprocess to complete (timeout: 3600s)...")
-        stdout, stderr = process.communicate(timeout=3600)  # 1 hour timeout
-        
-        current_app.logger.info(f"Subprocess completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        current_app.logger.info(f"Subprocess return code: {process.returncode}")
+        # Dispatch: remote runner vs local kast
+        if scan.runner_id:
+            from app.models import ScanRunner
+            from app.scan_runners.remote_executor import run_remote_scan
+
+            runner = db.session.get(ScanRunner, scan.runner_id)
+            if not runner:
+                raise RuntimeError(f"Scan {scan_id} references missing ScanRunner id={scan.runner_id}")
+            if not runner.enabled:
+                raise RuntimeError(f"Runner '{runner.name}' is disabled")
+
+            # Per-runner serialization: if another scan is already running on this
+            # runner, requeue ourselves with backoff (v1: no fancy lock, DB check).
+            busy = Scan.query.filter(
+                Scan.runner_id == runner.id,
+                Scan.status == 'running',
+                Scan.id != scan.id,
+            ).first()
+            if busy:
+                current_app.logger.info(
+                    f"[runner-dispatch] runner '{runner.name}' busy with scan {busy.id}; requeueing scan {scan_id}"
+                )
+                raise self.retry(countdown=30, max_retries=120)
+
+            current_app.logger.info(
+                f"[runner-dispatch] scan {scan_id} routed to runner '{runner.name}' ({runner.username}@{runner.hostname}:{runner.port})"
+            )
+            self.update_state(state='PROGRESS', meta={'status': 'running', 'scan_id': scan_id, 'runner': runner.name})
+
+            env_extra = {}
+            if api_key_for_ai:
+                env_extra['KAST_AI_API_KEY'] = api_key_for_ai
+            if base_url_for_ai:
+                env_extra['KAST_AI_BASE_URL'] = base_url_for_ai
+
+            remote_result = run_remote_scan(
+                scan=scan,
+                runner=runner,
+                cmd=cmd,
+                local_output_dir=output_dir,
+                log_file_path=log_file_path,
+                env_extra=env_extra,
+            )
+
+            # Synthesize the locals the post-processing code below expects.
+            class _RemoteProc:
+                returncode = remote_result['returncode']
+            process = _RemoteProc()
+            stdout = ''  # streamed to log file in real time by remote executor
+            stderr = remote_result.get('error') or ''
+            current_app.logger.info(f"[runner-dispatch] remote exit rc={process.returncode} error={stderr!r}")
+        else:
+            # Local execution path
+            current_app.logger.info(f"Starting subprocess with Popen...")
+            current_app.logger.info(f"Environment variables count: {len(env)}")
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env  # Pass environment with cloud credentials
+            )
+
+            current_app.logger.info(f"Subprocess PID: {process.pid}")
+            current_app.logger.info(f"Subprocess started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+            # Update task state to show progress
+            self.update_state(state='PROGRESS', meta={'status': 'running', 'scan_id': scan_id})
+
+            # Wait for process to complete
+            current_app.logger.info(f"Waiting for subprocess to complete (timeout: 3600s)...")
+            stdout, stderr = process.communicate(timeout=3600)  # 1 hour timeout
+
+            current_app.logger.info(f"Subprocess completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            current_app.logger.info(f"Subprocess return code: {process.returncode}")
         
         # ============================================================
         # DEBUGGING: Check file system state AFTER execution

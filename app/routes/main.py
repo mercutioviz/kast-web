@@ -75,6 +75,17 @@ def _populate_scan_form_choices(form, user, default_scan_mode='passive'):
     else:
         form.zap_config_id.data = 0
 
+    # Scan runner choices: only power_user/admin can target a remote runner
+    if hasattr(form, 'runner_id'):
+        from app.models import ScanRunner
+        runner_choices = [(0, 'Local (this host)')]
+        if user.is_power_user or user.is_admin:
+            for r in ScanRunner.query.filter_by(enabled=True).order_by(ScanRunner.name).all():
+                label = r.name + (f' — {r.region_label}' if r.region_label else '')
+                runner_choices.append((r.id, label))
+        form.runner_id.choices = runner_choices
+        form.runner_id.data = 0
+
     return all_plugins
 
 @bp.route('/')
@@ -183,7 +194,16 @@ def create_scan():
     for config in zap_configs:
         zap_config_choices.append((config.id, f"{config.name} ({config.execution_mode})"))
     form.zap_config_id.choices = zap_config_choices
-    
+
+    # Scan runner choices (only power_user/admin see non-local options)
+    from app.models import ScanRunner
+    runner_choices = [(0, 'Local (this host)')]
+    if current_user.is_power_user or current_user.is_admin:
+        for r in ScanRunner.query.filter_by(enabled=True).order_by(ScanRunner.name).all():
+            label = r.name + (f' — {r.region_label}' if r.region_label else '')
+            runner_choices.append((r.id, label))
+    form.runner_id.choices = runner_choices
+
     if form.validate_on_submit():
         # Check if user is allowed to run active scans
         if form.scan_mode.data == 'active' and not current_user.can_run_active_scans:
@@ -269,6 +289,23 @@ def create_scan():
         raw_tags = request.form.get('tags', '').strip()
         tags_value = ','.join(t.strip() for t in raw_tags.split(',') if t.strip()) or None
 
+        # Scan runner selection (power_user / admin only; 0 = local)
+        runner_id = None
+        try:
+            chosen_runner = int(form.runner_id.data or 0) if hasattr(form, 'runner_id') else 0
+        except (TypeError, ValueError):
+            chosen_runner = 0
+        if chosen_runner:
+            if not (current_user.is_power_user or current_user.is_admin):
+                flash('Only Power Users and Admins can target a remote scan runner.', 'danger')
+                return redirect(url_for('main.index'))
+            from app.models import ScanRunner
+            runner_row = db.session.get(ScanRunner, chosen_runner)
+            if not runner_row or not runner_row.enabled:
+                flash('Selected scan runner is unavailable.', 'danger')
+                return redirect(url_for('main.index'))
+            runner_id = runner_row.id
+
         # Create scan record (assign to current user)
         scan = Scan(
             user_id=current_user.id,
@@ -284,6 +321,7 @@ def create_scan():
             config_overrides=config_overrides,
             zap_plan_id=zap_plan_id,
             zap_config_id=zap_config_id,
+            runner_id=runner_id,
             tags=tags_value,
             status='pending',
             config_json=json.dumps({
@@ -391,6 +429,23 @@ def batch_scan():
                     flash('The selected ZAP configuration is not active.', 'danger')
                     return redirect(url_for('main.batch_scan'))
 
+        # Scan runner selection (power_user / admin only; 0 = local)
+        runner_id = None
+        try:
+            chosen_runner = int(form.runner_id.data or 0) if hasattr(form, 'runner_id') else 0
+        except (TypeError, ValueError):
+            chosen_runner = 0
+        if chosen_runner:
+            if not (current_user.is_power_user or current_user.is_admin):
+                flash('Only Power Users and Admins can target a remote scan runner.', 'danger')
+                return redirect(url_for('main.batch_scan'))
+            from app.models import ScanRunner
+            runner_row = db.session.get(ScanRunner, chosen_runner)
+            if not runner_row or not runner_row.enabled:
+                flash('Selected scan runner is unavailable.', 'danger')
+                return redirect(url_for('main.batch_scan'))
+            runner_id = runner_row.id
+
         batch_id = uuid.uuid4().hex
 
         raw_tags = request.form.get('tags', '').strip()
@@ -425,6 +480,7 @@ def batch_scan():
                 tags=tags_value,
                 status='pending',
                 batch_id=batch_id,
+                runner_id=runner_id,
                 config_json=json.dumps({
                     'target': target,
                     'scan_mode': form.scan_mode.data,

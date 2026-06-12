@@ -54,6 +54,18 @@
                         {% endif %}
                     </div>
 
+                    {% if current_user.is_power_user or current_user.is_admin %}
+                    <!-- Scan Runner -->
+                    <div class="mb-3">
+                        {{ form.runner_id.label(class="form-label fw-bold") }}
+                        {{ form.runner_id(class="form-select") }}
+                        <div class="form-text">
+                            <strong>Local</strong> runs the scan on this kast-web host.
+                            Remote runners execute the scan from a different location (e.g. another region) over SSH and rsync results back.
+                        </div>
+                    </div>
+                    {% endif %}
+
                     <!-- Plugins -->
                     <div class="mb-3">
                         {{ form.plugins.label(class="form-label fw-bold") }}

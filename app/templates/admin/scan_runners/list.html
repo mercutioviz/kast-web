@@ -1,0 +1,132 @@
+{% extends "admin/kast_base.html" %}
+
+{% block title %}Scan Runners - Admin Panel{% endblock %}
+{% block admin_title %}Scan Runners{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Scan Runners</li>
+{% endblock %}
+
+{% block header_actions %}
+<a href="{{ url_for('admin.scan_runners_new') }}" class="btn btn-light">
+    <i class="fas fa-plus"></i> New Runner
+</a>
+{% endblock %}
+
+{% block admin_content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-server"></i> Scan Runners</h2>
+            <p class="text-muted mb-0">Remote VMs that execute kast scans on behalf of kast-web. SSH-based, encrypted credentials.</p>
+        </div>
+        <a href="{{ url_for('admin.scan_runners_new') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> New Runner
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    {% if not runners %}
+    <div class="alert alert-info">
+        No scan runners registered yet. Click <strong>New Runner</strong> to add one.
+    </div>
+    {% else %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>SSH Endpoint</th>
+                    <th>Region</th>
+                    <th>kast Path</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in runners %}
+                <tr>
+                    <td><strong>{{ r.name }}</strong></td>
+                    <td class="font-monospace small">{{ r.username }}@{{ r.hostname }}:{{ r.port }}</td>
+                    <td>{{ r.region_label or '—' }}</td>
+                    <td class="font-monospace small">{{ r.kast_binary_path }}</td>
+                    <td>
+                        {% if r.enabled %}
+                            <span class="badge bg-success">Enabled</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <button type="button" class="btn btn-sm btn-outline-info"
+                                onclick="testRunner({{ r.id }}, this)">
+                            <i class="fas fa-bolt"></i> Test
+                        </button>
+                        <a href="{{ url_for('admin.scan_runners_edit', runner_id=r.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-pencil-alt"></i> Edit
+                        </a>
+                        <form method="POST" action="{{ url_for('admin.scan_runners_delete', runner_id=r.id) }}"
+                              class="d-inline"
+                              onsubmit="return confirm('Delete runner {{ r.name }}? This is blocked if any scans reference it.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                <tr id="test-result-{{ r.id }}" style="display:none;">
+                    <td colspan="6">
+                        <div class="alert mb-0 small font-monospace" id="test-result-body-{{ r.id }}"></div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function testRunner(id, btn) {
+    const row = document.getElementById('test-result-' + id);
+    const body = document.getElementById('test-result-body-' + id);
+    btn.disabled = true;
+    body.className = 'alert alert-info mb-0 small font-monospace';
+    body.textContent = 'Testing connection…';
+    row.style.display = '';
+
+    fetch('/admin/scan-runners/' + id + '/test', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token() }}',
+            'Accept': 'application/json',
+        },
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        if (data.success) {
+            body.className = 'alert alert-success mb-0 small font-monospace';
+            body.textContent = 'OK — ' + (data.kast_version || 'kast reachable');
+        } else {
+            body.className = 'alert alert-danger mb-0 small font-monospace';
+            body.textContent = 'FAIL — ' + (data.error || 'unknown error');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        body.className = 'alert alert-danger mb-0 small font-monospace';
+        body.textContent = 'Request failed: ' + err;
+    });
+}
+</script>
+{% endblock %}

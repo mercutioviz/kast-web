@@ -215,6 +215,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {% if request.endpoint and request.endpoint.startswith('admin.scan_runners') %}active{% endif %}" href="{{ url_for('admin.scan_runners_list') }}">
+                    <i class="fas fa-server"></i> Scan Runners
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {% if 'db_admin' in request.endpoint %}active{% endif %}" href="{{ url_for('db_admin.index') }}">
                     <i class="fas fa-database"></i> Database Explorer
                 </a>
