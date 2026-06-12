@@ -2,7 +2,7 @@
 Authentication routes for user login, logout, and registration
 """
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, make_response
 from flask_login import login_user, logout_user, login_required, current_user
 from urllib.parse import urlparse
 from datetime import datetime
@@ -84,7 +84,9 @@ def login():
         
         return redirect(next_page)
     
-    return render_template('auth/login.html', form=form, title='Login')
+    response = make_response(render_template('auth/login.html', form=form, title='Login'))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @bp.route('/logout')

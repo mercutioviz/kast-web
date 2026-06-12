@@ -74,6 +74,15 @@ def create_app(config_name='default'):
         from flask_wtf.csrf import generate_csrf
         return {'csrf_token': generate_csrf}
     
+    # CSRF error handler — redirect to login with a user-friendly message
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        from flask import flash, redirect, url_for
+        flash('Your session has expired. Please log in again.', 'warning')
+        return redirect(url_for('auth.login'))
+
     # Error handlers
     @app.errorhandler(403)
     def forbidden(e):
