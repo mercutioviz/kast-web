@@ -459,6 +459,65 @@ class RegistrationForm(FlaskForm):
             raise ValidationError('Email already registered. Please use a different email address.')
 
 
+class ForgotPasswordForm(FlaskForm):
+    """Form for requesting a password reset email.
+
+    Deliberately unauthenticated. The route never confirms whether the address
+    matches a real account, so validators here only sanity-check the shape.
+    """
+
+    email = StringField(
+        'Email address',
+        validators=[
+            DataRequired(message='Email is required'),
+            Email(message='Please enter a valid email address'),
+            Length(max=120, message='Email must not exceed 120 characters'),
+        ],
+        render_kw={
+            'placeholder': 'you@example.com',
+            'class': 'form-control',
+            'autocomplete': 'email',
+            'autofocus': True,
+        },
+    )
+
+    submit = SubmitField('Send reset link', render_kw={'class': 'btn btn-primary w-100'})
+
+
+class ResetPasswordForm(FlaskForm):
+    """Form for setting a new password via a reset token."""
+
+    new_password = PasswordField(
+        'New password',
+        validators=[
+            DataRequired(message='New password is required'),
+            Length(min=8, max=128, message='Password must be between 8 and 128 characters'),
+            _validate_password_complexity,
+        ],
+        render_kw={
+            'placeholder': 'Enter new password',
+            'class': 'form-control',
+            'autocomplete': 'new-password',
+            'autofocus': True,
+        },
+    )
+
+    new_password_confirm = PasswordField(
+        'Confirm new password',
+        validators=[
+            DataRequired(message='Please confirm your new password'),
+            EqualTo('new_password', message='Passwords must match'),
+        ],
+        render_kw={
+            'placeholder': 'Confirm new password',
+            'class': 'form-control',
+            'autocomplete': 'new-password',
+        },
+    )
+
+    submit = SubmitField('Set new password', render_kw={'class': 'btn btn-primary w-100'})
+
+
 class ChangePasswordForm(FlaskForm):
     """Form for changing password"""
     

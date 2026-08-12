@@ -30,9 +30,36 @@ def create_app(config_name='default'):
     
     @login_manager.user_loader
     def load_user(user_id):
-        """Load user by ID for Flask-Login"""
+        """Load user by ID for Flask-Login.
+
+        Ids are formatted "<user_id>|<session_token_version>" (see User.get_id). A
+        mismatch means the version was bumped after this session was minted (e.g.
+        a password reset), so we refuse to load the user and Flask-Login treats
+        the session as anonymous. Ids without a "|" separator are treated as
+        version 0 for backward compatibility with sessions minted before this
+        column existed.
+        """
         from app.models import User
-        return db.session.get(User, int(user_id))
+        raw = str(user_id)
+        if '|' in raw:
+            id_part, _, version_part = raw.partition('|')
+            try:
+                session_version = int(version_part)
+            except ValueError:
+                return None
+        else:
+            id_part = raw
+            session_version = 0
+        try:
+            uid = int(id_part)
+        except ValueError:
+            return None
+        user = db.session.get(User, uid)
+        if user is None:
+            return None
+        if (user.session_token_version or 0) != session_version:
+            return None
+        return user
     
     # Register custom template filters
     @app.template_filter('timestamp_to_datetime')

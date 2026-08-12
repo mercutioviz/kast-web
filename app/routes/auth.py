@@ -9,8 +9,11 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from app import db
-from app.models import User, SystemSettings
-from app.forms import LoginForm, RegistrationForm, ChangePasswordForm
+from app.models import User, SystemSettings, PasswordResetToken, PasswordResetAttempt, AuditLog
+from app.forms import (
+    LoginForm, RegistrationForm, ChangePasswordForm,
+    ForgotPasswordForm, ResetPasswordForm,
+)
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -87,6 +90,127 @@ def login():
     response = make_response(render_template('auth/login.html', form=form, title='Login'))
     response.headers['Cache-Control'] = 'no-store'
     return response
+
+
+@bp.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Request a password reset link by email.
+
+    Anti-enumeration: the POST response is identical whether the address
+    exists, is inactive, or is unknown. The actual mail send happens in a
+    Celery task so the HTTP response time stays constant regardless of SMTP
+    latency.
+    """
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+
+    form = ForgotPasswordForm()
+
+    if form.validate_on_submit():
+        submitted_email = (form.email.data or '').strip()
+        ip = request.remote_addr or ''
+
+        # Always record the attempt (before the rate-limit check reads it), so
+        # bad actors can't hide their pattern by submitting bogus addresses.
+        PasswordResetAttempt.record(ip_address=ip, email=submitted_email)
+        db.session.commit()
+
+        if PasswordResetAttempt.is_rate_limited(ip_address=ip, email=submitted_email):
+            # Show the same generic message; do NOT tell the client they're throttled.
+            return redirect(url_for('auth.forgot_password_sent'))
+
+        # Case-insensitive email lookup — DB stored value may differ in case.
+        user = User.query.filter(db.func.lower(User.email) == submitted_email.lower()).first()
+
+        if user and user.is_active:
+            token_row, raw_token = PasswordResetToken.create_for(user, ip_address=ip)
+            db.session.commit()
+
+            reset_url = url_for('auth.reset_password', token=raw_token, _external=True)
+
+            AuditLog.log(
+                user_id=user.id,
+                action='password_reset_requested',
+                resource_type='user',
+                resource_id=user.id,
+                ip_address=ip,
+                user_agent=request.headers.get('User-Agent', '')[:255],
+            )
+
+            # Fire-and-forget: the task handles its own audit logging on send / failure.
+            from app.tasks import send_password_reset_email_task
+            try:
+                send_password_reset_email_task.delay(user.id, raw_token, reset_url)
+            except Exception:
+                # If Celery is unreachable, don't leak that fact to the client.
+                # The audit log already records the request; ops can retry.
+                from flask import current_app
+                current_app.logger.exception(
+                    'Failed to enqueue password reset email for user_id=%s', user.id,
+                )
+
+        return redirect(url_for('auth.forgot_password_sent'))
+
+    return render_template(
+        'auth/forgot_password.html', form=form, title='Forgot Password',
+    )
+
+
+@bp.route('/forgot-password/sent')
+def forgot_password_sent():
+    """Generic confirmation page shown after any /forgot-password submission."""
+    return render_template(
+        'auth/forgot_password_sent.html', title='Check your email',
+    )
+
+
+@bp.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Redeem a password reset token and set a new password."""
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+
+    token_row = PasswordResetToken.find_valid(token)
+    if token_row is None:
+        return render_template(
+            'auth/reset_password_expired.html',
+            title='Reset link expired',
+        ), 400
+
+    user = db.session.get(User, token_row.user_id)
+    if user is None or not user.is_active:
+        return render_template(
+            'auth/reset_password_expired.html',
+            title='Reset link expired',
+        ), 400
+
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        # Set new password and mark token used in the same transaction.
+        user.set_password(form.new_password.data)
+        user.failed_login_attempts = 0
+        user.last_failed_login = None
+        user.session_token_version = (user.session_token_version or 0) + 1
+        token_row.mark_used()
+        db.session.commit()
+
+        AuditLog.log(
+            user_id=user.id,
+            action='password_reset_completed',
+            resource_type='user',
+            resource_id=user.id,
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent', '')[:255],
+        )
+
+        flash('Your password has been reset. Please log in with your new password.', 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template(
+        'auth/reset_password.html',
+        form=form,
+        title='Set new password',
+    )
 
 
 @bp.route('/logout')

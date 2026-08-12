@@ -24,12 +24,20 @@ class User(UserMixin, db.Model):
     ai_model_override = db.Column(db.Text, nullable=True)
     ai_base_url = db.Column(db.Text, nullable=True)
 
+    # Bumped on password reset (and other credential-invalidating events) to kill
+    # existing sessions/remember-me cookies. See load_user() in app/__init__.py.
+    session_token_version = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
     # Relationships
     scans = db.relationship('Scan', backref='user', lazy='dynamic', cascade='all, delete-orphan')
-    
+
     def __repr__(self):
         return f'<User {self.username}>'
-    
+
+    def get_id(self):
+        """Return a versioned id so bumping session_token_version invalidates sessions."""
+        return f'{self.id}|{self.session_token_version or 0}'
+
     def set_password(self, password):
         """Hash and set password"""
         self.password_hash = generate_password_hash(password)
@@ -1091,6 +1099,128 @@ class AISummary(db.Model):
 
     scan = db.relationship('Scan', backref=db.backref('ai_summary', uselist=False))
     reviewer = db.relationship('User', backref='reviewed_ai_summaries')
+
+
+class PasswordResetToken(db.Model):
+    """Single-use, time-bounded password reset token.
+
+    The raw token is never stored; only its SHA-256 hex digest lives in the DB.
+    The raw token is delivered once via email and then compared by hash on redemption.
+    """
+    __tablename__ = 'password_reset_tokens'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    used_at = db.Column(db.DateTime, nullable=True)
+    requested_ip = db.Column(db.String(45), nullable=True)
+
+    user = db.relationship('User', backref='password_reset_tokens')
+
+    TTL_MINUTES = 60
+
+    @staticmethod
+    def _hash(raw_token):
+        import hashlib
+        return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+
+    @classmethod
+    def create_for(cls, user, ip_address=None):
+        """Invalidate outstanding unused tokens for user, then create + return (row, raw_token).
+
+        The raw token is returned only here; after this call, only its hash is retrievable.
+        """
+        import secrets
+        from datetime import timedelta
+
+        # Invalidate any prior outstanding tokens so only the newest is redeemable.
+        now = datetime.utcnow()
+        cls.query.filter_by(user_id=user.id, used_at=None).update(
+            {'used_at': now}, synchronize_session=False
+        )
+
+        raw = secrets.token_urlsafe(32)
+        row = cls(
+            user_id=user.id,
+            token_hash=cls._hash(raw),
+            expires_at=now + timedelta(minutes=cls.TTL_MINUTES),
+            requested_ip=ip_address,
+        )
+        db.session.add(row)
+        return row, raw
+
+    @classmethod
+    def find_valid(cls, raw_token):
+        """Return the row matching raw_token iff it exists, is unused, and unexpired."""
+        import hmac
+        if not raw_token:
+            return None
+        candidate_hash = cls._hash(raw_token)
+        row = cls.query.filter_by(token_hash=candidate_hash).first()
+        if row is None:
+            return None
+        if not hmac.compare_digest(row.token_hash, candidate_hash):
+            return None
+        if row.used_at is not None:
+            return None
+        if row.expires_at < datetime.utcnow():
+            return None
+        return row
+
+    def mark_used(self):
+        self.used_at = datetime.utcnow()
+
+
+class PasswordResetAttempt(db.Model):
+    """Rate-limiting ledger for /forgot-password requests.
+
+    One row per POST regardless of whether an email was actually sent, so the
+    counter can't be gamed by submitting non-existent addresses.
+    """
+    __tablename__ = 'password_reset_attempts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ip_address = db.Column(db.String(45), nullable=False, index=True)
+    # Stored lowercased. May be empty string if the client submitted no address.
+    email = db.Column(db.String(120), nullable=False, index=True, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Windows and thresholds. Tuned conservatively; adjust if we see legitimate friction.
+    WINDOW_MINUTES = 60
+    MAX_PER_IP = 10
+    MAX_PER_EMAIL = 5
+
+    @classmethod
+    def is_rate_limited(cls, ip_address, email):
+        """Return True if this (ip, email) pair should be throttled."""
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(minutes=cls.WINDOW_MINUTES)
+        norm_email = (email or '').strip().lower()
+
+        ip_count = cls.query.filter(
+            cls.ip_address == ip_address,
+            cls.created_at >= cutoff,
+        ).count()
+        if ip_count >= cls.MAX_PER_IP:
+            return True
+
+        if norm_email:
+            email_count = cls.query.filter(
+                cls.email == norm_email,
+                cls.created_at >= cutoff,
+            ).count()
+            if email_count >= cls.MAX_PER_EMAIL:
+                return True
+
+        return False
+
+    @classmethod
+    def record(cls, ip_address, email):
+        row = cls(ip_address=ip_address or '', email=(email or '').strip().lower())
+        db.session.add(row)
+        return row
 
 
 class SchemaMigration(db.Model):

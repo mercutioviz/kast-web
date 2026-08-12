@@ -1109,6 +1109,100 @@ def send_report_email_task(self, scan_id, recipients, sender_user_id, include_zi
 
 
 @celery.task(bind=True)
+def send_password_reset_email_task(self, user_id, raw_token, reset_url):
+    """Deliver a password-reset email to a single user.
+
+    Args:
+        user_id: id of the target User row.
+        raw_token: the pre-hashed token string; embedded in the reset URL and never persisted.
+        reset_url: fully qualified URL the user clicks to redeem the token.
+
+    Returns dict with 'success', 'error'. Called asynchronously from /forgot-password
+    so the HTTP response time stays constant regardless of SMTP latency (the
+    anti-enumeration story depends on this).
+    """
+    from flask import current_app, render_template
+    from app.models import User, SystemSettings, AuditLog
+    from app.email import EmailService
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return {'success': False, 'error': 'User not found'}
+
+    email_enabled = SystemSettings.get_setting('email_enabled', False)
+    if not email_enabled:
+        current_app.logger.warning(
+            'Password reset requested for user_id=%s but email is disabled in SystemSettings',
+            user_id,
+        )
+        AuditLog.log(
+            user_id=user_id,
+            action='password_reset_email_skipped',
+            resource_type='user',
+            resource_id=user_id,
+            details='SMTP disabled in SystemSettings',
+        )
+        return {'success': False, 'error': 'Email disabled'}
+
+    smtp_settings = {
+        'smtp_host': SystemSettings.get_setting('smtp_host'),
+        'smtp_port': SystemSettings.get_setting('smtp_port', 587),
+        'smtp_username': SystemSettings.get_setting('smtp_username'),
+        'smtp_password': SystemSettings.get_setting('smtp_password'),
+        'from_email': SystemSettings.get_setting('from_email'),
+        'from_name': SystemSettings.get_setting('from_name', 'KAST Security'),
+        'use_tls': SystemSettings.get_setting('use_tls', True),
+        'use_ssl': SystemSettings.get_setting('use_ssl', False),
+    }
+
+    ttl_minutes = 60  # Mirrors PasswordResetToken.TTL_MINUTES; kept literal to avoid import cycles.
+    subject = 'KAST-Web password reset request'
+    context = {
+        'username': user.username,
+        'reset_url': reset_url,
+        'ttl_minutes': ttl_minutes,
+    }
+    html_body = render_template('email/password_reset.html', **context)
+    text_body = render_template('email/password_reset.txt', **context)
+
+    try:
+        service = EmailService(smtp_settings)
+        success, error = service.send_email(
+            recipients=[user.email],
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+        )
+    except Exception as exc:
+        current_app.logger.exception('Password reset email failed for user_id=%s', user_id)
+        AuditLog.log(
+            user_id=user_id,
+            action='password_reset_email_failed',
+            resource_type='user',
+            resource_id=user_id,
+            details=f'{type(exc).__name__}: {exc}',
+        )
+        return {'success': False, 'error': str(exc)}
+
+    if success:
+        AuditLog.log(
+            user_id=user_id,
+            action='password_reset_email_sent',
+            resource_type='user',
+            resource_id=user_id,
+        )
+    else:
+        AuditLog.log(
+            user_id=user_id,
+            action='password_reset_email_failed',
+            resource_type='user',
+            resource_id=user_id,
+            details=error,
+        )
+    return {'success': success, 'error': error}
+
+
+@celery.task(bind=True)
 def generate_ai_summary_task(self, scan_id):
     """Generate an AI executive summary for a completed scan (background task)."""
     from flask import current_app
