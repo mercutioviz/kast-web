@@ -14,6 +14,12 @@ from datetime import datetime
 # Add parent directory to path so we can import app module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Load .env before importing the app so DATABASE_URL and other config resolve
+# the same way they do under run.py / celery_worker.py. Without this, the app
+# falls back to a relative sqlite path and errors with "unable to open database file".
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+
 from app import create_app, db
 from app.models import User, AuditLog
 
