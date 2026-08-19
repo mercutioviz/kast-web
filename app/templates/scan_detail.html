@@ -379,6 +379,12 @@ function renderZapProgressContent(zap) {
                 </div>
                 <div class="col-6 mb-2">
                     <div class="d-flex justify-content-between">
+                        <span>Critical:</span>
+                        <span class="badge bg-critical">${zap.alerts.Critical}</span>
+                    </div>
+                </div>
+                <div class="col-6 mb-2">
+                    <div class="d-flex justify-content-between">
                         <span>High:</span>
                         <span class="badge bg-danger">${zap.alerts.High}</span>
                     </div>

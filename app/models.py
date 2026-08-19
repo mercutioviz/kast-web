@@ -657,13 +657,24 @@ class ZapConfiguration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False, index=True)
     description = db.Column(db.Text)
-    execution_mode = db.Column(db.String(20), nullable=False)  # local, remote, cloud, auto
+    execution_mode = db.Column(db.String(20), nullable=False)  # local, server, remote, cloud, auto
     
     # Mode-specific configs (stored as encrypted JSON strings)
     local_config_encrypted = db.Column(db.Text)  # Docker settings
     remote_config_encrypted = db.Column(db.Text)  # URL, API key
     cloud_config_encrypted = db.Column(db.Text)  # Provider, credentials
     
+    # Spider type passed to kast as --set zap.spider_type=<value>
+    # traditional = HTTP spider (no browser); ajax = Firefox/Selenium; client = Playwright
+    spider_type = db.Column(db.String(20), nullable=False, default='traditional')
+
+    # Polling interval passed to kast as --set zap.zap_config.poll_interval_seconds=<value>
+    poll_interval_seconds = db.Column(db.Integer, nullable=False, default=30)
+
+    # Scan profile passed to kast as --zap-profile <value> (NULL = kast default)
+    # Ignored when a custom automation plan is attached to the scan
+    zap_profile = db.Column(db.String(20), nullable=True)
+
     # Settings
     is_active = db.Column(db.Boolean, default=True)
     is_default = db.Column(db.Boolean, default=False)
@@ -910,6 +921,7 @@ class ZapScanProgress(db.Model):
     
     # Alert counts
     total_alerts = db.Column(db.Integer, default=0)
+    critical_alerts = db.Column(db.Integer, default=0)
     high_alerts = db.Column(db.Integer, default=0)
     medium_alerts = db.Column(db.Integer, default=0)
     low_alerts = db.Column(db.Integer, default=0)
@@ -949,6 +961,7 @@ class ZapScanProgress(db.Model):
             },
             'alerts': {
                 'total': self.total_alerts,
+                'critical': self.critical_alerts,
                 'high': self.high_alerts,
                 'medium': self.medium_alerts,
                 'low': self.low_alerts,
@@ -986,6 +999,7 @@ class ZapScanProgress(db.Model):
         alerts = snapshot_data.get('alerts', {})
         progress.total_alerts = alerts.get('total', 0)
         by_risk = alerts.get('by_risk', {})
+        progress.critical_alerts = by_risk.get('Critical', 0)
         progress.high_alerts = by_risk.get('High', 0)
         progress.medium_alerts = by_risk.get('Medium', 0)
         progress.low_alerts = by_risk.get('Low', 0)

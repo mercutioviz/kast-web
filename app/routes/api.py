@@ -276,6 +276,7 @@ def get_scan_status(scan_id):
                     },
                     'alerts': {
                         'total': alerts.get('total', 0),
+                        'Critical': by_risk.get('Critical', 0),
                         'High': by_risk.get('High', 0),
                         'Medium': by_risk.get('Medium', 0),
                         'Low': by_risk.get('Low', 0),

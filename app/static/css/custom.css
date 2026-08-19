@@ -135,6 +135,11 @@ footer {
     background-color: var(--danger-color) !important;
 }
 
+.badge.bg-critical {
+    background-color: #6f0000 !important;
+    color: #fff;
+}
+
 .badge.bg-warning {
     background-color: var(--warning-color) !important;
     color: #000;

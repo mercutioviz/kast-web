@@ -7,6 +7,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.12] — 2026-08-19
+
+### Added
+
+- **"Critical" severity support in ZAP live-progress tracking** — `ZapScanProgress` gained a `critical_alerts` column (`utils/migrate_zap_critical_severity.py`), and the live-progress polling API and scan-detail progress modal now surface a `Critical` alert count alongside High/Medium/Low/Informational, with a dedicated maroon badge (`.badge.bg-critical`). Prepares kast-web for kast 3.0.43+, which introduces a `Critical` severity level in its `Severity` enum.
+
+---
+
 ## [2.0.9] — 2026-05-26
 
 ### Fixed
