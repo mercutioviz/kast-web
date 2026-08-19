@@ -133,6 +133,7 @@ def forgot_password():
                 action='password_reset_requested',
                 resource_type='user',
                 resource_id=user.id,
+                details=f'Reset link requested for {user.username}',
                 ip_address=ip,
                 user_agent=request.headers.get('User-Agent', '')[:255],
             )
@@ -199,6 +200,7 @@ def reset_password(token):
             action='password_reset_completed',
             resource_type='user',
             resource_id=user.id,
+            details=f'Password reset completed for {user.username}',
             ip_address=request.remote_addr,
             user_agent=request.headers.get('User-Agent', '')[:255],
         )

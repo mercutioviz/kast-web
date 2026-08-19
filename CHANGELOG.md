@@ -7,6 +7,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.13] — 2026-08-19
+
+### Added
+
+- **Server ZAP execution mode** — a new `server` `ZapConfiguration.execution_mode` alongside the renamed `local` ("Ephemeral Docker") and `remote` ("External ZAP") modes. kast-web manages a persistent ZAP Docker container that kast connects to as a remote API server; Start/Stop/Status/Logs container controls on the configs list now apply to Server ZAP configs instead of local ones. Configurable per-configuration `spider_type` (traditional/ajax/client), `poll_interval_seconds`, and `zap_profile`, all passed through to kast via `--set`/`--zap-profile`. New idempotent migrations: `utils/migrate_zap_spider_type.py`, `utils/migrate_zap_poll_interval.py`, `utils/migrate_zap_profile.py`.
+
+---
+
 ## [2.0.12] — 2026-08-19
 
 ### Added

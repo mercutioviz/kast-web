@@ -353,6 +353,8 @@ def config_create():
             name=form.name.data,
             description=form.description.data,
             execution_mode=form.execution_mode.data,
+            spider_type=form.spider_type.data or 'traditional',
+            zap_profile=form.zap_profile.data or None,
             is_active=form.is_active.data,
             is_default=form.is_default.data,
             created_by=current_user.id
@@ -365,6 +367,13 @@ def config_create():
                 'port': form.docker_port.data or 8080,
                 'memory_limit': form.docker_memory_limit.data or '2g',
                 'auto_remove': form.docker_auto_remove.data
+            }
+        elif form.execution_mode.data == 'server':
+            config.local_config = {
+                'docker_image': form.docker_image.data or 'ghcr.io/zaproxy/zaproxy:stable',
+                'port': form.docker_port.data or 8080,
+                'memory_limit': form.docker_memory_limit.data or '2g',
+                'api_key': form.server_api_key.data or 'kast-local'
             }
         elif form.execution_mode.data == 'remote':
             config.remote_config = {
@@ -451,11 +460,13 @@ def config_edit(config_id):
         form.name.data = config.name
         form.description.data = config.description
         form.execution_mode.data = config.execution_mode
+        form.spider_type.data = config.spider_type or 'traditional'
+        form.zap_profile.data = config.zap_profile or ''
         form.is_active.data = config.is_active
         form.is_default.data = config.is_default
 
         decryption_failed = (
-            (config.execution_mode == 'local' and config.local_config_decryption_failed) or
+            (config.execution_mode in ('local', 'server') and config.local_config_decryption_failed) or
             (config.execution_mode == 'remote' and config.remote_config_decryption_failed) or
             (config.execution_mode == 'cloud' and config.cloud_config_decryption_failed)
         )
@@ -473,6 +484,12 @@ def config_edit(config_id):
             form.docker_port.data = local_conf.get('port', 8080)
             form.docker_memory_limit.data = local_conf.get('memory_limit', '2g')
             form.docker_auto_remove.data = local_conf.get('auto_remove', True)
+        elif config.execution_mode == 'server':
+            server_conf = config.local_config
+            form.docker_image.data = server_conf.get('docker_image', '')
+            form.docker_port.data = server_conf.get('port', 8080)
+            form.docker_memory_limit.data = server_conf.get('memory_limit', '2g')
+            # API key is not pre-populated (leave blank to keep existing, same pattern as remote)
         elif config.execution_mode == 'remote':
             remote_conf = config.remote_config
             form.remote_url.data = remote_conf.get('zap_url', '')
@@ -510,6 +527,8 @@ def config_edit(config_id):
         config.name = form.name.data
         config.description = form.description.data
         config.execution_mode = form.execution_mode.data
+        config.spider_type = form.spider_type.data or 'traditional'
+        config.zap_profile = form.zap_profile.data or None
         config.is_active = form.is_active.data
         config.is_default = form.is_default.data
         config.updated_at = datetime.utcnow()
@@ -521,6 +540,17 @@ def config_edit(config_id):
                 'memory_limit': form.docker_memory_limit.data or '2g',
                 'auto_remove': form.docker_auto_remove.data,
             }
+        elif form.execution_mode.data == 'server':
+            server_conf = {
+                'docker_image': form.docker_image.data or 'ghcr.io/zaproxy/zaproxy:stable',
+                'port': form.docker_port.data or 8080,
+                'memory_limit': form.docker_memory_limit.data or '2g',
+            }
+            if form.server_api_key.data:
+                server_conf['api_key'] = form.server_api_key.data
+            else:
+                server_conf['api_key'] = config.local_config.get('api_key', 'kast-local')
+            config.local_config = server_conf
         elif form.execution_mode.data == 'remote':
             remote_conf = {
                 'zap_url': form.remote_url.data or '',
@@ -672,6 +702,16 @@ def config_test(config_id):
     try:
         if config.execution_mode == 'local':
             success, message = test_docker_connection(config.local_config)
+        elif config.execution_mode == 'server':
+            server_conf = config.local_config
+            port = server_conf.get('port', 8080)
+            api_key = server_conf.get('api_key', 'kast-local')
+            success, message = test_remote_connection({
+                'zap_url': f'http://localhost:{port}',
+                'api_key': api_key,
+                'timeout': 10,
+                'verify_ssl': False
+            })
         elif config.execution_mode == 'remote':
             success, message = test_remote_connection(config.remote_config)
         elif config.execution_mode == 'cloud':
@@ -707,21 +747,20 @@ def config_test(config_id):
 @login_required
 @admin_required
 def config_start_container(config_id):
-    """Start ZAP Docker container for a local configuration"""
-    
+    """Start ZAP Docker container for a server ZAP configuration"""
+
     config = ZapConfiguration.query.get_or_404(config_id)
-    
-    # Only allow for local mode
-    if config.execution_mode != 'local':
+
+    if config.execution_mode != 'server':
         return jsonify({
             'success': False,
-            'message': f'Container management only available for local mode (current: {config.execution_mode})',
+            'message': f'Container management is only available for Server ZAP configurations (current mode: {config.execution_mode})',
             'command': ''
         }), 400
-    
+
     try:
         from app.zap_utils import start_zap_container
-        
+
         success, message, docker_command = start_zap_container(config.local_config, config_id)
         
         # Log the action
@@ -758,15 +797,14 @@ def config_start_container(config_id):
 @login_required
 @admin_required
 def config_stop_container(config_id):
-    """Stop ZAP Docker container for a local configuration"""
-    
+    """Stop ZAP Docker container for a server ZAP configuration"""
+
     config = ZapConfiguration.query.get_or_404(config_id)
-    
-    # Only allow for local mode
-    if config.execution_mode != 'local':
+
+    if config.execution_mode != 'server':
         return jsonify({
             'success': False,
-            'message': f'Container management only available for local mode (current: {config.execution_mode})',
+            'message': f'Container management is only available for Server ZAP configurations (current mode: {config.execution_mode})',
             'command': ''
         }), 400
     
@@ -809,15 +847,14 @@ def config_stop_container(config_id):
 @login_required
 @admin_required
 def config_remove_container(config_id):
-    """Remove ZAP Docker container for a local configuration"""
-    
+    """Remove ZAP Docker container for a server ZAP configuration"""
+
     config = ZapConfiguration.query.get_or_404(config_id)
-    
-    # Only allow for local mode
-    if config.execution_mode != 'local':
+
+    if config.execution_mode != 'server':
         return jsonify({
             'success': False,
-            'message': f'Container management only available for local mode (current: {config.execution_mode})',
+            'message': f'Container management is only available for Server ZAP configurations (current mode: {config.execution_mode})',
             'command': ''
         }), 400
     
@@ -860,15 +897,14 @@ def config_remove_container(config_id):
 @login_required
 @admin_required
 def config_container_status(config_id):
-    """Get status of ZAP Docker container for a local configuration"""
-    
+    """Get status of ZAP Docker container for a server ZAP configuration"""
+
     config = ZapConfiguration.query.get_or_404(config_id)
-    
-    # Only allow for local mode
-    if config.execution_mode != 'local':
+
+    if config.execution_mode != 'server':
         return jsonify({
             'status': 'not_applicable',
-            'message': 'Container status only available for local mode',
+            'message': 'Container status is only available for Server ZAP configurations',
             'command': ''
         })
     
@@ -895,15 +931,14 @@ def config_container_status(config_id):
 @login_required
 @admin_required
 def config_container_logs(config_id):
-    """Get logs from ZAP Docker container for a local configuration"""
-    
+    """Get logs from ZAP Docker container for a server ZAP configuration"""
+
     config = ZapConfiguration.query.get_or_404(config_id)
-    
-    # Only allow for local mode
-    if config.execution_mode != 'local':
+
+    if config.execution_mode != 'server':
         return jsonify({
             'success': False,
-            'message': 'Container logs only available for local mode',
+            'message': 'Container logs are only available for Server ZAP configurations',
             'logs': '',
             'command': ''
         }), 400

@@ -79,6 +79,7 @@ def dashboard():
     
     # Count configs by execution mode
     local_configs = ZapConfiguration.query.filter_by(execution_mode='local').count()
+    server_configs = ZapConfiguration.query.filter_by(execution_mode='server').count()
     remote_configs = ZapConfiguration.query.filter_by(execution_mode='remote').count()
     cloud_configs = ZapConfiguration.query.filter_by(execution_mode='cloud').count()
     auto_configs = ZapConfiguration.query.filter_by(execution_mode='auto').count()
@@ -144,6 +145,7 @@ def dashboard():
                 'active': active_configs,
                 'by_mode': {
                     'local': local_configs,
+                    'server': server_configs,
                     'remote': remote_configs,
                     'cloud': cloud_configs,
                     'auto': auto_configs

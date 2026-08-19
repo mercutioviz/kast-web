@@ -53,6 +53,33 @@
                             <small class="form-text text-muted">Select how ZAP will be executed</small>
                         </div>
 
+                        <!-- Spider Type -->
+                        <div class="mb-3">
+                            {{ form.spider_type.label(class="form-label") }}
+                            {{ form.spider_type(class="form-select") }}
+                            <small class="form-text text-muted">
+                                Traditional is recommended for Ephemeral Docker; AJAX/Client require a browser in the container.
+                            </small>
+                        </div>
+
+                        <!-- Poll Interval -->
+                        <div class="mb-3">
+                            {{ form.poll_interval_seconds.label(class="form-label") }}
+                            {{ form.poll_interval_seconds(class="form-control") }}
+                            <small class="form-text text-muted">
+                                How often kast checks ZAP progress during a scan. Default: 30s. Range: 5–300s.
+                            </small>
+                        </div>
+
+                        <!-- Scan Profile -->
+                        <div class="mb-3">
+                            {{ form.zap_profile.label(class="form-label") }}
+                            {{ form.zap_profile(class="form-select") }}
+                            <small class="form-text text-muted">
+                                Selects a kast built-in scan profile. Ignored when a custom automation plan is attached to the scan.
+                            </small>
+                        </div>
+
                         <!-- Status Checkboxes -->
                         <div class="row">
                             <div class="col-md-6">
@@ -71,10 +98,10 @@
                     </div>
                 </div>
 
-                <!-- Local Docker Configuration -->
-                <div class="card mb-4 mode-config" id="local-config" style="display: none;">
+                <!-- Docker Configuration (shared: Ephemeral Docker + Server ZAP) -->
+                <div class="card mb-4 mode-config" id="docker-config" style="display: none;">
                     <div class="card-header">
-                        <h5 class="mb-0"><i class="fas fa-laptop"></i> Local Docker Configuration</h5>
+                        <h5 class="mb-0" id="docker-config-title"><i class="fas fa-laptop"></i> Docker Configuration</h5>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
@@ -93,9 +120,26 @@
                                 <small class="form-text text-muted">e.g., 2g, 512m</small>
                             </div>
                         </div>
-                        <div class="form-check mb-3">
-                            {{ form.docker_auto_remove(class="form-check-input") }}
-                            {{ form.docker_auto_remove.label(class="form-check-label") }}
+
+                        <!-- auto_remove: Ephemeral Docker only -->
+                        <div id="auto-remove-section" style="display: none;">
+                            <div class="form-check mb-3">
+                                {{ form.docker_auto_remove(class="form-check-input") }}
+                                {{ form.docker_auto_remove.label(class="form-check-label") }}
+                            </div>
+                        </div>
+
+                        <!-- API key: Server ZAP only -->
+                        <div id="server-apikey-section" style="display: none;">
+                            <div class="mb-3">
+                                {{ form.server_api_key.label(class="form-label") }}
+                                {{ form.server_api_key(class="form-control", id="server-apikey-input", placeholder="kast-local") }}
+                                {% if mode == 'edit' %}
+                                <small class="form-text text-muted">Leave blank to keep existing API key</small>
+                                {% else %}
+                                <small class="form-text text-muted">API key used by kast to connect to this container. Must match the key the container was started with.</small>
+                                {% endif %}
+                            </div>
                         </div>
 
                         <!-- Docker Command Preview -->
@@ -109,17 +153,17 @@
                                 </button>
                             </div>
                             <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 300px; overflow-x: auto;"><code id="docker-command-preview">Loading...</code></pre>
-                            <small class="text-muted d-block mt-2">
+                            <small class="text-muted d-block mt-2" id="docker-preview-hint">
                                 <i class="fas fa-info-circle"></i> This is the exact command that will be executed when starting the container
                             </small>
                         </div>
                     </div>
                 </div>
 
-                <!-- Remote Configuration -->
+                <!-- External ZAP Configuration -->
                 <div class="card mb-4 mode-config" id="remote-config" style="display: none;">
                     <div class="card-header">
-                        <h5 class="mb-0"><i class="fas fa-network-wired"></i> Remote ZAP Configuration</h5>
+                        <h5 class="mb-0"><i class="fas fa-network-wired"></i> External ZAP Configuration</h5>
                     </div>
                     <div class="card-body">
                         <div class="mb-3">
@@ -159,7 +203,7 @@
                             </div>
                             <pre class="bg-dark text-light p-3 rounded mb-0" style="font-size: 0.85rem; max-height: 300px; overflow-x: auto;"><code id="remote-connection-preview">Loading...</code></pre>
                             <small class="text-muted d-block mt-2">
-                                <i class="fas fa-info-circle"></i> Example API endpoint that will be used to communicate with the remote ZAP instance
+                                <i class="fas fa-info-circle"></i> Example API endpoint that will be used to communicate with the external ZAP instance
                             </small>
                         </div>
                     </div>
@@ -354,17 +398,36 @@
                         <h6 class="mb-0"><i class="fas fa-info-circle"></i> Execution Modes</h6>
                     </div>
                     <div class="card-body">
-                        <h6><i class="fas fa-laptop"></i> Local (Docker)</h6>
-                        <p class="small">Runs ZAP in a Docker container on the same machine. Requires Docker to be installed and running.</p>
+                        <h6><i class="fas fa-laptop"></i> Ephemeral Docker</h6>
+                        <p class="small">kast launches a fresh ZAP Docker container for each scan and tears it down on completion. Requires Docker on the kast-web host.</p>
 
-                        <h6 class="mt-3"><i class="fas fa-network-wired"></i> Remote</h6>
-                        <p class="small">Connects to an existing ZAP instance running elsewhere. Useful for dedicated ZAP servers.</p>
+                        <h6 class="mt-3"><i class="fas fa-server"></i> Server ZAP</h6>
+                        <p class="small">kast-web manages a persistent ZAP Docker container on this host. Use Start/Stop/Status from the configs list to control the container. kast connects to it as a remote ZAP server.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-network-wired"></i> External ZAP</h6>
+                        <p class="small">Connects to a pre-running ZAP API server at an external host. Supply the URL and API key.</p>
 
                         <h6 class="mt-3"><i class="fas fa-cloud"></i> Cloud</h6>
                         <p class="small">Launches temporary ZAP instances in cloud providers (AWS, GCP, Azure). Requires cloud credentials and Terraform.</p>
 
                         <h6 class="mt-3"><i class="fas fa-magic"></i> Auto</h6>
                         <p class="small">Automatically selects the best available method based on environment.</p>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-spider"></i> Spider Types</h6>
+                    </div>
+                    <div class="card-body">
+                        <h6><i class="fas fa-bolt"></i> Traditional</h6>
+                        <p class="small">Fast HTTP spider. No JavaScript. Best for Ephemeral Docker scans.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-browser"></i> AJAX</h6>
+                        <p class="small">Firefox/Selenium-based. JavaScript-aware. Requires a browser in the ZAP container.</p>
+
+                        <h6 class="mt-3"><i class="fas fa-laptop-code"></i> Client</h6>
+                        <p class="small">Playwright-based. JavaScript-aware. Requires a browser in the ZAP container.</p>
                     </div>
                 </div>
 
@@ -406,9 +469,13 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const modeSelect = document.getElementById('execution-mode-select');
-    const localConfig = document.getElementById('local-config');
+    const dockerConfig = document.getElementById('docker-config');
+    const localConfig = dockerConfig;  // alias for legacy MutationObserver references
     const remoteConfig = document.getElementById('remote-config');
     const cloudConfig = document.getElementById('cloud-config');
+    const autoRemoveSection = document.getElementById('auto-remove-section');
+    const serverApikeySection = document.getElementById('server-apikey-section');
+    const dockerConfigTitle = document.getElementById('docker-config-title');
     const cloudProviderSelect = document.getElementById('cloud_provider');
     const awsConfig = document.getElementById('aws-config');
     const azureConfig = document.getElementById('azure-config');
@@ -435,13 +502,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const remoteConnectionPreview = document.getElementById('remote-connection-preview');
     const copyRemoteDetailsBtn = document.getElementById('copy-remote-details-btn');
     
+    const serverApiKeyInput = document.getElementById('server-apikey-input');
+
     // Build Docker command preview
     function buildDockerCommand() {
         const image = dockerImageInput?.value || 'ghcr.io/zaproxy/zaproxy:stable';
         const port = dockerPortInput?.value || '8080';
         const memory = dockerMemoryInput?.value || '2g';
         const containerName = 'kast-zap-local';
-        const apiKey = 'kast-local';
+        const mode = modeSelect?.value || 'local';
+        const apiKey = (mode === 'server' && serverApiKeyInput?.value)
+            ? serverApiKeyInput.value
+            : 'kast-local';
         
         const command = `docker run -d \\
   --name ${containerName} \\
@@ -602,15 +674,21 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
     // Update execution mode visibility
     function updateModeVisibility() {
         const mode = modeSelect.value;
-        
-        // Hide all mode configs
-        localConfig.style.display = 'none';
+
+        dockerConfig.style.display = 'none';
         remoteConfig.style.display = 'none';
         cloudConfig.style.display = 'none';
-        
-        // Show relevant section
-        if (mode === 'local') {
-            localConfig.style.display = 'block';
+
+        if (mode === 'local' || mode === 'server') {
+            dockerConfig.style.display = 'block';
+            autoRemoveSection.style.display = mode === 'local' ? 'block' : 'none';
+            serverApikeySection.style.display = mode === 'server' ? 'block' : 'none';
+            if (dockerConfigTitle) {
+                dockerConfigTitle.innerHTML = mode === 'server'
+                    ? '<i class="fas fa-server"></i> Server ZAP Configuration'
+                    : '<i class="fas fa-laptop"></i> Ephemeral Docker Configuration';
+            }
+            updateDockerCommandPreview();
         } else if (mode === 'remote') {
             remoteConfig.style.display = 'block';
         } else if (mode === 'cloud') {
@@ -873,6 +951,9 @@ ${baseUrl}JSON/core/action/fileUpload/?apikey=${apiKey === '' ? '[API_KEY]' : ap
     }
     
     // Remote connection preview event listeners
+    if (serverApiKeyInput) {
+        serverApiKeyInput.addEventListener('input', updateDockerCommandPreview);
+    }
     if (remoteUrlInput) {
         remoteUrlInput.addEventListener('input', updateRemoteConnectionPreview);
     }
@@ -1123,7 +1204,7 @@ gcloud compute instances create kast-zap-vm \\
     // Update previews based on current mode - use setTimeout to ensure DOM is ready
     setTimeout(() => {
         const initialMode = modeSelect.value;
-        if (initialMode === 'local') {
+        if (initialMode === 'local' || initialMode === 'server') {
             updateDockerCommandPreview();
         } else if (initialMode === 'remote') {
             updateRemoteConnectionPreview();

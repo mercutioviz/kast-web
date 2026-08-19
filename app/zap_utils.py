@@ -760,7 +760,7 @@ def start_zap_container(config: Dict[str, Any], config_id: int) -> Tuple[bool, s
         image = config.get('docker_image', 'ghcr.io/zaproxy/zaproxy:stable')
         port = config.get('port', 8080)
         memory = config.get('memory_limit', '2g')
-        api_key = 'kast-local'  # Match the API key used in remote mode
+        api_key = config.get('api_key', 'kast-local')
         
         # Check if container already exists
         check_cmd = ['docker', 'ps', '-a', '--filter', f'name={container_name}', '--format', '{{.Names}}']

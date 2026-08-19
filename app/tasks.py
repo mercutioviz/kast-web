@@ -232,14 +232,53 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
             config = zap_config_to_use
             from app.encryption import decrypt_json
             
-            # Cloud mode is handled by kast-web; kast receives remote mode
-            effective_execution_mode = 'remote' if config.execution_mode == 'cloud' else config.execution_mode
+            # Cloud and server modes are managed by kast-web; kast receives remote mode
+            effective_execution_mode = 'remote' if config.execution_mode in ('cloud', 'server') else config.execution_mode
             cmd.extend(['--set', f'zap.execution_mode={effective_execution_mode}'])
             zap_set_args.append(f'zap.execution_mode={effective_execution_mode}')
             current_app.logger.info(f"[1] --set zap.execution_mode={effective_execution_mode}")
-            
+
+            # Spider type — controls which spider the automation plan uses at runtime
+            spider_type = getattr(config, 'spider_type', None) or 'traditional'
+            arg = f'zap.spider_type={spider_type}'
+            cmd.extend(['--set', arg])
+            zap_set_args.append(arg)
+            current_app.logger.info(f"[{len(zap_set_args)}] --set {arg}")
+
+            # Poll interval — how often kast writes progress snapshots during scan monitoring
+            poll_interval_seconds = getattr(config, 'poll_interval_seconds', None) or 30
+            arg = f'zap.zap_config.poll_interval_seconds={poll_interval_seconds}'
+            cmd.extend(['--set', arg])
+            zap_set_args.append(arg)
+            current_app.logger.info(f"[{len(zap_set_args)}] --set {arg}")
+
+            # Handle SERVER mode — kast-web manages a persistent container; kast connects as remote
+            if config.execution_mode == 'server' and config.local_config_encrypted:
+                try:
+                    server_config = decrypt_json(config.local_config_encrypted)
+                    arg_num = len(zap_set_args) + 1
+                    port = server_config.get('port', 8080)
+
+                    arg = f'zap.remote.api_url=http://localhost:{port}'
+                    cmd.extend(['--set', arg])
+                    zap_set_args.append(arg)
+                    current_app.logger.info(f"[{arg_num}] --set {arg}")
+                    arg_num += 1
+
+                    api_key = server_config.get('api_key', 'kast-local')
+                    if api_key:
+                        arg = f'zap.remote.api_key={api_key}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set zap.remote.api_key=***hidden***")
+                        arg_num += 1
+
+                    current_app.logger.info(f"Applied {len(zap_set_args) - 1} ZAP server configuration argument(s)")
+                except Exception as e:
+                    current_app.logger.error(f"Error decrypting ZAP server config: {e}")
+
             # Handle LOCAL mode configuration
-            if config.execution_mode == 'local' and config.local_config_encrypted:
+            elif config.execution_mode == 'local' and config.local_config_encrypted:
                 try:
                     local_config = decrypt_json(config.local_config_encrypted)
                     arg_num = len(zap_set_args) + 1
@@ -251,13 +290,20 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
                         current_app.logger.info(f"[{arg_num}] --set {arg}")
                         arg_num += 1
                     
-                    if 'docker_port' in local_config and local_config['docker_port']:
-                        arg = f'zap.local.api_port={local_config["docker_port"]}'
+                    if 'port' in local_config and local_config['port']:
+                        arg = f'zap.local.api_port={local_config["port"]}'
                         cmd.extend(['--set', arg])
                         zap_set_args.append(arg)
                         current_app.logger.info(f"[{arg_num}] --set {arg}")
                         arg_num += 1
                     
+                    if 'memory_limit' in local_config and local_config['memory_limit']:
+                        arg = f'zap.local.memory_limit={local_config["memory_limit"]}'
+                        cmd.extend(['--set', arg])
+                        zap_set_args.append(arg)
+                        current_app.logger.info(f"[{arg_num}] --set {arg}")
+                        arg_num += 1
+
                     if 'auto_remove' in local_config:
                         arg = f'zap.local.cleanup_on_completion={str(local_config["auto_remove"]).lower()}'
                         cmd.extend(['--set', arg])
@@ -345,6 +391,10 @@ def execute_scan_task(self, scan_id, target, scan_mode, plugins=None, parallel=F
                 cmd.extend(['--set', arg])
                 zap_set_args.append(arg)
                 current_app.logger.info(f"[{len(zap_set_args)}] --set {arg}")
+            elif getattr(config, 'zap_profile', None):
+                # --zap-profile is a top-level flag, not a --set arg; only used when no custom plan
+                cmd.extend(['--zap-profile', config.zap_profile])
+                current_app.logger.info(f"--zap-profile {config.zap_profile}")
             
             # Log summary of all ZAP --set arguments
             current_app.logger.info("="*80)
@@ -1190,6 +1240,7 @@ def send_password_reset_email_task(self, user_id, raw_token, reset_url):
             action='password_reset_email_sent',
             resource_type='user',
             resource_id=user_id,
+            details=f'Reset email sent to {user.email}',
         )
     else:
         AuditLog.log(
@@ -1197,7 +1248,7 @@ def send_password_reset_email_task(self, user_id, raw_token, reset_url):
             action='password_reset_email_failed',
             resource_type='user',
             resource_id=user_id,
-            details=error,
+            details=error or 'Unknown SMTP error',
         )
     return {'success': success, 'error': error}
 

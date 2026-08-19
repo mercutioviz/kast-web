@@ -868,8 +868,9 @@ class ZapConfigurationForm(FlaskForm):
     execution_mode = SelectField(
         'Execution Mode',
         choices=[
-            ('local', 'Local Docker - Run ZAP in local Docker container'),
-            ('remote', 'Remote Instance - Connect to existing ZAP server'),
+            ('local', 'Ephemeral Docker - kast launches a fresh container per scan'),
+            ('server', 'Server ZAP - kast-web manages a persistent Docker container'),
+            ('remote', 'External ZAP - Connect to a pre-running ZAP API server'),
             ('cloud', 'Cloud - Run ZAP in cloud environment'),
             ('auto', 'Auto - Automatically select best available mode')
         ],
@@ -877,7 +878,44 @@ class ZapConfigurationForm(FlaskForm):
         validators=[DataRequired()],
         render_kw={'class': 'form-select'}
     )
-    
+
+    spider_type = SelectField(
+        'Spider Type',
+        choices=[
+            ('traditional', 'Traditional - Fast HTTP spider, no JavaScript (recommended for Ephemeral Docker)'),
+            ('ajax', 'AJAX - Firefox/Selenium-based, JavaScript-aware (requires browser in container)'),
+            ('client', 'Client - Playwright-based, JavaScript-aware (requires browser in container)'),
+        ],
+        default='traditional',
+        validators=[DataRequired()],
+        render_kw={'class': 'form-select'}
+    )
+
+    poll_interval_seconds = IntegerField(
+        'Poll Interval (seconds)',
+        default=30,
+        validators=[
+            Optional(),
+            NumberRange(min=5, max=300, message='Poll interval must be between 5 and 300 seconds')
+        ],
+        render_kw={'class': 'form-control', 'placeholder': '30'}
+    )
+
+    zap_profile = SelectField(
+        'Scan Profile',
+        choices=[
+            ('', 'Default (kast built-in standard)'),
+            ('quick', 'Quick - fast scan, limited coverage'),
+            ('standard', 'Standard - balanced coverage'),
+            ('thorough', 'Thorough - comprehensive, slow'),
+            ('api', 'API - optimized for REST APIs, no spider'),
+            ('passive', 'Passive - passive analysis only, no active attacks'),
+        ],
+        default='',
+        validators=[Optional()],
+        render_kw={'class': 'form-select'}
+    )
+
     # Local Docker configuration
     docker_image = StringField(
         'Docker Image',
@@ -920,7 +958,21 @@ class ZapConfigurationForm(FlaskForm):
         default=True,
         render_kw={'class': 'form-check-input'}
     )
-    
+
+    # Server ZAP API key — used by kast to connect to the persistent container
+    server_api_key = StringField(
+        'ZAP API Key',
+        validators=[
+            Optional(),
+            Length(max=200, message='API key must not exceed 200 characters')
+        ],
+        render_kw={
+            'placeholder': 'kast-local',
+            'class': 'form-control',
+            'type': 'password'
+        }
+    )
+
     # Remote configuration
     remote_url = StringField(
         'ZAP Server URL',

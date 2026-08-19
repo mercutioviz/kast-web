@@ -194,8 +194,9 @@
                 <div class="mb-2">
                     <small class="text-muted">Modes:</small>
                     <div class="d-flex justify-content-between mt-1">
-                        <span class="badge bg-info">Local: {{ stats.zap.configs.by_mode.local }}</span>
-                        <span class="badge bg-warning">Remote: {{ stats.zap.configs.by_mode.remote }}</span>
+                        <span class="badge bg-info">Ephemeral: {{ stats.zap.configs.by_mode.local }}</span>
+                        <span class="badge bg-success">Server: {{ stats.zap.configs.by_mode.server }}</span>
+                        <span class="badge bg-warning">External: {{ stats.zap.configs.by_mode.remote }}</span>
                         <span class="badge bg-primary">Cloud: {{ stats.zap.configs.by_mode.cloud }}</span>
                         <span class="badge bg-secondary">Auto: {{ stats.zap.configs.by_mode.auto }}</span>
                     </div>
@@ -346,7 +347,7 @@
                                     <td><small>{{ log.timestamp.strftime('%H:%M:%S') }}</small></td>
                                     <td><small>{{ log.user.username }}</small></td>
                                     <td><span class="badge bg-info">{{ log.action }}</span></td>
-                                    <td><small>{{ log.details[:50] }}...</small></td>
+                                    <td><small>{{ (log.details or '')[:50] }}{% if log.details and log.details|length > 50 %}...{% endif %}</small></td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
