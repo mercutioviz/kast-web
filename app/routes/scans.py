@@ -193,14 +193,16 @@ def detail(scan_id):
             'plugin_name': plugin,
             'status': 'pending',
             'findings_count': 0,
-            'executed_at': None
+            'executed_at': None,
+            'started_at': None,
+            'duration_seconds': None
         }
-        
+
         # Check file existence to determine status
         if output_dir and output_dir.exists():
             processed_file = output_dir / f"{plugin}_processed.json"
             raw_file = output_dir / f"{plugin}.json"
-            
+
             if processed_file.exists():
                 # Plugin completed
                 plugin_data['status'] = 'completed'
@@ -208,9 +210,13 @@ def detail(scan_id):
                 if plugin in db_results:
                     plugin_data['findings_count'] = db_results[plugin].findings_count
                     plugin_data['executed_at'] = db_results[plugin].executed_at
+                    plugin_data['started_at'] = db_results[plugin].started_at
+                    plugin_data['duration_seconds'] = db_results[plugin].duration_seconds
             elif raw_file.exists():
                 # Plugin in progress
                 plugin_data['status'] = 'in_progress'
+                if plugin in db_results:
+                    plugin_data['started_at'] = db_results[plugin].started_at
             # else: status remains 'pending'
         
         plugin_statuses.append(plugin_data)

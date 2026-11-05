@@ -268,10 +268,21 @@ class ScanResult(db.Model):
     processed_output_path = db.Column(db.String(500))
     error_message = db.Column(db.Text)
     executed_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    # Set the first time this plugin is observed running (file-existence poll in
+    # get_scan_status). NULL for rows never seen in progress before completion,
+    # and for historical rows created before this column existed.
+    started_at = db.Column(db.DateTime, nullable=True)
+
     def __repr__(self):
         return f'<ScanResult {self.id}: {self.plugin_name} ({self.status})>'
-    
+
+    @property
+    def duration_seconds(self):
+        """Seconds between observed start and finish, or None if either is unknown."""
+        if self.started_at and self.executed_at:
+            return (self.executed_at - self.started_at).total_seconds()
+        return None
+
     def to_dict(self):
         """Convert result to dictionary"""
         return {
@@ -283,7 +294,9 @@ class ScanResult(db.Model):
             'raw_output_path': self.raw_output_path,
             'processed_output_path': self.processed_output_path,
             'error_message': self.error_message,
-            'executed_at': self.executed_at.isoformat() if self.executed_at else None
+            'executed_at': self.executed_at.isoformat() if self.executed_at else None,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'duration_seconds': self.duration_seconds
         }
 
 

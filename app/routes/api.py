@@ -16,6 +16,22 @@ def _json_error(message, status_code):
     return jsonify({'error': message}), status_code
 
 
+def _ensure_plugin_started(scan_id, plugin_name):
+    """Find-or-create the ScanResult row for (scan_id, plugin_name) and stamp
+    started_at the first time this plugin is observed in progress. Returns the row.
+    """
+    from datetime import datetime
+
+    result = ScanResult.query.filter_by(scan_id=scan_id, plugin_name=plugin_name).first()
+    if result is None:
+        result = ScanResult(scan_id=scan_id, plugin_name=plugin_name, status='running')
+        db.session.add(result)
+    if result.started_at is None:
+        result.started_at = datetime.utcnow()
+        db.session.commit()
+    return result
+
+
 @bp.route('/scans', methods=['GET'])
 @login_required
 def get_scans():
@@ -152,7 +168,9 @@ def get_scan_status(scan_id):
             'plugin_name': plugin,
             'status': 'pending',
             'findings_count': 0,
-            'executed_at': None
+            'executed_at': None,
+            'started_at': None,
+            'duration_seconds': None
         }
         
         # Check file existence to determine status
@@ -181,6 +199,8 @@ def get_scan_status(scan_id):
                 if plugin in db_results:
                     plugin_status['findings_count'] = db_results[plugin]['findings_count']
                     plugin_status['executed_at'] = db_results[plugin]['executed_at']
+                    plugin_status['started_at'] = db_results[plugin]['started_at']
+                    plugin_status['duration_seconds'] = db_results[plugin]['duration_seconds']
                     logger.debug(f"  Database data: {db_results[plugin]['findings_count']} findings")
                 else:
                     logger.debug(f"  No database entry found for this plugin yet")
@@ -188,6 +208,8 @@ def get_scan_status(scan_id):
                 # Plugin in progress - check for any file indicating execution
                 # For ZAP, also check for the progress file
                 plugin_status['status'] = 'in_progress'
+                started = _ensure_plugin_started(scan.id, plugin)
+                plugin_status['started_at'] = started.started_at.isoformat() if started.started_at else None
                 if zap_progress_file and zap_progress_file.exists():
                     logger.debug(f"  Status: IN_PROGRESS (ZAP progress file found)")
                 else:
@@ -299,6 +321,53 @@ def get_scan_status(scan_id):
     # Add ZAP progress to response if available
     if zap_progress_data:
         response['zap_progress'] = zap_progress_data
+
+    # Check for related_sites (httpx) progress data
+    related_sites_progress_data = None
+    if 'related_sites' in plugin_list and output_dir and output_dir.exists():
+        progress_file = output_dir / 'related_sites_progress.json'
+        if progress_file.exists():
+            try:
+                with open(progress_file, 'r') as f:
+                    rs_data = json.load(f)
+                related_sites_progress_data = {
+                    'available': True,
+                    'phase': rs_data.get('phase', 'unknown'),
+                    'last_updated': rs_data.get('last_updated'),
+                    'total_subdomains': rs_data.get('total_subdomains'),
+                    'scanned_domain': rs_data.get('scanned_domain'),
+                    'ports': rs_data.get('ports'),
+                }
+                logger.debug(f"Related sites progress parsed: phase={related_sites_progress_data['phase']}")
+            except Exception as e:
+                logger.error(f"Error parsing related_sites progress file: {e}")
+                related_sites_progress_data = {'available': False, 'error': str(e)}
+
+    if related_sites_progress_data:
+        response['related_sites_progress'] = related_sites_progress_data
+
+    # Check for katana (crawl) progress data
+    katana_progress_data = None
+    if 'katana' in plugin_list and output_dir and output_dir.exists():
+        progress_file = output_dir / 'katana_progress.json'
+        if progress_file.exists():
+            try:
+                with open(progress_file, 'r') as f:
+                    katana_data = json.load(f)
+                katana_progress_data = {
+                    'available': True,
+                    'status': katana_data.get('status', 'unknown'),
+                    'urls_found': katana_data.get('urls_found', 0),
+                    'stalled_seconds': katana_data.get('stalled_seconds', 0),
+                    'last_updated': katana_data.get('last_updated'),
+                }
+                logger.debug(f"Katana progress parsed: status={katana_progress_data['status']}, urls={katana_progress_data['urls_found']}")
+            except Exception as e:
+                logger.error(f"Error parsing katana progress file: {e}")
+                katana_progress_data = {'available': False, 'error': str(e)}
+
+    if katana_progress_data:
+        response['katana_progress'] = katana_progress_data
     
     # Log summary of response
     status_summary = {}

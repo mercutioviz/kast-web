@@ -49,7 +49,7 @@ function updateScanStatus() {
             
             // Update plugin results
             if (data.results && data.results.length > 0) {
-                updatePluginResults(data.results);
+                updatePluginResults(data.results, data.related_sites_progress, data.katana_progress);
             }
             
             // If scan completed or failed, reload page to show all elements
@@ -64,7 +64,7 @@ function updateScanStatus() {
         });
 }
 
-function updatePluginResults(results) {
+function updatePluginResults(results, relatedSitesProgress, katanaProgress) {
     const tbody = document.getElementById('plugin-results-tbody');
     const resultsSection = document.getElementById('plugin-results-section');
     
@@ -104,6 +104,27 @@ function updatePluginResults(results) {
                 clickable = true;
                 statusClass = 'zap-progress-badge';
             }
+            // Show which phase related_sites (subfinder/httpx) is in
+            if (result.plugin_name === 'related_sites' && relatedSitesProgress && relatedSitesProgress.available) {
+                if (relatedSitesProgress.phase === 'enumerating') {
+                    statusText = 'Enumerating subdomains...';
+                } else if (relatedSitesProgress.phase === 'probing') {
+                    const total = relatedSitesProgress.total_subdomains;
+                    statusText = total ? `Probing ${total} subdomain(s) with httpx...` : 'Probing subdomains with httpx...';
+                } else if (relatedSitesProgress.phase === 'done') {
+                    statusText = 'Finalizing results...';
+                }
+            }
+            // Show crawl activity for katana (no known total — report count + stall signal)
+            if (result.plugin_name === 'katana' && katanaProgress && katanaProgress.available) {
+                const count = katanaProgress.urls_found || 0;
+                if (katanaProgress.status === 'stalled') {
+                    statusText = `Crawling — ${count} URL(s) found, no new URLs in ${katanaProgress.stalled_seconds}s`;
+                    statusBadge = 'bg-warning';
+                } else {
+                    statusText = `Crawling — ${count} URL(s) found...`;
+                }
+            }
         } else if (result.status === 'pending') {
             statusBadge = 'bg-secondary';
             statusText = 'Pending';
@@ -116,25 +137,53 @@ function updatePluginResults(results) {
         }
         
         const executedTime = result.executed_at ? new Date(result.executed_at).toLocaleTimeString() : 'N/A';
-        
+
+        let durationHTML = '<small class="text-muted">N/A</small>';
+        if (result.duration_seconds !== null && result.duration_seconds !== undefined) {
+            durationHTML = `<small>${formatDuration(result.duration_seconds)}</small>`;
+        } else if (result.status === 'in_progress' && result.started_at) {
+            // started_at is a naive UTC isoformat string (no offset) — append 'Z' so
+            // the browser's Date parser treats it as UTC instead of local time.
+            row.dataset.startedAt = result.started_at + 'Z';
+            durationHTML = '<small class="text-muted plugin-elapsed">&hellip;</small>';
+        }
+
         // Create badge with optional click handler
-        const badgeHTML = clickable 
+        const badgeHTML = clickable
             ? `<span class="badge ${statusBadge} ${statusClass}" style="cursor: pointer;" onclick="showZapProgress()" title="Click for detailed progress">
                 <span class="spinner-grow spinner-grow-sm me-1" role="status" aria-hidden="true"></span>
                 ${statusText}
                </span>`
             : `<span class="badge ${statusBadge}">${statusText}</span>`;
-        
+
         row.innerHTML = `
             <td><strong>${result.plugin_name}</strong></td>
             <td>${badgeHTML}</td>
             <td>${result.findings_count > 0 ? `<span class="badge bg-info">${result.findings_count}</span>` : '<span class="text-muted">0</span>'}</td>
             <td><small>${executedTime}</small></td>
+            <td class="plugin-duration-cell">${durationHTML}</td>
         `;
-        
+
         tbody.appendChild(row);
     });
 }
+
+// Tick every second: fill in elapsed time for plugins still running, computed
+// from data-started-at (set on rows via the started_at timestamp the server
+// records the first time a plugin is observed in progress).
+function tickPluginElapsed() {
+    document.querySelectorAll('tr[data-started-at]').forEach(row => {
+        const cell = row.querySelector('.plugin-elapsed');
+        if (!cell) return;
+        const startedAt = new Date(row.dataset.startedAt);
+        const elapsedSeconds = (Date.now() - startedAt.getTime()) / 1000;
+        if (elapsedSeconds >= 0) {
+            cell.textContent = formatDuration(elapsedSeconds);
+        }
+    });
+}
+setInterval(tickPluginElapsed, 1000);
+tickPluginElapsed();
 
 function startPolling() {
     // Poll every 3 seconds
@@ -614,14 +663,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <th>Status</th>
                                 <th>Findings</th>
                                 <th>Executed</th>
+                                <th>Duration</th>
                             </tr>
                         </thead>
                         <tbody id="plugin-results-tbody">
                             {% for result in results %}
-                                <tr>
+                                {% set status = result.status if result is mapping else result['status'] %}
+                                {% set started_at = result.started_at if result is mapping else result['started_at'] %}
+                                <tr{% if status == 'in_progress' and started_at %} class="plugin-row-live" data-started-at="{{ started_at.isoformat() }}Z"{% endif %}>
                                     <td><strong>{{ result.plugin_name if result is mapping else result['plugin_name'] }}</strong></td>
                                     <td>
-                                        {% set status = result.status if result is mapping else result['status'] %}
                                         {% if status == 'completed' %}
                                             <span class="badge bg-success">Completed</span>
                                         {% elif status == 'in_progress' %}
@@ -648,12 +699,22 @@ document.addEventListener('DOMContentLoaded', function() {
                                         {% set executed = result.executed_at if result is mapping else result['executed_at'] %}
                                         <small>{{ executed.strftime('%H:%M:%S') if executed else 'N/A' }}</small>
                                     </td>
+                                    <td class="plugin-duration-cell">
+                                        {% set duration = result.duration_seconds if result is mapping else result['duration_seconds'] %}
+                                        {% if duration is not none %}
+                                            <small>{{ format_duration(duration) }}</small>
+                                        {% elif status == 'in_progress' and started_at %}
+                                            <small class="text-muted plugin-elapsed">&hellip;</small>
+                                        {% else %}
+                                            <small class="text-muted">N/A</small>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 {% if status == 'fail' %}
                                     {% set error_msg = result.error_message if result is mapping else result.get('error_message') %}
                                     {% if error_msg %}
                                     <tr class="table-danger">
-                                        <td colspan="4" class="px-4">
+                                        <td colspan="5" class="px-4">
                                             <small>
                                                 <i class="bi bi-exclamation-triangle text-danger"></i>
                                                 <strong>Error:</strong> {{ error_msg }}
