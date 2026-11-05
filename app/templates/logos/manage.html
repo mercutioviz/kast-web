@@ -31,25 +31,40 @@
                             <div class="card h-100 {% if logo.is_default %}border-primary{% endif %}">
                                 <div class="card-header d-flex justify-content-between align-items-center">
                                     <strong>{{ logo.name }}</strong>
-                                    {% if logo.is_default %}
-                                    <span class="badge bg-primary">System Default</span>
-                                    {% endif %}
+                                    <span>
+                                        <span class="badge bg-secondary">{{ logo.format_label }}</span>
+                                        {% if logo.is_default %}
+                                        <span class="badge bg-primary">System Default</span>
+                                        {% endif %}
+                                    </span>
                                 </div>
                                 <div class="card-body text-center">
-                                    <img src="{{ url_for('logos.view', logo_id=logo.id) }}" 
-                                         alt="{{ logo.name }}" 
-                                         class="img-fluid mb-3" 
+                                    <img src="{{ url_for('logos.view_render', logo_id=logo.id) }}"
+                                         alt="{{ logo.name }}"
+                                         class="img-fluid mb-3"
                                          style="max-height: 150px; object-fit: contain;">
-                                    
+
                                     {% if logo.description %}
                                     <p class="text-muted small">{{ logo.description }}</p>
                                     {% endif %}
-                                    
+
                                     <div class="small text-muted">
                                         <div><strong>File:</strong> {{ logo.filename }}</div>
-                                        <div><strong>Size:</strong> {{ logo.file_size|filesizeformat }}</div>
+                                        <div>
+                                            <strong>Size:</strong> {{ logo.file_size|filesizeformat }}
+                                            {% if logo.width and logo.height %}
+                                            ({{ logo.width }} x {{ logo.height }} px)
+                                            {% endif %}
+                                        </div>
                                         <div><strong>Uploaded by:</strong> {{ logo.uploader_username }}</div>
                                         <div><strong>Used by:</strong> {{ logo.usage_count }} scan(s)</div>
+                                        {% if logo.is_normalized %}
+                                        <div class="mt-1">
+                                            <i class="fas fa-info-circle"></i>
+                                            {{ logo.format_label }} converted to PNG for reports
+                                            (<a href="{{ url_for('logos.view', logo_id=logo.id) }}">original</a>)
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 </div>
                                 <div class="card-footer">
@@ -119,15 +134,19 @@
                     
                     <div class="mb-3">
                         <label for="logo_file" class="form-label">Logo File *</label>
-                        <input type="file" class="form-control" id="logo_file" name="logo_file" 
-                               accept=".png,.jpg,.jpeg" required>
+                        <input type="file" class="form-control" id="logo_file" name="logo_file"
+                               accept="{{ accept_attribute }}" required>
                         <div class="form-text">
-                            <i class="fas fa-info-circle"></i> Accepted formats: PNG, JPG, JPEG. Maximum size: 2MB.
+                            <i class="fas fa-info-circle"></i> Accepted formats: {{ supported_formats }}.
+                            Maximum size: {{ max_upload_mb }}MB.
                         </div>
                     </div>
-                    
+
                     <div class="alert alert-info small mb-0">
-                        <strong>Tip:</strong> For best results, use a PNG file with a transparent background and dimensions around 200x60 pixels.
+                        <strong>Tip:</strong> SVG gives the sharpest result in PDF reports at any size.
+                        For raster logos, use a PNG with a transparent background around 200x60 pixels.
+                        WebP, AVIF, GIF, BMP, TIFF and ICO uploads are converted to PNG automatically
+                        for use in reports; the original is kept here.
                     </div>
                 </div>
                 <div class="modal-footer">

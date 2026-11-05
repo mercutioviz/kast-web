@@ -345,6 +345,39 @@ Smoke +:
 - **Expect:** file lands in uploads dir; set-default updates flag; delete removes both row and file
 - **Evidence:** filesystem; DB
 
+### TC-LOGO-102 — multi-format upload
+- **Role:** t_admin
+- **Steps:** /logos → upload one file per format: SVG, WebP, AVIF, GIF, BMP, TIFF, ICO
+- **Expect:** each upload succeeds; card shows the matching format badge and pixel
+  dimensions; raster formats other than PNG/JPEG show the "converted to PNG for reports"
+  note and write a file into `app/static/uploads/logos/render/`; SVG and PNG do not
+- **Evidence:** filesystem; DB (`render_path`, `render_mime`); screenshot of /logos
+
+### TC-LOGO-103 — SVG sanitization
+- **Role:** t_admin
+- **Steps:** upload an SVG containing `<script>`, an `onload=` attribute, an external
+  `xlink:href` and a `javascript:` href; then GET /logos/<id>
+- **Expect:** upload succeeds; the file on disk contains none of those constructs;
+  response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff` and
+  `Content-Disposition: inline`
+- **Evidence:** file contents; response headers
+
+### TC-LOGO-104 — upload rejections
+- **Role:** t_admin
+- **Steps:** upload (a) a PNG renamed to `.webp`, (b) a ZIP renamed to `.png`,
+  (c) an `.eps` file, (d) a file over 5MB
+- **Expect:** each is rejected with a specific flash message; no row created; no file
+  left in the uploads or render directories
+- **Evidence:** flash text; filesystem
+
+### TC-LOGO-105 — logo reaches the report
+- **Role:** t_admin
+- **Steps:** set an SVG logo as default → run a passive scan → inspect worker log for
+  `--logo`; open the PDF and HTML report
+- **Expect:** `--logo` points at the sanitized `.svg`; both reports display it. Repeat
+  with a WebP default and confirm `--logo` points into `logos/render/*.png`
+- **Evidence:** worker log; rendered report
+
 ### TC-LOGO-101 — uploader-vs-admin delete permissions
 - **Role:** t_user (uploader), t_user2 (other)
 - **Steps:** t_user uploads; t_user2 attempts delete (negative); t_user deletes own (positive); t_admin deletes someone else's (positive)

@@ -7,11 +7,41 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
+from app.logo_media import accept_attribute, format_list_text
 from app.models import ReportLogo, SystemSettings, AuditLog
-from app.utils import save_logo_file, delete_logo_file, get_scan_logo_usage_count
+from app.utils import (
+    save_logo_file,
+    delete_logo_file,
+    get_scan_logo_usage_count,
+    get_logo_max_upload_bytes,
+)
 from pathlib import Path
 
 bp = Blueprint('logos', __name__, url_prefix='/logos')
+
+# Uploaded logos are served from our own origin and SVG is an active document
+# format. Sanitization happens at upload time; this CSP is the second layer,
+# neutering anything that reaches a browser by direct navigation.
+LOGO_SECURITY_HEADERS = {
+    'Content-Security-Policy': (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+        "sandbox; base-uri 'none'; form-action 'none'"
+    ),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+}
+
+
+def _send_logo(path, mime_type, download_name):
+    """Send a logo file with hardened response headers."""
+    response = send_file(
+        path,
+        mimetype=mime_type or 'application/octet-stream',
+        download_name=download_name,
+    )
+    response.headers.update(LOGO_SECURITY_HEADERS)
+    response.headers['Content-Disposition'] = f'inline; filename="{download_name}"'
+    return response
 
 
 @bp.route('/manage')
@@ -33,8 +63,14 @@ def manage():
         logo_dict['is_default'] = (logo.id == int(default_logo_id)) if default_logo_id else False
         logo_dict['can_delete'] = current_user.is_admin or logo.uploaded_by == current_user.id
         logo_data.append(logo_dict)
-    
-    return render_template('logos/manage.html', logos=logo_data)
+
+    return render_template(
+        'logos/manage.html',
+        logos=logo_data,
+        accept_attribute=accept_attribute(),
+        supported_formats=format_list_text(),
+        max_upload_mb=get_logo_max_upload_bytes() // (1024 * 1024),
+    )
 
 
 @bp.route('/upload', methods=['POST'])
@@ -69,18 +105,25 @@ def upload():
         file_path=result['file_path'],
         mime_type=result['mime_type'],
         file_size=result['file_size'],
+        render_path=result['render_path'],
+        render_mime=result['render_mime'],
+        width=result['width'],
+        height=result['height'],
         uploaded_by=current_user.id
     )
     db.session.add(logo)
     db.session.commit()
-    
+
     # Log the action
     AuditLog.log(
         user_id=current_user.id,
         action='logo_uploaded',
         resource_type='logo',
         resource_id=logo.id,
-        details=f'Uploaded logo: {name}'
+        details=(
+            f'Uploaded logo: {name} '
+            f'(format: {result["format_label"]}, reports use: {result["render_mime"]})'
+        )
     )
     
     flash(f'Logo "{name}" uploaded successfully', 'success')
@@ -90,16 +133,39 @@ def upload():
 @bp.route('/<int:logo_id>')
 @login_required
 def view(logo_id):
-    """View/download a logo file"""
+    """View/download the original uploaded logo file"""
     logo = db.session.get(ReportLogo, logo_id)
     if not logo:
         abort(404)
-    
+
     file_path = Path(logo.file_path)
     if not file_path.exists():
         abort(404)
-    
-    return send_file(file_path, mimetype=logo.mime_type)
+
+    return _send_logo(file_path, logo.mime_type, logo.filename)
+
+
+@bp.route('/<int:logo_id>/render')
+@login_required
+def view_render(logo_id):
+    """
+    View the render derivative - the exact file reports will embed.
+
+    Falls back to the original for rows predating multi-format support.
+    """
+    logo = db.session.get(ReportLogo, logo_id)
+    if not logo:
+        abort(404)
+
+    render_path = Path(logo.render_path) if logo.render_path else None
+    if not render_path or not render_path.exists():
+        return redirect(url_for('logos.view', logo_id=logo_id))
+
+    return _send_logo(
+        render_path,
+        logo.render_mime or logo.mime_type,
+        render_path.name,
+    )
 
 
 @bp.route('/<int:logo_id>/delete', methods=['POST'])
@@ -130,13 +196,14 @@ def delete(logo_id):
     
     logo_name = logo.name
     file_path = logo.file_path
-    
+    render_path = logo.render_path
+
     # Delete from database first
     db.session.delete(logo)
     db.session.commit()
-    
-    # Then delete file from filesystem
-    delete_logo_file(file_path)
+
+    # Then delete the original and its render derivative from the filesystem
+    delete_logo_file(file_path, render_path)
     
     # Log the action
     AuditLog.log(
@@ -199,6 +266,7 @@ def api_list():
             'name': logo.name,
             'description': logo.description,
             'uploaded_by': logo.uploader.username if logo.uploader else 'Unknown',
+            'format_label': logo.format_label,
             'is_default': (logo.id == int(default_logo_id)) if default_logo_id else False
         }
         logo_list.append(logo_dict)

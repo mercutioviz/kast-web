@@ -18,6 +18,10 @@ requests==2.31.0
 paramiko>=3.0.0
 anthropic>=0.40.0
 
+# Report logo handling (format validation, normalization, SVG sanitization)
+Pillow>=11.0.0
+defusedxml>=0.7.1
+
 # Testing (dev only; not in requirements-production.txt)
 pytest==8.3.4
 pytest-flask==1.3.0

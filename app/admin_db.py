@@ -187,7 +187,8 @@ class ScanShareModelView(SecureModelView):
 class ReportLogoModelView(SecureModelView):
     """Report logo table view"""
     
-    column_list = ['id', 'name', 'filename', 'mime_type', 'file_size', 'uploaded_by', 'uploaded_at']
+    column_list = ['id', 'name', 'filename', 'mime_type', 'render_mime', 'file_size',
+                   'width', 'height', 'uploaded_by', 'uploaded_at']
     column_searchable_list = ['name', 'filename', 'description']
     column_filters = ['mime_type', 'uploaded_by', 'uploaded_at']
     column_sortable_list = ['id', 'name', 'filename', 'file_size', 'uploaded_at']

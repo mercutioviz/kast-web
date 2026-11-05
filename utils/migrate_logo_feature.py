@@ -86,6 +86,9 @@ def migrate():
                     file_path=str(default_logo_path),
                     mime_type='image/png',
                     file_size=file_size,
+                    # PNG needs no conversion: reports use the original file
+                    render_path=str(default_logo_path),
+                    render_mime='image/png',
                     uploaded_by=admin_user.id,
                     uploaded_at=datetime.utcnow()
                 )

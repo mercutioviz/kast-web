@@ -420,15 +420,32 @@ class ReportLogo(db.Model):
     file_path = db.Column(db.String(500), nullable=False)
     mime_type = db.Column(db.String(100), nullable=False)
     file_size = db.Column(db.Integer)
+    # Render derivative: the PNG or sanitized SVG handed to the kast CLI.
+    # NULL for rows predating multi-format support (fall back to file_path).
+    render_path = db.Column(db.String(500), nullable=True)
+    render_mime = db.Column(db.String(100), nullable=True)
+    width = db.Column(db.Integer, nullable=True)
+    height = db.Column(db.Integer, nullable=True)
     uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     # Relationship
     uploader = db.relationship('User', backref='uploaded_logos')
-    
+
     def __repr__(self):
         return f'<ReportLogo {self.id}: {self.name}>'
-    
+
+    @property
+    def format_label(self):
+        """Short display label for the uploaded format (PNG, SVG, WebP...)"""
+        from app.logo_media import format_label
+        return format_label(self.mime_type, self.filename)
+
+    @property
+    def is_normalized(self):
+        """True when reports use a converted copy rather than the original"""
+        return bool(self.render_path) and self.render_path != self.file_path
+
     def to_dict(self):
         """Convert logo to dictionary"""
         return {
@@ -439,6 +456,12 @@ class ReportLogo(db.Model):
             'file_path': self.file_path,
             'mime_type': self.mime_type,
             'file_size': self.file_size,
+            'render_path': self.render_path,
+            'render_mime': self.render_mime,
+            'width': self.width,
+            'height': self.height,
+            'format_label': self.format_label,
+            'is_normalized': self.is_normalized,
             'uploaded_by': self.uploaded_by,
             'uploader_username': self.uploader.username if self.uploader else None,
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None

@@ -288,38 +288,54 @@ def format_duration(seconds):
 # LOGO WHITE-LABELING UTILITIES
 # ============================================================================
 
+def get_logo_max_upload_bytes():
+    """Maximum accepted logo upload size, in bytes."""
+    from app.logo_media import DEFAULT_MAX_UPLOAD_BYTES
+    return current_app.config.get('LOGO_MAX_UPLOAD_BYTES', DEFAULT_MAX_UPLOAD_BYTES)
+
+
+def get_logo_max_dimension():
+    """Longest-edge cap, in pixels, applied to normalized raster logos."""
+    from app.logo_media import DEFAULT_MAX_DIMENSION
+    return current_app.config.get('LOGO_MAX_DIMENSION', DEFAULT_MAX_DIMENSION)
+
+
 def validate_logo_file(file):
     """
-    Validate uploaded logo file
-    
+    Validate uploaded logo file (name, extension and size)
+
+    Content verification (magic bytes, decodability, SVG sanitization) happens
+    in save_logo_file, which has the full file bytes.
+
     Args:
         file: FileStorage object from Flask request
-    
+
     Returns:
         tuple: (is_valid: bool, error_message: str or None)
     """
+    from app.logo_media import extension_of, format_for_extension, format_list_text
+
     # Check if file was actually uploaded
     if not file or file.filename == '':
         return (False, 'No file provided')
-    
-    # Check file extension
-    allowed_extensions = {'png', 'jpg', 'jpeg'}
-    filename = file.filename.lower()
-    if '.' not in filename or filename.rsplit('.', 1)[1] not in allowed_extensions:
-        return (False, 'Invalid file type. Only PNG, JPG, and JPEG files are allowed.')
-    
-    # Check file size (max 2MB)
+
+    # Check file extension against the supported-format registry
+    ext = extension_of(file.filename)
+    if not ext or format_for_extension(ext) is None:
+        return (False, f'Invalid file type. Supported formats: {format_list_text()}.')
+
+    # Check file size
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)  # Reset file pointer
-    
-    max_size = 2 * 1024 * 1024  # 2MB
+
+    max_size = get_logo_max_upload_bytes()
     if file_size > max_size:
-        return (False, f'File too large. Maximum size is {max_size / (1024 * 1024)}MB.')
-    
+        return (False, f'File too large. Maximum size is {max_size // (1024 * 1024)}MB.')
+
     if file_size == 0:
         return (False, 'File is empty.')
-    
+
     return (True, None)
 
 
@@ -357,107 +373,185 @@ def sanitize_filename(filename):
     return name_part + ext
 
 
+def get_logo_uploads_dir():
+    """Directory holding uploaded logo originals."""
+    return Path(current_app.root_path) / 'static' / 'uploads' / 'logos'
+
+
+def get_logo_render_dir():
+    """Directory holding the render derivative handed to the kast CLI."""
+    return get_logo_uploads_dir() / 'render'
+
+
 def save_logo_file(file, uploader_id):
     """
-    Save uploaded logo file to the uploads directory
-    
+    Save an uploaded logo and its render derivative to the uploads directory
+
+    The original is stored for provenance and re-download; the derivative is
+    always a format the kast report renderer embeds correctly (PNG or sanitized
+    SVG) and is what gets passed to the CLI via --logo.
+
     Args:
         file: FileStorage object from Flask request
         uploader_id: User ID who uploaded the file
-    
+
     Returns:
         tuple: (success: bool, result: dict or error_message: str)
-               result dict contains: {'file_path': str, 'filename': str, 'file_size': int, 'mime_type': str}
+               result dict contains: file_path, filename, file_size, mime_type,
+               render_path, render_mime, width, height, format_label
     """
     import uuid
-    
-    # Validate file
+
+    from app.logo_media import prepare_logo
+
+    # Validate file (name / extension / size)
     is_valid, error = validate_logo_file(file)
     if not is_valid:
         return (False, error)
-    
+
+    written = []
     try:
-        # Get uploads directory
-        uploads_dir = Path(current_app.root_path) / 'static' / 'uploads' / 'logos'
+        data = file.read()
+        file.seek(0)
+
+        # Content verification, SVG sanitization, raster normalization
+        try:
+            prepared = prepare_logo(
+                data,
+                file.filename,
+                max_dimension=get_logo_max_dimension(),
+            )
+        except ValueError as exc:
+            return (False, str(exc))
+
+        uploads_dir = get_logo_uploads_dir()
+        render_dir = get_logo_render_dir()
         uploads_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate unique filename
+        render_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate unique filename, forcing the extension to the stored format
+        # (SVGZ is stored decompressed and sanitized, so it becomes .svg)
         original_filename = sanitize_filename(file.filename)
-        unique_filename = f"{uuid.uuid4()}-{original_filename}"
-        file_path = uploads_dir / unique_filename
-        
-        # Save file
-        file.save(str(file_path))
-        
-        # Get file info
-        file_size = file_path.stat().st_size
-        
-        # Determine MIME type from extension
-        ext = original_filename.rsplit('.', 1)[1].lower()
-        mime_type = {
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg'
-        }.get(ext, 'image/png')
-        
+        stem = os.path.splitext(original_filename)[0] or 'logo'
+        original_filename = f"{stem}.{prepared['original_extension']}"
+
+        unique_id = uuid.uuid4()
+        file_path = uploads_dir / f"{unique_id}-{original_filename}"
+        file_path.write_bytes(prepared['original_bytes'])
+        written.append(file_path)
+
+        if prepared['render_bytes'] is prepared['original_bytes']:
+            render_path = file_path
+        else:
+            render_path = render_dir / f"{unique_id}.{prepared['render_extension']}"
+            render_path.write_bytes(prepared['render_bytes'])
+            written.append(render_path)
+
         return (True, {
             'file_path': str(file_path),
             'filename': original_filename,
-            'file_size': file_size,
-            'mime_type': mime_type
+            'file_size': file_path.stat().st_size,
+            'mime_type': prepared['mime'],
+            'render_path': str(render_path),
+            'render_mime': prepared['render_mime'],
+            'width': prepared['width'],
+            'height': prepared['height'],
+            'format_label': prepared['label'],
         })
-    
+
     except Exception as e:
+        # Never leave half-written files behind
+        for path in written:
+            try:
+                path.unlink()
+            except OSError:
+                pass
         current_app.logger.exception(f"Error saving logo file: {str(e)}")
         return (False, f"Error saving file: {str(e)}")
 
 
-def delete_logo_file(file_path):
+def delete_logo_file(*file_paths):
     """
-    Delete logo file from filesystem
-    
+    Delete logo files from the filesystem
+
     Args:
-        file_path: Path to logo file
-    
+        *file_paths: one or more paths (the original and, when distinct, its
+                     render derivative). None values are ignored.
+
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if at least one file was deleted
     """
-    try:
-        path = Path(file_path)
-        if path.exists() and path.is_file():
-            path.unlink()
-            return True
-        return False
-    except Exception as e:
-        current_app.logger.exception(f"Error deleting logo file {file_path}: {str(e)}")
-        return False
+    deleted = False
+    seen = set()
+
+    for file_path in file_paths:
+        if not file_path or str(file_path) in seen:
+            continue
+        seen.add(str(file_path))
+        try:
+            path = Path(file_path)
+            if path.exists() and path.is_file():
+                path.unlink()
+                deleted = True
+        except Exception as e:
+            current_app.logger.exception(
+                f"Error deleting logo file {file_path}: {str(e)}"
+            )
+
+    return deleted
+
+
+def get_render_path_for_logo(logo):
+    """
+    Path to the file that should be handed to the kast CLI for a logo
+
+    Prefers the render derivative (always PNG or sanitized SVG, both of which
+    kast embeds correctly) and falls back to the original for rows predating
+    the derivative columns.
+
+    Args:
+        logo: ReportLogo object
+
+    Returns:
+        str: Absolute path, or None if nothing on disk
+    """
+    if logo is None:
+        return None
+
+    for candidate in (getattr(logo, 'render_path', None), logo.file_path):
+        if candidate and Path(candidate).exists():
+            return candidate
+
+    return None
 
 
 def get_logo_for_scan(scan):
     """
     Get the logo path for a scan - either custom or system default
-    
+
     Args:
         scan: Scan object
-    
+
     Returns:
         str: Absolute path to logo file, or None if no logo found
     """
     from app.models import ReportLogo, SystemSettings
-    
+
     # First, try scan's custom logo
     if scan.logo_id:
         logo = ReportLogo.query.get(scan.logo_id)
-        if logo and Path(logo.file_path).exists():
-            return logo.file_path
-    
+        render_path = get_render_path_for_logo(logo)
+        if render_path:
+            return render_path
+
     # Fall back to system default logo
     default_logo_id = SystemSettings.get_setting('default_logo_id')
     if default_logo_id:
         default_logo = ReportLogo.query.get(int(default_logo_id))
-        if default_logo and Path(default_logo.file_path).exists():
-            return default_logo.file_path
-    
+        render_path = get_render_path_for_logo(default_logo)
+        if render_path:
+            return render_path
+
     # Last resort: use hardcoded default logo
     fallback_path = Path(current_app.root_path) / 'static' / 'images' / 'kast-logo.png'
     if fallback_path.exists():

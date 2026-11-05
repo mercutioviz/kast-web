@@ -78,6 +78,14 @@ class Config:
     # File upload
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
 
+    # Report logo uploads (see app/logo_media.py for the supported formats)
+    LOGO_MAX_UPLOAD_BYTES = int(
+        os.environ.get('LOGO_MAX_UPLOAD_BYTES') or 5 * 1024 * 1024
+    )  # 5MB
+    LOGO_MAX_DIMENSION = int(
+        os.environ.get('LOGO_MAX_DIMENSION') or 2000
+    )  # longest edge in pixels for normalized raster logos
+
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True

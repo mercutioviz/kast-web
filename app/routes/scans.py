@@ -483,7 +483,8 @@ def serve_scan_file(scan_id, filename):
         abort(403)
 
     # Security: only allow specific file types
-    allowed_extensions = {'.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg'}
+    allowed_extensions = {'.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg',
+                          '.webp', '.avif'}
     file_path = Path(scan.output_dir) / filename
     
     # Check file extension
@@ -664,6 +665,10 @@ def view_file(scan_id, filename):
         mime_type = 'image/gif'
     elif extension == '.svg':
         mime_type = 'image/svg+xml'
+    elif extension == '.webp':
+        mime_type = 'image/webp'
+    elif extension == '.avif':
+        mime_type = 'image/avif'
     else:
         # Default to plain text for unknown types
         mime_type = 'text/plain'

@@ -7,6 +7,29 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.14] — 2026-11-05
+
+### Added
+
+- **Expanded report logo formats** — logo uploads now accept SVG, SVGZ, WebP, AVIF, GIF, BMP, TIFF and ICO alongside PNG and JPEG. Vector uploads stay vector all the way into the PDF (WeasyPrint renders SVG natively), so logos stay sharp at any scale; the other raster formats are normalized to PNG at upload time. The new `app/logo_media.py` owns the format registry, content sniffing, SVG sanitization and raster normalization.
+- **Render derivative** — each logo now stores both the original upload and the file reports actually embed (`render_path` / `render_mime`), with the original kept for provenance and re-download. The kast CLI is handed only PNG or sanitized SVG via `--logo`, so nothing changes on the kast side. New route `GET /logos/<id>/render` serves that derivative and backs the management-page preview.
+- New idempotent migration `utils/migrate_logo_formats.py` — adds `render_path`, `render_mime`, `width`, `height` to `report_logos`, backfills existing rows to use their original file, and creates `app/static/uploads/logos/render/`.
+- Logo cards on `/logos/manage` now show a format badge, pixel dimensions, and a note (with a link to the original) when reports use a converted copy.
+
+### Changed
+
+- Logo upload limit raised from 2MB to 5MB, configurable via `LOGO_MAX_UPLOAD_BYTES`. Raster logos larger than `LOGO_MAX_DIMENSION` (default 2000px on the longest edge) are downscaled during normalization.
+- New runtime dependencies: `Pillow` and `defusedxml`.
+
+### Security
+
+- Logo uploads are no longer trusted on their extension alone: magic bytes must agree with the declared extension, and raster uploads must decode cleanly under Pillow. A renamed archive or a corrupt image is now rejected instead of stored.
+- Uploaded SVG is parsed with `defusedxml` (blocking XXE, entity expansion and external DTDs) and filtered through an element allowlist that strips scripting, animation elements, event handlers, external references, `javascript:` URLs and dangerous CSS. Only the sanitized document is written to disk.
+- `/logos/<id>` and `/logos/<id>/render` now send `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Content-Disposition: inline`, so a logo opened by direct navigation cannot execute script.
+- `Image.MAX_IMAGE_PIXELS` is capped to guard against decompression bombs.
+
+---
+
 ## [2.0.13] — 2026-08-19
 
 ### Added
