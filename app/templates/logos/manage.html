@@ -9,7 +9,7 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2><i class="fas fa-images"></i> Manage Report Logos</h2>
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadLogoModal">
-                    <i class="fas fa-upload"></i> Upload New Logo
+                    <i class="fas fa-plus"></i> Add New Logo
                 </button>
             </div>
 
@@ -65,6 +65,12 @@
                                             (<a href="{{ url_for('logos.view', logo_id=logo.id) }}">original</a>)
                                         </div>
                                         {% endif %}
+                                        {% if logo.source_host %}
+                                        <div class="mt-1 text-truncate" title="{{ logo.source_url }}">
+                                            <i class="fas fa-link"></i>
+                                            Imported from {{ logo.source_host }}
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 </div>
                                 <div class="card-footer">
@@ -112,51 +118,316 @@
 <div class="modal fade" id="uploadLogoModal" tabindex="-1" aria-labelledby="uploadLogoModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form action="{{ url_for('logos.upload') }}" method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="uploadLogoModalLabel">Upload New Logo</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <div class="modal-header">
+                <h5 class="modal-title" id="uploadLogoModalLabel">Add New Logo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <ul class="nav nav-tabs px-3 pt-2" id="addLogoTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-upload-btn" data-bs-toggle="tab"
+                            data-bs-target="#tab-upload" type="button" role="tab">
+                        <i class="fas fa-upload"></i> Upload file
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-url-btn" data-bs-toggle="tab"
+                            data-bs-target="#tab-url" type="button" role="tab">
+                        <i class="fas fa-link"></i> Import from URL
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content">
+                <!-- Tab 1: file upload (unchanged form POST) -->
+                <div class="tab-pane fade show active" id="tab-upload" role="tabpanel">
+                    <form action="{{ url_for('logos.upload') }}" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label for="logo_name" class="form-label">Logo Name *</label>
+                                <input type="text" class="form-control" id="logo_name" name="name" required
+                                       placeholder="e.g., Company Logo, Client XYZ Logo">
+                                <div class="form-text">A descriptive name for this logo</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="logo_description" class="form-label">Description</label>
+                                <textarea class="form-control" id="logo_description" name="description" rows="2"
+                                          placeholder="Optional description or usage notes"></textarea>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="logo_file" class="form-label">Logo File *</label>
+                                <input type="file" class="form-control" id="logo_file" name="logo_file"
+                                       accept="{{ accept_attribute }}" required>
+                                <div class="form-text">
+                                    <i class="fas fa-info-circle"></i> Accepted formats: {{ supported_formats }}.
+                                    Maximum size: {{ max_upload_mb }}MB.
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info small mb-0">
+                                <strong>Tip:</strong> SVG gives the sharpest result in PDF reports at any size.
+                                For raster logos, use a PNG with a transparent background around 200x60 pixels.
+                                WebP, AVIF, GIF, BMP, TIFF and ICO uploads are converted to PNG automatically
+                                for use in reports; the original is kept here.
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload"></i> Upload Logo
+                            </button>
+                        </div>
+                    </form>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="logo_name" class="form-label">Logo Name *</label>
-                        <input type="text" class="form-control" id="logo_name" name="name" required 
-                               placeholder="e.g., Company Logo, Client XYZ Logo">
-                        <div class="form-text">A descriptive name for this logo</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="logo_description" class="form-label">Description</label>
-                        <textarea class="form-control" id="logo_description" name="description" rows="2"
-                                  placeholder="Optional description or usage notes"></textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="logo_file" class="form-label">Logo File *</label>
-                        <input type="file" class="form-control" id="logo_file" name="logo_file"
-                               accept="{{ accept_attribute }}" required>
-                        <div class="form-text">
-                            <i class="fas fa-info-circle"></i> Accepted formats: {{ supported_formats }}.
-                            Maximum size: {{ max_upload_mb }}MB.
+
+                <!-- Tab 2: import from URL (fetch -> preview -> confirm) -->
+                <div class="tab-pane fade" id="tab-url" role="tabpanel">
+                    <div class="modal-body">
+                        <div id="urlFetchStep">
+                            <div class="mb-3">
+                                <label for="logo_url" class="form-label">Image URL *</label>
+                                <div class="input-group">
+                                    <input type="url" class="form-control" id="logo_url"
+                                           placeholder="https://example.com/brand/logo.svg">
+                                    <button class="btn btn-outline-primary" type="button" id="fetchUrlBtn">
+                                        <i class="fas fa-download"></i> Fetch preview
+                                    </button>
+                                </div>
+                                <div class="form-text">
+                                    <i class="fas fa-info-circle"></i> Accepted formats: {{ supported_formats }}.
+                                    Maximum size: {{ max_upload_mb }}MB. Public http/https URLs only.
+                                </div>
+                            </div>
+                            <div class="alert alert-danger d-none" id="urlFetchError"></div>
+                        </div>
+
+                        <div id="urlPreviewStep" class="d-none">
+                            <div class="card mb-3">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span>Preview</span>
+                                    <span class="badge bg-secondary" id="previewFormat"></span>
+                                </div>
+                                <div class="card-body text-center">
+                                    <img id="previewImage" alt="Fetched logo preview"
+                                         class="img-fluid mb-2"
+                                         style="max-height: 150px; object-fit: contain;">
+                                    <div class="small text-muted" id="previewMeta"></div>
+                                    <div class="small text-muted text-break mt-1" id="previewSource"></div>
+                                    <div class="small text-warning mt-1 d-none" id="previewRedirect">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        That URL redirected. Check the final address above before adding.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="import_name" class="form-label">Logo Name *</label>
+                                <input type="text" class="form-control" id="import_name" required
+                                       placeholder="e.g., Client XYZ Logo">
+                            </div>
+                            <div class="mb-3">
+                                <label for="import_description" class="form-label">Description</label>
+                                <textarea class="form-control" id="import_description" rows="2"
+                                          placeholder="Optional description or usage notes"></textarea>
+                            </div>
+                            <div class="alert alert-danger d-none" id="urlConfirmError"></div>
                         </div>
                     </div>
-
-                    <div class="alert alert-info small mb-0">
-                        <strong>Tip:</strong> SVG gives the sharpest result in PDF reports at any size.
-                        For raster logos, use a PNG with a transparent background around 200x60 pixels.
-                        WebP, AVIF, GIF, BMP, TIFF and ICO uploads are converted to PNG automatically
-                        for use in reports; the original is kept here.
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                                id="urlCancelBtn">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary d-none"
+                                id="urlDiscardBtn">
+                            <i class="fas fa-times"></i> Discard
+                        </button>
+                        <button type="button" class="btn btn-primary d-none" id="urlConfirmBtn">
+                            <i class="fas fa-check"></i> Add Logo
+                        </button>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-upload"></i> Upload Logo
-                    </button>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    const urlInput      = document.getElementById('logo_url');
+    const fetchBtn      = document.getElementById('fetchUrlBtn');
+    const fetchStep     = document.getElementById('urlFetchStep');
+    const previewStep   = document.getElementById('urlPreviewStep');
+    const fetchError    = document.getElementById('urlFetchError');
+    const confirmError  = document.getElementById('urlConfirmError');
+    const previewImage  = document.getElementById('previewImage');
+    const previewFormat = document.getElementById('previewFormat');
+    const previewMeta   = document.getElementById('previewMeta');
+    const previewSource = document.getElementById('previewSource');
+    const previewRedir  = document.getElementById('previewRedirect');
+    const nameInput     = document.getElementById('import_name');
+    const descInput     = document.getElementById('import_description');
+    const confirmBtn    = document.getElementById('urlConfirmBtn');
+    const discardBtn    = document.getElementById('urlDiscardBtn');
+    const modalEl       = document.getElementById('uploadLogoModal');
+
+    if (!urlInput || !fetchBtn) { return; }
+
+    let stagedToken = null;
+
+    function postJson(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body: JSON.stringify(body || {})
+        }).then(async (resp) => {
+            let data = {};
+            try { data = await resp.json(); } catch (e) { /* non-JSON error page */ }
+            if (!resp.ok) {
+                throw new Error(data.error || `Request failed (HTTP ${resp.status})`);
+            }
+            return data;
+        });
+    }
+
+    function showError(el, message) {
+        el.textContent = message;
+        el.classList.remove('d-none');
+    }
+
+    function hideError(el) {
+        el.textContent = '';
+        el.classList.add('d-none');
+    }
+
+    function formatBytes(n) {
+        if (n === null || n === undefined) { return ''; }
+        if (n < 1024) { return n + ' B'; }
+        if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + ' KB'; }
+        return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function setBusy(busy) {
+        fetchBtn.disabled = busy;
+        urlInput.disabled = busy;
+        fetchBtn.innerHTML = busy
+            ? '<span class="spinner-border spinner-border-sm"></span> Fetching...'
+            : '<i class="fas fa-download"></i> Fetch preview';
+    }
+
+    function resetToFetchStep() {
+        stagedToken = null;
+        previewStep.classList.add('d-none');
+        fetchStep.classList.remove('d-none');
+        confirmBtn.classList.add('d-none');
+        discardBtn.classList.add('d-none');
+        previewImage.removeAttribute('src');
+        hideError(fetchError);
+        hideError(confirmError);
+    }
+
+    fetchBtn.addEventListener('click', function () {
+        const url = urlInput.value.trim();
+        hideError(fetchError);
+        if (!url) {
+            showError(fetchError, 'Enter a URL to import.');
+            return;
+        }
+
+        setBusy(true);
+        postJson('{{ url_for("logos.import_fetch") }}', { url: url })
+            .then((data) => {
+                stagedToken = data.token;
+                previewImage.src = data.preview_url;
+                previewFormat.textContent = data.format_label;
+
+                const bits = [];
+                if (data.width && data.height) {
+                    bits.push(data.width + ' x ' + data.height + ' px');
+                }
+                bits.push(formatBytes(data.file_size));
+                if (data.is_normalized) {
+                    bits.push(data.format_label + ' converted to PNG for reports');
+                }
+                previewMeta.textContent = bits.join(' | ');
+                previewSource.textContent = 'Source: ' + data.final_url;
+                previewRedir.classList.toggle('d-none', !data.redirected);
+
+                if (!nameInput.value.trim() && data.suggested_name) {
+                    nameInput.value = data.suggested_name;
+                }
+
+                fetchStep.classList.add('d-none');
+                previewStep.classList.remove('d-none');
+                confirmBtn.classList.remove('d-none');
+                discardBtn.classList.remove('d-none');
+                nameInput.focus();
+            })
+            .catch((err) => showError(fetchError, err.message))
+            .finally(() => setBusy(false));
+    });
+
+    urlInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            fetchBtn.click();
+        }
+    });
+
+    confirmBtn.addEventListener('click', function () {
+        hideError(confirmError);
+        const name = nameInput.value.trim();
+        if (!name) {
+            showError(confirmError, 'Logo name is required.');
+            nameInput.focus();
+            return;
+        }
+
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Adding...';
+
+        postJson('{{ url_for("logos.import_confirm") }}', {
+            token: stagedToken,
+            name: name,
+            description: descInput.value.trim()
+        })
+            .then((data) => { window.location.href = data.redirect; })
+            .catch((err) => {
+                showError(confirmError, err.message);
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="fas fa-check"></i> Add Logo';
+            });
+    });
+
+    function discardStaged() {
+        if (!stagedToken) { return; }
+        // Fire-and-forget. sendBeacon is deliberately not used: it cannot set
+        // the X-CSRFToken header, so the request would be rejected. If this
+        // never lands, the server-side TTL sweep cleans the staged files up.
+        postJson('/logos/import/' + encodeURIComponent(stagedToken) + '/discard', {})
+            .catch(() => {});
+        stagedToken = null;
+    }
+
+    discardBtn.addEventListener('click', function () {
+        discardStaged();
+        urlInput.value = '';
+        nameInput.value = '';
+        descInput.value = '';
+        resetToFetchStep();
+    });
+
+    if (modalEl) {
+        modalEl.addEventListener('hidden.bs.modal', function () {
+            discardStaged();
+            resetToFetchStep();
+        });
+    }
+})();
+</script>
 {% endblock %}

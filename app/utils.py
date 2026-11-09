@@ -1,6 +1,7 @@
 import subprocess
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
@@ -373,14 +374,97 @@ def sanitize_filename(filename):
     return name_part + ext
 
 
+def get_logo_storage_dir():
+    """
+    Root directory for logo files.
+
+    Deliberately outside app/static: nginx serves /static straight off disk,
+    so anything under it would be public and unauthenticated.
+    """
+    configured = current_app.config.get('LOGO_STORAGE_DIR')
+    if configured:
+        return Path(configured)
+    return Path(current_app.root_path).parent / 'instance' / 'logos'
+
+
 def get_logo_uploads_dir():
     """Directory holding uploaded logo originals."""
-    return Path(current_app.root_path) / 'static' / 'uploads' / 'logos'
+    return get_logo_storage_dir() / 'originals'
 
 
 def get_logo_render_dir():
     """Directory holding the render derivative handed to the kast CLI."""
-    return get_logo_uploads_dir() / 'render'
+    return get_logo_storage_dir() / 'render'
+
+
+def get_logo_staging_dir():
+    """Directory holding fetched-but-unconfirmed URL imports."""
+    return get_logo_storage_dir() / 'staging'
+
+
+def persist_prepared_logo(prepared, original_name):
+    """
+    Write a prepared logo (and its derivative) into permanent storage
+
+    Shared by the file-upload path and the URL-import confirm path so naming,
+    derivative handling and partial-write cleanup live in one place.
+
+    Args:
+        prepared: dict from app.logo_media.prepare_logo
+        original_name: filename to base the stored name on
+
+    Returns:
+        dict: file_path, filename, file_size, mime_type, render_path,
+              render_mime, width, height, format_label
+
+    Raises:
+        OSError: on write failure, after cleaning up any partial writes
+    """
+    import uuid
+
+    uploads_dir = get_logo_uploads_dir()
+    render_dir = get_logo_render_dir()
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    render_dir.mkdir(parents=True, exist_ok=True)
+
+    # Force the extension to the stored format (SVGZ is stored decompressed
+    # and sanitized, so it becomes .svg)
+    safe_name = sanitize_filename(original_name or 'logo')
+    stem = os.path.splitext(safe_name)[0] or 'logo'
+    filename = f"{stem}.{prepared['original_extension']}"
+
+    unique_id = uuid.uuid4()
+    written = []
+    try:
+        file_path = uploads_dir / f"{unique_id}-{filename}"
+        file_path.write_bytes(prepared['original_bytes'])
+        written.append(file_path)
+
+        if prepared['render_bytes'] is prepared['original_bytes']:
+            render_path = file_path
+        else:
+            render_path = render_dir / f"{unique_id}.{prepared['render_extension']}"
+            render_path.write_bytes(prepared['render_bytes'])
+            written.append(render_path)
+    except Exception:
+        for path in written:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        raise
+
+    return {
+        'file_path': str(file_path),
+        'filename': filename,
+        'file_size': file_path.stat().st_size,
+        'mime_type': prepared['mime'],
+        'render_path': str(render_path),
+        'render_mime': prepared['render_mime'],
+        'width': prepared['width'],
+        'height': prepared['height'],
+        'format_label': prepared['label'],
+    }
 
 
 def save_logo_file(file, uploader_id):
@@ -400,8 +484,6 @@ def save_logo_file(file, uploader_id):
                result dict contains: file_path, filename, file_size, mime_type,
                render_path, render_mime, width, height, format_label
     """
-    import uuid
-
     from app.logo_media import prepare_logo
 
     # Validate file (name / extension / size)
@@ -409,7 +491,6 @@ def save_logo_file(file, uploader_id):
     if not is_valid:
         return (False, error)
 
-    written = []
     try:
         data = file.read()
         file.seek(0)
@@ -424,50 +505,218 @@ def save_logo_file(file, uploader_id):
         except ValueError as exc:
             return (False, str(exc))
 
-        uploads_dir = get_logo_uploads_dir()
-        render_dir = get_logo_render_dir()
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-        render_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate unique filename, forcing the extension to the stored format
-        # (SVGZ is stored decompressed and sanitized, so it becomes .svg)
-        original_filename = sanitize_filename(file.filename)
-        stem = os.path.splitext(original_filename)[0] or 'logo'
-        original_filename = f"{stem}.{prepared['original_extension']}"
-
-        unique_id = uuid.uuid4()
-        file_path = uploads_dir / f"{unique_id}-{original_filename}"
-        file_path.write_bytes(prepared['original_bytes'])
-        written.append(file_path)
-
-        if prepared['render_bytes'] is prepared['original_bytes']:
-            render_path = file_path
-        else:
-            render_path = render_dir / f"{unique_id}.{prepared['render_extension']}"
-            render_path.write_bytes(prepared['render_bytes'])
-            written.append(render_path)
-
-        return (True, {
-            'file_path': str(file_path),
-            'filename': original_filename,
-            'file_size': file_path.stat().st_size,
-            'mime_type': prepared['mime'],
-            'render_path': str(render_path),
-            'render_mime': prepared['render_mime'],
-            'width': prepared['width'],
-            'height': prepared['height'],
-            'format_label': prepared['label'],
-        })
+        return (True, persist_prepared_logo(prepared, file.filename))
 
     except Exception as e:
-        # Never leave half-written files behind
-        for path in written:
-            try:
-                path.unlink()
-            except OSError:
-                pass
         current_app.logger.exception(f"Error saving logo file: {str(e)}")
         return (False, f"Error saving file: {str(e)}")
+
+
+# ----------------------------------------------------------------------------
+# URL-import staging
+#
+# A fetched logo is held on disk, unconfirmed, until the user approves the
+# preview. Staging (rather than re-fetching on confirm) guarantees the bytes
+# the user approved are exactly the bytes we keep: a re-fetch could be served
+# different content the second time.
+# ----------------------------------------------------------------------------
+
+STAGING_TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,64}$')
+
+
+def _staging_paths(token):
+    """(sidecar_json_path, staging_dir) for a token, after validating it."""
+    if not token or not STAGING_TOKEN_RE.match(token):
+        return (None, None)
+    staging_dir = get_logo_staging_dir()
+    return (staging_dir / f'{token}.json', staging_dir)
+
+
+def stage_prepared_logo(prepared, source_url, final_url, user_id):
+    """
+    Write a fetched logo to the staging area pending user confirmation
+
+    Args:
+        prepared: dict from app.logo_media.prepare_logo
+        source_url: URL the user supplied
+        final_url: URL actually fetched, after redirects
+        user_id: owner; only this user can confirm or preview it
+
+    Returns:
+        str: staging token
+    """
+    import secrets
+
+    staging_dir = get_logo_staging_dir()
+    staging_dir.mkdir(parents=True, exist_ok=True)
+
+    token = secrets.token_urlsafe(24)
+    original_path = staging_dir / f"{token}-original.{prepared['original_extension']}"
+    original_path.write_bytes(prepared['original_bytes'])
+
+    if prepared['render_bytes'] is prepared['original_bytes']:
+        render_path = original_path
+    else:
+        render_path = staging_dir / f"{token}-render.{prepared['render_extension']}"
+        render_path.write_bytes(prepared['render_bytes'])
+
+    meta = {
+        'token': token,
+        'owner_id': user_id,
+        'source_url': source_url,
+        'final_url': final_url,
+        'original_path': str(original_path),
+        'render_path': str(render_path),
+        'original_extension': prepared['original_extension'],
+        'render_extension': prepared['render_extension'],
+        'mime': prepared['mime'],
+        'render_mime': prepared['render_mime'],
+        'label': prepared['label'],
+        'kind': prepared['kind'],
+        'width': prepared['width'],
+        'height': prepared['height'],
+        'file_size': original_path.stat().st_size,
+        'created_at': datetime.utcnow().isoformat(),
+    }
+    (staging_dir / f'{token}.json').write_text(json.dumps(meta))
+
+    return token
+
+
+def load_staged_logo(token, user_id):
+    """
+    Read a staged import, enforcing token shape, ownership and expiry
+
+    Args:
+        token: staging token from the client
+        user_id: the requesting user
+
+    Returns:
+        dict: the staged metadata, or None if missing, foreign or expired
+    """
+    meta_path, _ = _staging_paths(token)
+    if meta_path is None or not meta_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (OSError, ValueError):
+        return None
+
+    if meta.get('owner_id') != user_id:
+        return None
+
+    ttl = current_app.config.get('LOGO_STAGING_TTL_SECONDS', 1800)
+    try:
+        created = datetime.fromisoformat(meta['created_at'])
+    except (KeyError, ValueError):
+        return None
+
+    if (datetime.utcnow() - created).total_seconds() > ttl:
+        discard_staged_logo(token)
+        return None
+
+    return meta
+
+
+def discard_staged_logo(token):
+    """Remove a staged import and its files. Safe to call repeatedly."""
+    meta_path, staging_dir = _staging_paths(token)
+    if meta_path is None:
+        return False
+
+    paths = []
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            paths = [meta.get('original_path'), meta.get('render_path')]
+        except (OSError, ValueError):
+            paths = []
+
+    # Fall back to globbing in case the sidecar is unreadable
+    if not paths and staging_dir and staging_dir.exists():
+        paths = [str(p) for p in staging_dir.glob(f'{token}-*')]
+
+    delete_logo_file(*paths)
+    try:
+        meta_path.unlink()
+    except OSError:
+        pass
+    return True
+
+
+def sweep_staged_logos():
+    """
+    Delete staged imports past their TTL
+
+    Called opportunistically at the start of each fetch, so abandoned
+    previews do not accumulate.
+
+    Returns:
+        int: number of staged imports removed
+    """
+    staging_dir = get_logo_staging_dir()
+    if not staging_dir.exists():
+        return 0
+
+    ttl = current_app.config.get('LOGO_STAGING_TTL_SECONDS', 1800)
+    now = datetime.utcnow()
+    removed = 0
+
+    for meta_path in staging_dir.glob('*.json'):
+        try:
+            meta = json.loads(meta_path.read_text())
+            created = datetime.fromisoformat(meta['created_at'])
+        except (OSError, ValueError, KeyError):
+            # Unreadable sidecar: remove it if it is clearly stale
+            try:
+                age = now.timestamp() - meta_path.stat().st_mtime
+                if age > ttl:
+                    meta_path.unlink()
+                    removed += 1
+            except OSError:
+                pass
+            continue
+
+        if (now - created).total_seconds() > ttl:
+            discard_staged_logo(meta.get('token', meta_path.stem))
+            removed += 1
+
+    return removed
+
+
+def check_logo_import_rate_limit(user_id):
+    """
+    Per-user throttle on URL imports, backed by the Celery Redis instance
+
+    This is an abuse throttle rather than an authorization control, so a Redis
+    outage fails open with a logged warning instead of blocking the feature.
+
+    Returns:
+        tuple: (allowed: bool, retry_after_seconds: int)
+    """
+    limit = current_app.config.get('LOGO_IMPORT_RATE_LIMIT', 10)
+    if not limit:
+        return (True, 0)
+
+    try:
+        import redis
+
+        client = redis.Redis.from_url(
+            current_app.config['CELERY_BROKER_URL'], socket_timeout=2
+        )
+        key = f'logo_import_rate:{user_id}:{int(datetime.utcnow().timestamp()) // 60}'
+        count = client.incr(key)
+        if count == 1:
+            client.expire(key, 120)
+        if count > limit:
+            return (False, 60)
+        return (True, 0)
+    except Exception as exc:
+        current_app.logger.warning(
+            f'Logo import rate limiting unavailable, allowing request: {exc}'
+        )
+        return (True, 0)
 
 
 def delete_logo_file(*file_paths):

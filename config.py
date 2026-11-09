@@ -86,6 +86,39 @@ class Config:
         os.environ.get('LOGO_MAX_DIMENSION') or 2000
     )  # longest edge in pixels for normalized raster logos
 
+    # Where logo files live. Deliberately OUTSIDE app/static: nginx serves
+    # /static straight off disk, so anything under it is public and
+    # unauthenticated. Logos are served only through the /logos/<id> routes,
+    # which add auth and a restrictive CSP.
+    # Production sets this to /var/lib/kast-web/logos in .env.
+    LOGO_STORAGE_DIR = os.environ.get('LOGO_STORAGE_DIR') or \
+        os.path.join(basedir, 'instance', 'logos')
+
+    # Logo import from URL (see app/url_fetch.py)
+    LOGO_STAGING_TTL_SECONDS = int(
+        os.environ.get('LOGO_STAGING_TTL_SECONDS') or 1800
+    )  # how long a fetched-but-unconfirmed logo is kept
+    LOGO_IMPORT_ALLOWED_PORTS = tuple(
+        int(p) for p in (
+            os.environ.get('LOGO_IMPORT_ALLOWED_PORTS') or '80,443'
+        ).split(',') if p.strip()
+    )
+    LOGO_IMPORT_MAX_REDIRECTS = int(
+        os.environ.get('LOGO_IMPORT_MAX_REDIRECTS') or 3
+    )
+    LOGO_IMPORT_CONNECT_TIMEOUT = int(
+        os.environ.get('LOGO_IMPORT_CONNECT_TIMEOUT') or 5
+    )
+    LOGO_IMPORT_READ_TIMEOUT = int(
+        os.environ.get('LOGO_IMPORT_READ_TIMEOUT') or 10
+    )
+    LOGO_IMPORT_TOTAL_DEADLINE = int(
+        os.environ.get('LOGO_IMPORT_TOTAL_DEADLINE') or 15
+    )
+    LOGO_IMPORT_RATE_LIMIT = int(
+        os.environ.get('LOGO_IMPORT_RATE_LIMIT') or 10
+    )  # fetches per minute per user; 0 disables
+
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True

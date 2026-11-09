@@ -7,6 +7,30 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.15] — 2026-11-09
+
+### Added
+
+- **Import a logo from a URL** — the Add Logo dialog now has two tabs: upload a file, or paste an image URL. The server fetches the image, shows a preview with the detected format, dimensions and the final URL after redirects, and only adds it once the user confirms. Fetched images go through exactly the same validation, SVG sanitization and PNG normalization as uploads. New routes `POST /logos/import/fetch`, `GET /logos/import/<token>/preview`, `POST /logos/import/confirm` and `POST /logos/import/<token>/discard`.
+- **`app/url_fetch.py`** — SSRF-guarded outbound fetcher. http/https only on allowed ports, no credentials in the URL, every resolved address must be public (loopback, RFC1918, link-local including `169.254.169.254`, CGNAT, reserved, multicast, IPv4-mapped and 6to4-wrapped are all refused), the validated IP is pinned for the connection so DNS cannot rebind, redirects are followed manually with every hop re-validated, and the body is streamed under a hard byte cap and wall-clock deadline.
+- `ReportLogo.source_url` records where an imported logo came from; the logo card shows "Imported from `<host>`".
+- Per-user rate limit on URL imports (`LOGO_IMPORT_RATE_LIMIT`, default 10/min), backed by the existing Celery Redis instance.
+- New idempotent migration `utils/migrate_logo_url_import.py`.
+
+### Changed
+
+- **Logo files moved out of `app/static/`** to `LOGO_STORAGE_DIR` (`instance/logos` by default; set `LOGO_STORAGE_DIR=/var/lib/kast-web/logos` in production `.env`). The migration relocates existing files and rewrites the stored paths.
+- The file-upload and URL-import paths now share one persistence helper, `app.utils.persist_prepared_logo`.
+- New config keys: `LOGO_STORAGE_DIR`, `LOGO_STAGING_TTL_SECONDS`, `LOGO_IMPORT_ALLOWED_PORTS`, `LOGO_IMPORT_MAX_REDIRECTS`, `LOGO_IMPORT_CONNECT_TIMEOUT`, `LOGO_IMPORT_READ_TIMEOUT`, `LOGO_IMPORT_TOTAL_DEADLINE`, `LOGO_IMPORT_RATE_LIMIT`.
+
+### Security
+
+- **Uploaded logos are no longer publicly readable.** nginx serves `/static` directly from disk, so every file under `app/static/uploads/logos/` was reachable at `https://<host>/static/uploads/logos/<name>` with no authentication, no CSP and no `nosniff` — bypassing the hardened headers on `/logos/<id>` added in 2.0.14. Logo storage now lives outside the static tree and is served only through the authenticated routes.
+- URL-import staging is owner-scoped and expiring: a staging token is usable only by the user who created it, token shape is validated before any path join, and abandoned previews are swept after `LOGO_STAGING_TTL_SECONDS`.
+- Remote `Content-Type` is recorded but never trusted; magic-byte sniffing decides the format. Import refusal messages never name a resolved address, so the endpoint cannot be used to map the network.
+
+---
+
 ## [2.0.14] — 2026-11-05
 
 ### Added

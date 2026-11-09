@@ -426,6 +426,9 @@ class ReportLogo(db.Model):
     render_mime = db.Column(db.String(100), nullable=True)
     width = db.Column(db.Integer, nullable=True)
     height = db.Column(db.Integer, nullable=True)
+    # Set when the logo was imported from a URL rather than uploaded.
+    # Records the URL actually fetched, after any redirects.
+    source_url = db.Column(db.String(2048), nullable=True)
     uploaded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -446,6 +449,14 @@ class ReportLogo(db.Model):
         """True when reports use a converted copy rather than the original"""
         return bool(self.render_path) and self.render_path != self.file_path
 
+    @property
+    def source_host(self):
+        """Hostname a URL-imported logo came from, for display. None if uploaded."""
+        if not self.source_url:
+            return None
+        from urllib.parse import urlsplit
+        return urlsplit(self.source_url).hostname
+
     def to_dict(self):
         """Convert logo to dictionary"""
         return {
@@ -462,6 +473,8 @@ class ReportLogo(db.Model):
             'height': self.height,
             'format_label': self.format_label,
             'is_normalized': self.is_normalized,
+            'source_url': self.source_url,
+            'source_host': self.source_host,
             'uploaded_by': self.uploaded_by,
             'uploader_username': self.uploader.username if self.uploader else None,
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None

@@ -43,18 +43,33 @@ support; the code falls back to `file_path` in that case.
 
 ### File Storage
 
-Originals are stored in: `app/static/uploads/logos/`
-Render derivatives are stored in: `app/static/uploads/logos/render/`
+Logo files live under `LOGO_STORAGE_DIR`:
+
+```
+<LOGO_STORAGE_DIR>/originals/{uuid}-{filename}
+<LOGO_STORAGE_DIR>/render/{uuid}.png        (or .svg)
+<LOGO_STORAGE_DIR>/staging/{token}-*        (unconfirmed URL imports)
+```
+
+Defaults to `instance/logos` in a dev checkout. Production sets it in `.env`:
+
+```
+LOGO_STORAGE_DIR=/var/lib/kast-web/logos
+```
+
+**This directory must stay outside `app/static/`.** nginx serves `/static`
+straight off disk (`alias /opt/kast-web/app/static`), so anything under it is
+readable by anyone on the internet with no authentication and none of the
+security headers the `/logos/<id>` route sets. Logo files are user-supplied
+content - including SVG, which is an active document format - so they are
+served only through the authenticated routes. Logos uploaded before v2.0.15
+lived under `app/static/uploads/logos/` and are relocated by
+`utils/migrate_logo_url_import.py`.
 
 Originals use UUID-prefixed filenames to prevent conflicts; the derivative
-reuses the same UUID:
-```
-logos/{uuid}-{original_filename}
-logos/render/{uuid}.png     (or .svg)
-```
-
-When the upload needs no conversion (PNG, JPEG, SVG, SVGZ), `render_path`
-points at the original file and no second copy is written.
+reuses the same UUID. When the upload needs no conversion (PNG, JPEG, SVG,
+SVGZ), `render_path` points at the original file and no second copy is
+written.
 
 ### Supported Upload Formats
 
@@ -93,14 +108,78 @@ SVG is passed through as vector, so PDF logos stay sharp at any scale.
 
 Configurable in `config.py` or via environment variables:
 
-- `LOGO_MAX_UPLOAD_BYTES` (default 5MB)
+- `LOGO_STORAGE_DIR` (see File Storage above)
+- `LOGO_MAX_UPLOAD_BYTES` (default 5MB; applies to URL imports too)
 - `LOGO_MAX_DIMENSION` (default 2000px on the longest edge; larger raster
   uploads are downscaled during normalization)
+- `LOGO_STAGING_TTL_SECONDS` (default 1800) - how long a fetched-but-
+  unconfirmed URL import is kept
+- `LOGO_IMPORT_ALLOWED_PORTS` (default `80,443`)
+- `LOGO_IMPORT_MAX_REDIRECTS` (default 3)
+- `LOGO_IMPORT_CONNECT_TIMEOUT` / `LOGO_IMPORT_READ_TIMEOUT` /
+  `LOGO_IMPORT_TOTAL_DEADLINE` (default 5 / 10 / 15 seconds)
+- `LOGO_IMPORT_RATE_LIMIT` (default 10 fetches per minute per user; 0 disables)
 
 ### Dependencies
 
 - `Pillow` - raster decoding, verification and PNG normalization
 - `defusedxml` - hardened XML parsing for SVG uploads
+
+### Importing from a URL
+
+Instead of uploading a file, a user can paste the URL of an image. The server
+fetches it, shows a preview, and only stores it once the user confirms.
+
+The flow is deliberately two-step:
+
+1. `POST /logos/import/fetch` - the server fetches the URL under the SSRF
+   guard below, runs the bytes through the same `prepare_logo()` used for
+   uploads, and writes the result to the staging area
+2. The modal previews the staged render derivative - exactly what reports
+   would embed - alongside the detected format, dimensions and the final URL
+   after any redirects
+3. `POST /logos/import/confirm` - the staged files are promoted to permanent
+   storage and the `ReportLogo` row is created with `source_url` set
+
+Staging rather than re-fetching on confirm is the point: the bytes the user
+approved in the preview are the bytes that get stored. A second fetch could be
+served different content.
+
+Abandoned previews are removed by a TTL sweep that runs at the start of each
+fetch, and the browser discards its staged import when the dialog is closed.
+
+The file extension for an import is taken from the fetched bytes, not the URL:
+asset URLs frequently carry no extension, and content negotiation routinely
+serves WebP from a `.png` URL. `prepare_logo()` still verifies magic bytes, so
+unrecognized content is still refused.
+
+#### SSRF policy
+
+A user-supplied URL fetched by the server is a server-side request forgery
+primitive, so `app/url_fetch.py` constrains every request:
+
+- `http` and `https` only, on `LOGO_IMPORT_ALLOWED_PORTS` (80/443 by default)
+- no credentials in the URL
+- the hostname is resolved up front and **every** address it returns must be
+  public: loopback, RFC1918 private, link-local (including the cloud metadata
+  address `169.254.169.254`), CGNAT, reserved, multicast, IPv4-mapped and
+  6to4-wrapped addresses are all refused
+- the validated IP is **pinned** for the connection, so DNS cannot be rebound
+  between the check and the connect. TLS SNI and certificate verification
+  still use the real hostname
+- redirects are followed manually and **every hop is re-validated**, so a
+  public URL cannot bounce the server to an internal one
+- the body is streamed with a hard byte cap and a wall-clock deadline
+- proxy and netrc environment settings are ignored for these requests
+- refusal messages never name a resolved address, so the endpoint cannot be
+  used to map the network
+
+The `Content-Type` a remote server reports is recorded but never trusted -
+magic-byte sniffing decides what the file actually is.
+
+Rate limiting is per-user per-minute via the Celery Redis instance. It is an
+abuse throttle, not an authorization control, so a Redis outage fails open
+with a logged warning rather than blocking the feature.
 
 ### Logo Resolution Priority
 
@@ -127,16 +206,23 @@ This script will:
 - Copy the current KAST logo as the default logo
 - Set up the system default logo setting
 
-For an existing installation, also run the multi-format migration:
+For an existing installation, also run the follow-up migrations:
 
 ```bash
 pip install -r requirements.txt   # adds Pillow and defusedxml
+
 python utils/migrate_logo_formats.py --non-interactive
+python utils/migrate_logo_url_import.py --non-interactive
 ```
 
-This adds the `render_path`, `render_mime`, `width` and `height` columns,
-points existing logos at their own file as the render derivative, and creates
-`app/static/uploads/logos/render/`. It is idempotent.
+`migrate_logo_formats.py` adds the `render_path`, `render_mime`, `width` and
+`height` columns and points existing logos at their own file as the render
+derivative.
+
+`migrate_logo_url_import.py` adds `source_url` and moves logo files out of
+`app/static/uploads/logos/` into `LOGO_STORAGE_DIR`, rewriting the stored
+paths. Set `LOGO_STORAGE_DIR` in `.env` first on a production install, and
+back up the database. Both are idempotent.
 
 ### 2. Update KAST CLI
 
@@ -252,6 +338,16 @@ Returns the exact file reports embed (PNG or sanitized SVG). Redirects to
 `/logos/<logo_id>` for rows predating multi-format support. This is what the
 management page previews.
 
+### Import from URL
+```
+POST /logos/import/fetch         {"url": "..."}  -> preview metadata + token
+GET  /logos/import/<token>/preview               -> staged render derivative
+POST /logos/import/confirm       {"token", "name", "description"}
+POST /logos/import/<token>/discard
+```
+All owner-scoped: a staging token is usable only by the user who created it,
+and only until it expires.
+
 ### Upload Logo
 ```
 POST /logos/upload
@@ -329,8 +425,13 @@ the render derivative when one exists.
 6. **Filename Sanitization**: Filenames are sanitized to prevent path traversal
 7. **UUID Prefixing**: Files are stored with UUID prefixes to prevent conflicts
 8. **Permission Checks**: Users can only delete their own logos; admins can delete any
-9. **Audit Logging**: All logo operations are logged in the audit log, including
-   the uploaded format and the format reports will use
+9. **Audit Logging**: All logo operations are logged in the audit log,
+   including the uploaded format, the format reports will use, and - for URL
+   imports - the final URL fetched
+10. **Storage Outside the Web Root**: Logo files live under
+    `LOGO_STORAGE_DIR`, never under `app/static/`, because nginx serves
+    `/static` directly from disk with no authentication. See File Storage.
+11. **SSRF Guard on URL Import**: See the SSRF policy section above.
 
 ### Integration with KAST CLI
 
@@ -381,6 +482,25 @@ If no logo is found or the file doesn't exist, the command proceeds without the 
    chmod 755 app/static/uploads/logos/
    ```
 
+### URL Import Errors
+
+1. **"That URL points to a private or internal address"**: the hostname
+   resolves to a loopback, private, link-local or otherwise non-public
+   address. This is refused by design; download the file and upload it
+   instead.
+2. **"Only ports 80, 443 can be imported from"**: adjust
+   `LOGO_IMPORT_ALLOWED_PORTS` if you genuinely need another port.
+3. **"That URL does not point to a supported image"**: the response was not
+   an image the format registry recognizes - often an HTML error or login
+   page returned instead of the file.
+4. **"The HTTPS certificate for that site could not be verified"**: the
+   remote certificate failed validation. Certificate checking is not
+   bypassable here.
+5. **"That preview has expired"**: more than `LOGO_STAGING_TTL_SECONDS`
+   elapsed between fetching and confirming. Fetch again.
+6. **"Too many import attempts"**: the per-user rate limit
+   (`LOGO_IMPORT_RATE_LIMIT`) kicked in. Wait a minute.
+
 ### Cannot Delete Logo
 
 1. **System Default**: You cannot delete the system default logo. Set a different default first.
@@ -399,6 +519,8 @@ Potential improvements for this feature:
 7. **Logo Dimensions Validation**: Validate optimal dimensions for reports
 8. **HEIC/HEIF Support**: Would require the `pillow-heif` dependency
 9. **Vector Import from PDF/EPS/AI**: Requires a Ghostscript-class dependency
+10. **Re-fetch**: Refresh an imported logo from its `source_url` on demand
+11. **Pick from a page**: Import a page and choose among the images on it
 
 ## Support
 
@@ -411,7 +533,15 @@ For issues or questions about this feature:
 
 ## Version History
 
-- **v2.0** (Current): Expanded format support
+- **v2.1** (Current): Import from URL
+  - Paste an image URL; the server fetches it, previews it, and adds it on
+    confirmation
+  - SSRF-guarded fetcher in `app/url_fetch.py`
+  - Logo storage moved out of `app/static/` so files are no longer publicly
+    readable (migration: `utils/migrate_logo_url_import.py`)
+  - New column `source_url` recording where an imported logo came from
+
+- **v2.0**: Expanded format support
   - SVG and SVGZ vector uploads, sanitized and kept vector through to PDF
   - WebP, AVIF, GIF, BMP, TIFF and ICO uploads, normalized to PNG for reports
   - Magic-byte content verification replacing the extension-only check

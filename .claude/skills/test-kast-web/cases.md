@@ -378,6 +378,51 @@ Smoke +:
   with a WebP default and confirm `--logo` points into `logos/render/*.png`
 - **Evidence:** worker log; rendered report
 
+### TC-LOGO-106 — import from URL, happy path
+- **Role:** t_admin
+- **Steps:** /logos → Add New Logo → "Import from URL" tab → paste a public PNG URL →
+  Fetch preview → set a name → Add Logo
+- **Expect:** preview shows the image with the right format badge, dimensions and the
+  final URL; confirming creates a row with `source_url` set and files under
+  `LOGO_STORAGE_DIR`; the card shows "Imported from `<host>`". Repeat with an SVG URL
+  and confirm it stays `image/svg+xml`
+- **Evidence:** screenshot of the preview; DB row; filesystem
+
+### TC-LOGO-107 — import SSRF refusals
+- **Role:** t_admin
+- **Steps:** fetch each of `http://127.0.0.1:8000/auth/login`,
+  `http://169.254.169.254/latest/meta-data/`, `file:///etc/passwd`,
+  `http://127.0.0.1:6379/`, `http://u:p@example.com/logo.png`, and a public URL that
+  redirects to a private address
+- **Expect:** every one refused inline in the modal with a specific message; no preview
+  shown; no staged files left; refusal messages never name a resolved IP
+- **Evidence:** modal error text; staging directory listing
+
+### TC-LOGO-108 — import of a non-image / oversized URL
+- **Role:** t_admin
+- **Steps:** fetch `https://example.com/` (HTML) and a URL serving a file over 5MB
+- **Expect:** "does not point to a supported image (the server returned text/html)" and
+  the size-limit message respectively; nothing staged
+- **Evidence:** modal error text
+
+### TC-LOGO-109 — staging is owner-scoped and expires
+- **Role:** t_admin (fetch), t_user (probe)
+- **Steps:** t_admin fetches a preview and notes the token; t_user requests
+  `/logos/import/<token>/preview`; then age the staged sidecar past
+  `LOGO_STAGING_TTL_SECONDS` and retry confirm as t_admin; finally close the dialog on a
+  fresh preview
+- **Expect:** 404 for t_user; "That preview has expired" for the aged token; closing the
+  dialog removes the staged files
+- **Evidence:** HTTP status; staging directory listing
+
+### TC-LOGO-110 — logo files are not publicly served
+- **Role:** unauthenticated
+- **Steps:** after the storage migration, GET `/static/uploads/logos/<any old filename>`
+  through nginx, and GET `/logos/<id>` without a session
+- **Expect:** 404 for the static path (files no longer live there); 302 to login for
+  `/logos/<id>`
+- **Evidence:** curl output
+
 ### TC-LOGO-101 — uploader-vs-admin delete permissions
 - **Role:** t_user (uploader), t_user2 (other)
 - **Steps:** t_user uploads; t_user2 attempts delete (negative); t_user deletes own (positive); t_admin deletes someone else's (positive)
