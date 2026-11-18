@@ -86,7 +86,8 @@ Must pass before any release. Aborts on first blocker.
 - **Tier:** smoke
 - **Role:** t_user
 - **Pre:** WebGoat container up at 127.0.0.1:8888
-- **Steps:** login as t_user → / → target `http://127.0.0.1:8888/WebGoat` → mode `passive` → submit
+- **Steps:** login as t_user → / → Target Domain `127.0.0.1:8888` → mode `passive` → submit (form posts to `POST /scan/new`)
+- **Note:** the field is **Target Domain** and takes a host or `host:port`. A full URL with a scheme/path fails WTForms validation and the handler redirects — which looks identical to a permission denial.
 - **Expect:** redirect to scan detail; status goes pending → running → complete within 5 min (poll /scans/api/statuses); at least one plugin result row in DB
 - **Evidence:** final status; sqlite row from `scans` and `scan_results`
 
@@ -95,7 +96,7 @@ Must pass before any release. Aborts on first blocker.
 - **Role:** t_user
 - **Pre:** TC-SCAN-001 produced a completed scan
 - **Steps:** GET /scans/<id> ; GET /scans/<id>/execution-log
-- **Expect:** plugin tabs render; execution log shows kast CLI output; no JS console errors
+- **Expect:** plugin tabs render; execution log shows kast CLI output; no JS console errors other than the known `/favicon.ico` 404 (no favicon is served; ignore it)
 - **Evidence:** screenshot; console messages
 
 ### TC-REPORT-001 — HTML report viewer renders
@@ -144,22 +145,26 @@ Must pass before any release. Aborts on first blocker.
 ### TC-AUTHZ-SMOKE-002 — t_viewer cannot submit a scan
 - **Tier:** smoke
 - **Role:** t_viewer
-- **Steps:** POST / with valid scan form (target WebGoat, mode passive)
+- **Steps:** POST **/scan/new** with a *complete, valid* scan form (Target Domain `127.0.0.1:8888`, mode passive) — easiest obtained by serialising the real form from `/` in the browser
+- **Positive control (required):** submit the identical payload as `t_user`, who *should* succeed. If the control does not create a scan, the payload is malformed and this case proves nothing — fix the payload before trusting the result.
 - **Expect:** 403 or flash denial; no new row in `scans` table
-- **Evidence:** HTTP status; sqlite count before/after
+- **Evidence:** HTTP status; sqlite count before/after; the control's scan id
+- **Known failure (2026-11-17):** currently FAILS. `t_viewer` creates scans; `/scan/new` has no role gate. See `docs/development/V2.0_RELEASE_DEFECTS.md`.
 
 ### TC-AUTHZ-SMOKE-003 — t_user cannot submit active scan
 - **Tier:** smoke
 - **Role:** t_user
-- **Steps:** POST / with mode `active`
-- **Expect:** flash "do not have permission"; no scan row created
+- **Steps:** POST **/scan/new** with a complete, valid form and `scan_mode=active`. The UI renders the Active option as `disabled`, so set the value directly (e.g. `fd.set('scan_mode','active')`) to exercise the *server-side* gate rather than the UI.
+- **Positive control (required):** same payload with `scan_mode=passive` must create a scan.
+- **Expect:** flash "You do not have permission to run active scans. Only Power Users and Admins can run active scans."; no scan row created
 - **Evidence:** flash text; sqlite count
 
 ### TC-XCUT-001 — CSRF token required on POST
 - **Tier:** smoke
 - **Role:** t_admin
 - **Steps:** POST /admin/quick-action/backup-database without a CSRF token in the form
-- **Expect:** 400 (bad request)
+- **Expect:** **302 to /auth/login** with the flash "Your session has expired. Please log in again." — the app installs a custom `CSRFError` handler (`app/__init__.py:107`) that redirects rather than returning 400. The session stays valid; only the request is rejected.
+- **Control:** the same POST *with* a valid token returns 200 and creates a backup, proving the rejection came from CSRF and not from auth.
 - **Evidence:** HTTP status
 
 ---
@@ -173,7 +178,7 @@ Smoke +:
 ### TC-AUTH-100 — lockout after N failed logins
 - **Role:** anonymous
 - **Steps:** POST /auth/login with t_user + wrong password 5 times
-- **Expect:** 5th attempt sets `is_active=False` OR locks (depends on settings); after lockout, even correct password rejected with lockout flash
+- **Expect:** lockout fires at **10** failed attempts (`_LOCKOUT_THRESHOLD`, `app/routes/auth.py:20`), not 5. `is_active` stays `1` — the lock is counter-based, not deactivation. After the 10th, the correct password is rejected with "Account locked after too many failed login attempts".
 - **Evidence:** DB `is_active` / `failed_login_attempts`; flash text
 
 ### TC-AUTH-101 — admin resets failed attempts
@@ -207,12 +212,12 @@ Smoke +:
 - **Role:** t_user2
 - **Pre:** t_user has a scan from TC-SCAN-001
 - **Steps:** GET /scans/ as t_user2; GET /scans/<t_user_scan_id>
-- **Expect:** scan absent from list; scan detail returns 403 or 404
+- **Expect:** scan absent from list; scan detail returns **302** redirecting to `/scans/` with a denial flash (the app redirects rather than returning 403/404). Assert the redirect target, not merely "not 200".
 - **Evidence:** HTTP status; DOM check
 
 ### TC-AUTHZ-101 — admin sees all scans
 - **Role:** t_admin
-- **Steps:** GET /scans/ (and /scans/api/statuses)
+- **Steps:** GET /scans/ (and `/scans/api/statuses?ids=1,2,3` — the endpoint **requires** an `ids` query param and returns `{}` without one; capped at 50 ids)
 - **Expect:** scans owned by all users visible
 - **Evidence:** scan count vs DB total
 
@@ -241,10 +246,10 @@ Smoke +:
 - **Expect:** owner delete succeeds; cross-user delete 403
 - **Evidence:** HTTP status; DB row count
 
-### TC-SCAN-103 — download zip
+### TC-SCAN-103 — download report
 - **Role:** t_user
-- **Steps:** GET /scans/<id>/download
-- **Expect:** 200; content-type application/zip; body > 1 KB
+- **Steps:** GET /scans/<id>/download (and `?format=html`)
+- **Expect:** 200; content-type **application/pdf** by default, `text/html` with `?format=html`; body > 1 KB. There is no zip download — the route is `download_report`.
 - **Evidence:** response headers + size
 
 ### TC-SCAN-104 — CSV export
@@ -261,7 +266,8 @@ Smoke +:
 
 ### TC-SCAN-106 — notes + tags
 - **Role:** t_user
-- **Steps:** POST /scans/<id>/notes with note; POST /scans/<id>/tags with `tag1,tag2`
+- **Steps:** POST /scans/<id>/notes with `{"notes":"..."}` and POST /scans/<id>/tags with `{"tags":"tag1, tag2 ,"}` — both parse **JSON only** (`request.get_json`). A form-encoded POST returns 200 and silently writes an empty value.
+- **Expect also:** tags are normalised (whitespace trimmed, empties dropped) to `tag1,tag2`
 - **Expect:** notes and tags persist on reload
 - **Evidence:** DB
 
@@ -276,12 +282,12 @@ Smoke +:
 ### TC-SHARE-100 — share with internal user
 - **Role:** t_user shares with t_user2
 - **Steps:** /scans/<id>/share/user → select t_user2
-- **Expect:** t_user2 sees the scan on their dashboard; t_user2 cannot delete it
+- **Expect:** t_user2 can open `/scans/<id>` (200) and cannot delete it. **Note (2026-11-17):** the shared scan does *not* currently appear in t_user2's `/scans/` list or dashboard — decide whether that is the intended behaviour before asserting it.
 - **Evidence:** dashboard render; DB ScanShare row
 
 ### TC-SHARE-101 — revoke user share
 - **Role:** t_user
-- **Steps:** /scans/<id>/shares → revoke
+- **Steps:** GET /scans/<id>/shares (a **JSON API**, not a page — returns `{"shares": [...]}`), then POST /scans/<id>/share/<share_id>/revoke
 - **Expect:** t_user2 no longer sees the scan
 - **Evidence:** dashboard render; ScanShare row deleted
 
@@ -301,7 +307,7 @@ Smoke +:
 
 ### TC-CFG-100 — CRUD round trip
 - **Role:** t_admin
-- **Steps:** /config-profiles → create profile → edit → duplicate → set-default → delete
+- **Steps:** /config-profiles/ (trailing slash required; the bare path 308-redirects) → create profile → edit → duplicate → set-default → delete
 - **Expect:** each step succeeds with appropriate flashes; default flag exclusive (only one default at a time)
 - **Evidence:** DB rows; default flag check
 
@@ -341,7 +347,7 @@ Smoke +:
 
 ### TC-LOGO-100 — upload + set default + delete
 - **Role:** t_admin
-- **Steps:** /logos → upload PNG → /logos/<id>/set-default → /logos/<id>/delete
+- **Steps:** /logos/manage (there is no bare `/logos` index) → upload PNG → /logos/<id>/set-default → /logos/<id>/delete
 - **Expect:** file lands in uploads dir; set-default updates flag; delete removes both row and file
 - **Evidence:** filesystem; DB
 
@@ -396,6 +402,9 @@ Smoke +:
   redirects to a private address
 - **Expect:** every one refused inline in the modal with a specific message; no preview
   shown; no staged files left; refusal messages never name a resolved IP
+- **Note:** driving this with curl requires a **JSON** body (`{"url":"..."}`) against
+  `POST /logos/import/fetch`; a form-encoded post yields "Enter a URL to import.",
+  which looks like a refusal but only means the field never arrived.
 - **Evidence:** modal error text; staging directory listing
 
 ### TC-LOGO-108 — import of a non-image / oversized URL
@@ -451,14 +460,14 @@ Smoke +:
 
 ### TC-ADM-103 — kast permissions test
 - **Role:** t_admin
-- **Steps:** POST /admin/test-kast-permissions
-- **Expect:** 200 JSON with readable/writable booleans for results dir
+- **Steps:** POST /admin/test-kast-permissions with form field `kast_results_root=<path>` (required; omitting it returns 400 "No path provided")
+- **Expect:** 200 JSON with `success`, `message` and `full_path` for the results dir
 - **Evidence:** JSON
 
 ### TC-ADM-104 — system info renders + exports
 - **Role:** t_admin
 - **Steps:** GET /admin/system-info; GET /admin/system-info/export
-- **Expect:** page renders; export downloads JSON file
+- **Expect:** page renders (200). **Export is not implemented** — `admin.py:1131` flashes "Export functionality coming soon" and 302s back to the page. Assert that, and revisit this case if the export is built.
 - **Evidence:** HTTP headers
 
 ## Recently-shipped regression watch (v2.0.3 → v2.0.7)
@@ -545,8 +554,9 @@ equivalent to 401 for anonymous.
 
 ### TC-AUTHZ-FULL-004 — admin-only routes
 - **Routes:** every route under `/admin/*`, `/auth/users*`, `/auth/users/<id>/*`, `/admin/zap/configs*` write methods, `/admin/zap/plans*` write methods, `/admin/cloud/credentials*`, `/admin/cloud/orphans*`, `/admin/cloud/scans*`, `/admin/import-scan`, `/admin/quick-action/*`, `/admin/clear-audit-log`, `/admin/test-smtp`, `/admin/test-kast-permissions`, `/admin/system-info*`
-- **Expect:** anonymous 302; t_viewer / t_user / t_power 403; t_admin 200/302
-- **Evidence:** status matrix
+- **Expect:** anonymous 302; t_viewer / t_user / t_power 403 **or** 302 to `/` with a denial flash; t_admin 200/302
+- **Required: prove the route exists first.** Assert `t_admin` gets a non-404 on every route in the matrix *before* evaluating the denials. A route that does not exist returns 404 to everyone, which a "was it denied?" check reads as success — this case would then report pass while testing nothing. A 404 for a non-admin on a route `t_admin` can reach is a **fail**, not a denial.
+- **Evidence:** status matrix, including the t_admin reachability column
 
 ### TC-AUTHZ-FULL-005 — owner-or-admin routes (scan mutation)
 - **Routes:** all `POST /scans/<id>/...` write methods (delete, notes, tags, rerun, share, transfer, regenerate-report, send-email)
