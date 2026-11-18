@@ -32,7 +32,7 @@ Run `scripts/test-env-up.sh` from the repo root. The first run will:
 - Generate `.env.test` with fresh secrets (record the admin password from the file).
 - Create `/var/lib/kast-web-test/` (asks for sudo once).
 - Create the venv and install requirements (slow, one-time).
-- Pull and start `kw-test-juiceshop` and `kw-test-hackazon` containers.
+- Pull and start `kw-test-juiceshop` and `kw-test-webgoat` containers.
 - Seed `t_admin`.
 - Start gunicorn on port 8001 and a Celery worker on Redis DB 1.
 
@@ -52,7 +52,7 @@ For each selected case:
 4. Record the outcome: `pass | fail | skipped | blocked`.
 
 **Important:**
-- Never aim a scan at anything other than `127.0.0.1:{juice-shop port}` or `127.0.0.1:{hackazon port}` — see CLAUDE.md.
+- Never aim a scan at anything other than `127.0.0.1:3000` (Juice Shop) or `127.0.0.1:8888` (WebGoat) — see CLAUDE.md and `config.md`.
 - Skip cases that depend on prod-only state (e.g. real cloud credentials).
 - If a *blocker* hits (server unreachable, login broken), abort the tier and report.
 

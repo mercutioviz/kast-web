@@ -7,7 +7,7 @@
 #     SECRET_KEY, ENCRYPTION_KEY, and TEST_ADMIN_PASSWORD.
 #   - Ensures /var/lib/kast-web-test/ exists (uses sudo on first run).
 #   - Creates a Python venv at ./venv if missing and installs requirements.
-#   - Pulls + starts juice-shop and hackazon Docker containers on loopback.
+#   - Pulls + starts juice-shop and WebGoat Docker containers on loopback.
 #   - Seeds the t_admin user in the test DB.
 #   - Starts gunicorn on TEST_FLASK_PORT and a Celery worker against test redis.
 #   - Waits for the server to respond.
@@ -88,7 +88,7 @@ fi
 # 5. Redis check --------------------------------------------------------------
 redis-cli ping >/dev/null 2>&1 || die "redis is not reachable on localhost:6379"
 
-# 6. Throwaway scan targets (juice-shop, hackazon) ----------------------------
+# 6. Throwaway scan targets (juice-shop, WebGoat) -----------------------------
 start_container() {
     local name=$1 image=$2 host_port=$3 container_port=$4
     if docker ps --format '{{.Names}}' | grep -q "^${name}$"; then

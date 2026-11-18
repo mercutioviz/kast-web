@@ -212,7 +212,7 @@ Smoke +:
 
 ### TC-AUTHZ-101 — admin sees all scans
 - **Role:** t_admin
-- **Steps:** GET /scans/ (and /api/statuses)
+- **Steps:** GET /scans/ (and /scans/api/statuses)
 - **Expect:** scans owned by all users visible
 - **Evidence:** scan count vs DB total
 
@@ -301,13 +301,13 @@ Smoke +:
 
 ### TC-CFG-100 — CRUD round trip
 - **Role:** t_admin
-- **Steps:** /scans/configs → create profile → edit → duplicate → set-default → delete
+- **Steps:** /config-profiles → create profile → edit → duplicate → set-default → delete
 - **Expect:** each step succeeds with appropriate flashes; default flag exclusive (only one default at a time)
 - **Evidence:** DB rows; default flag check
 
 ### TC-CFG-101 — YAML validate endpoint
 - **Role:** t_admin
-- **Steps:** POST /scans/configs/<id>/validate with good and bad payloads
+- **Steps:** POST /config-profiles/<id>/validate with good and bad payloads
 - **Expect:** good → 200 ok; bad → 400 with errors array
 - **Evidence:** JSON responses
 
@@ -321,19 +321,19 @@ Smoke +:
 
 ### TC-ZAP-100 — plan CRUD
 - **Role:** t_admin
-- **Steps:** /zap/plans → create → edit → preview → delete
+- **Steps:** /admin/zap/plans → create → edit → preview → delete
 - **Expect:** all steps 200/302; preview renders rendered YAML
 - **Evidence:** DOM
 
 ### TC-ZAP-101 — plan YAML validate
 - **Role:** t_admin
-- **Steps:** POST /zap/plans/validate-yaml with valid and invalid payloads
+- **Steps:** POST /admin/zap/plans/validate-yaml with valid and invalid payloads
 - **Expect:** matches schema response
 - **Evidence:** JSON
 
 ### TC-ZAP-102 — config CRUD
 - **Role:** t_admin
-- **Steps:** /zap/configs → create → edit → set-default → delete
+- **Steps:** /admin/zap/configs → create → edit → set-default → delete
 - **Expect:** DB rows correct; default exclusive
 - **Evidence:** DB
 
@@ -529,9 +529,9 @@ equivalent to 401 for anonymous.
   - `GET /auth/profile`
   - `GET /auth/change-password`
   - `GET /scans/export.csv`
-  - `GET /api/list` (logos)
+  - `GET /logos/api/list` (logos)
   - `GET /api/stats`
-  - `GET /api/scan-trend`
+  - `GET /admin/api/scan-trend`
 - **Expect:** anonymous 302 to /auth/login; all 4 logged-in roles 200
 - **Evidence:** status matrix
 
@@ -544,7 +544,7 @@ equivalent to 401 for anonymous.
 - **Evidence:** status matrix; DB side-effect check
 
 ### TC-AUTHZ-FULL-004 — admin-only routes
-- **Routes:** every route under `/admin/*`, `/auth/users*`, `/auth/users/<id>/*`, `/zap/configs*` write methods, `/zap/plans*` write methods, `/admin/cloud/credentials*`, `/admin/cloud/orphans*`, `/admin/cloud/scans*`, `/admin/import-scan`, `/admin/quick-action/*`, `/admin/clear-audit-log`, `/admin/test-smtp`, `/admin/test-kast-permissions`, `/admin/system-info*`
+- **Routes:** every route under `/admin/*`, `/auth/users*`, `/auth/users/<id>/*`, `/admin/zap/configs*` write methods, `/admin/zap/plans*` write methods, `/admin/cloud/credentials*`, `/admin/cloud/orphans*`, `/admin/cloud/scans*`, `/admin/import-scan`, `/admin/quick-action/*`, `/admin/clear-audit-log`, `/admin/test-smtp`, `/admin/test-kast-permissions`, `/admin/system-info*`
 - **Expect:** anonymous 302; t_viewer / t_user / t_power 403; t_admin 200/302
 - **Evidence:** status matrix
 
@@ -592,19 +592,19 @@ equivalent to 401 for anonymous.
 ### TC-ZAP-FULL-200 — container lifecycle
 - **Role:** t_admin
 - **Pre:** local ZAP config with execution_mode=local
-- **Steps:** /zap/configs/<id>/start-container → status (≤30s, expect "running") → logs (200 with output) → stop-container → status (stopped) → remove-container
+- **Steps:** /admin/zap/configs/<id>/start-container → status (≤30s, expect "running") → logs (200 with output) → stop-container → status (stopped) → remove-container
 - **Expect:** all transitions succeed; container removed at end
 - **Evidence:** `docker ps -a` between steps
 
 ### TC-ZAP-FULL-300 — detect-ip endpoint
 - **Role:** t_admin
-- **Steps:** GET /zap/detect-ip
+- **Steps:** GET /admin/zap/detect-ip
 - **Expect:** JSON with at least one IP for host interface
 - **Evidence:** JSON
 
 ### TC-ZAP-FULL-301 — check-cloud-tools
 - **Role:** t_admin
-- **Steps:** GET /zap/check-cloud-tools
+- **Steps:** GET /admin/zap/check-cloud-tools
 - **Expect:** JSON with terraform / ssh availability booleans
 - **Evidence:** JSON
 
@@ -674,20 +674,20 @@ equivalent to 401 for anonymous.
 - **Expect:** JSON keys cover total scans, users, running, failed; values numeric
 - **Evidence:** JSON
 
-### TC-API-FULL-101 — /api/scan-trend shape
+### TC-API-FULL-101 — /admin/api/scan-trend shape
 - **Role:** t_admin
 - **Expect:** JSON list of `{date, count}` for last N days
 - **Evidence:** JSON
 
-### TC-API-FULL-102 — /api/statuses scoping
+### TC-API-FULL-102 — /scans/api/statuses scoping
 - Covered by TC-REG-205 — re-run here for full
 
-### TC-API-FULL-103 — /api/list (logos)
+### TC-API-FULL-103 — /logos/api/list (logos)
 - **Role:** t_admin
 - **Expect:** array of logo objects; only `can_delete=true` for admin or own uploads
 - **Evidence:** JSON
 
-### TC-API-FULL-104 — /api/<logo_id>/info
+### TC-API-FULL-104 — /logos/api/<logo_id>/info
 - **Role:** t_admin
 - **Expect:** 200 for existing; 404 for missing
 - **Evidence:** status
