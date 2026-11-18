@@ -21,7 +21,7 @@ that date.
 
 ## Priority
 
-1. Polling retries forever on error
+1. `updateScanStatus` defined twice as a global (latent)
 2. `allow_registration` gates nothing
 3. System-info export is a stub
 4. *(low priority — see below)* public-cloud items
@@ -32,33 +32,28 @@ completeness, not as release blockers.
 
 ---
 
-## 1. Scan-status polling retries forever on any error response
+## 1. `updateScanStatus` is defined twice as a global
 
-`app/templates/scan_detail.html:13-15`
+Not a bug today — verified — but one refactor away from being one.
 
-```js
-fetch(`/api/scans/${scanId}/status`)
-    .then(response => response.json())      // no response.ok check
-    .then(data => { … data.status.charAt(0) … })   // no guard
-```
+`app/static/js/main.js` defines `function updateScanStatus(scanId)`, a stub
+marked "for future real-time updates" that logs to the console.
+`app/templates/scan_detail.html` defines a different `function
+updateScanStatus()` taking no arguments. Both are plain globals, so the second
+to load wins.
 
-An error response carries no `status` field, so `data.status.charAt(0)` throws
-`TypeError: Cannot read properties of undefined (reading 'charAt')`. The
-rejection is not handled in a way that stops the timer, so **polling continues
-retrying indefinitely**.
+It works only because of load ordering: the template's script sits in
+`{% block content %}`, rendered at `base.html:189`, and calls `startPolling()`
+at top level — capturing the correct reference into `setInterval` *before*
+`main.js` loads at line 203 and overwrites the global.
 
-Reachable in normal use: any scan detail page left open when access goes away —
-a share revoked, ownership transferred, the session expiring — starts producing
-a pair of console errors every few seconds forever. Observed during the
-2026-11-17 run: ~19 error pairs from a single page.
+Move that `startPolling()` call into `DOMContentLoaded` (which the same file
+already uses elsewhere) and polling silently switches to `main.js`'s stub,
+which fetches `/api/scans/undefined` and parses the 404's HTML as JSON. I
+reproduced exactly that by calling `setInterval(updateScanStatus, 3000)` from
+the console after page load.
 
-Fix: check `response.ok` before parsing, and call `stopPolling()` in the error
-path. Note there is a second identical chain at line ~286.
-
-No case guards this. Also note `TC-SCAN-002` asserts "no JS console errors",
-which the unrelated `favicon.ico` 404 (see §4) trips on its own.
-
----
+Fix: rename or delete the `main.js` stub. It is dead code.
 
 ## 2. `allow_registration` is a setting that gates nothing
 

@@ -11,7 +11,16 @@ const currentStatus = '{{ scan.status }}';
 
 function updateScanStatus() {
     fetch(`/api/scans/${scanId}/status`)
-        .then(response => response.json())
+        .then(response => {
+            // Without this check an error body (which has no `status` field)
+            // reaches the handler below and throws on data.status.charAt().
+            if (!response.ok) {
+                const err = new Error(`status endpoint returned ${response.status}`);
+                err.httpStatus = response.status;
+                throw err;
+            }
+            return response.json();
+        })
         .then(data => {
             // Update status badge
             const statusBadge = document.getElementById('scan-status');
@@ -61,6 +70,14 @@ function updateScanStatus() {
         })
         .catch(error => {
             console.error('Error polling scan status:', error);
+            // 401/403/404 will not resolve by retrying: the session ended, a
+            // share was revoked, or the scan was deleted. Previously this
+            // kept firing every 3s forever, filling the console. Transient
+            // network errors still retry.
+            if ([401, 403, 404].indexOf(error.httpStatus) !== -1) {
+                console.warn('Stopping scan-status polling: access to this scan is gone.');
+                stopPolling();
+            }
         });
 }
 
@@ -283,7 +300,12 @@ function showZapProgress() {
 
 function updateZapProgressModal() {
     fetch(`/api/scans/${scanId}/status`)
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`status endpoint returned ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.zap_progress && data.zap_progress.available) {
                 latestZapProgressData = data.zap_progress;

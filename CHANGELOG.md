@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.1.0] — 2026-11-18
 
+### Fixed
+
+- **Scan-status polling no longer retries forever after access is lost.** The scan detail page polled `/api/scans/<id>/status` every 3 seconds and parsed the response without checking `response.ok`, so an error body — which carries no `status` field — threw on `data.status.charAt()`. The rejection was logged but never stopped the timer, so a detail page left open after a share was revoked, ownership transferred, or a session expired produced a pair of console errors every 3 seconds indefinitely. The response is now checked, and a 401, 403 or 404 stops polling with a single explanatory warning; transient network errors still retry. The ZAP progress modal's identical fetch chain got the same guard.
+
 ### Fixed — packaging
 
 - **The Docker image never ran.** `docker-entrypoint.sh` carried `#!/bin/sh` but used `"${@:2}"`, a bash array slice. The base image's `/bin/sh` is dash, so every container exited immediately with `Bad substitution` — including the Docker quick start the README recommends. Rewritten in POSIX `sh` using `shift` and `"$@"`. Verified: the web role serves `/auth/login` with 200, the worker role starts Celery, and the HEALTHCHECK goes healthy.
