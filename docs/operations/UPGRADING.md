@@ -26,7 +26,7 @@ If you are upgrading kast-web alone (kast already at 3.0), skip to [kast-web upg
 | ZAP management | Automation plan and configuration management at `/admin/zap/plans` and `/admin/zap/configs`. |
 | AI executive summary | Claude-powered scan summary; shared org key or per-user BYOK Anthropic API key. |
 | Config profiles | Save and reuse named scan configurations; import/export YAML. |
-| Report sharing | Shareable links with optional expiry. |
+| Report sharing | Share a scan with specific users, with view or edit permission. Public (unauthenticated) links are **not available** in 2.0 — see the CHANGELOG. |
 | New required env vars | `ENCRYPTION_KEY` (for credential encryption at rest). See [Environment variables](#environment-variables). |
 | Packaging | `kast-web` CLI entry point (pipx installable). Docker image available. |
 | Database | Six additional migration scripts must run before the new release starts. |

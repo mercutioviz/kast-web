@@ -6,7 +6,7 @@ This file is auto-loaded by Claude Code on every session in this repo. It is the
 
 kast-web is the Flask + Celery + Redis web frontend for **kast**, the Kali Automated Scan Tool. It lets a Solutions Architect submit and manage web-application security scans through a browser, manage cloud infrastructure for ephemeral ZAP scanning, and share polished reports with prospects.
 
-kast-web shells out to the kast CLI installed at `/usr/local/bin/kast`. The kast↔kast-web boundary is **frozen** for the v3-coordinated release — see `kast/docs/web-integration.md` (in the kast repo at `/home/mscollins/kast/`).
+kast-web shells out to the kast CLI installed at `/usr/local/bin/kast`. The kast↔kast-web boundary is **frozen** for the v3-coordinated release — see `kast/docs/web-integration.md` (in the kast repo at `/home/admin/kast/`).
 
 **Reliability and reputational safety are first-class concerns.** This tool runs in front of prospects (or produces artifacts that get sent to prospects). Active scans must never look like attacks against prospect infrastructure.
 
@@ -14,7 +14,7 @@ kast-web shells out to the kast CLI installed at `/usr/local/bin/kast`. The kast
 
 We are on branch `refactor/v2.0`. The actual work plan is **driven from the kast repo's v3 design docs**, because Phase D of the kast v3 refactor is the cloud-subsystem migration into kast-web. The two repos have independent version histories (kast 2.14 → 3.0; kast-web 1.5 → 2.0) but release as a coordinated bundle.
 
-Authoritative planning docs live in the kast repo at `/home/mscollins/kast/docs/v3-planning/`:
+Authoritative planning docs live in the kast repo at `/home/admin/kast/docs/v3-planning/`:
 
 - **`01-audit.md`** — Phase 1 audit of v2.14
 - **`02-ideation.md`** — Phase 2 capability menu
@@ -23,7 +23,14 @@ Authoritative planning docs live in the kast repo at `/home/mscollins/kast/docs/
 
 **Phase D — cloud migration: COMPLETE.** All 11 deliverables shipped across both repos. The kast CLI no longer has cloud-mode code (D10 deleted ~6,425 lines in commit `af1610c` on the kast side); kast-web's `app/cloud/` module owns Terraform / SSH / ZAP-API provisioning end-to-end. Migration guide for v2.x cloud users is at `docs/MIGRATION_FROM_KAST_CLOUD.md`.
 
-**Current focus: Phase E — release polish + tagging.** This is what stands between "code is done" and the coordinated kast 3.0 / kast-web 2.0 release. Items in flight: pyproject.toml + pipx packaging, Dockerfile, README rewrite, v2→v3 migration guide for kast users, CHANGELOG, coordinated release tagging.
+**Current focus: Phase E — release polish + tagging.** Status as of 2026-11-18:
+
+- pyproject.toml + pipx packaging — **done** (landed 2026-05-14; wheel contents fixed 2026-11-18, see CHANGELOG)
+- Dockerfile — **done** (landed 2026-05-14; entrypoint and logo storage fixed 2026-11-18)
+- README rewrite — **done** (2026-05-15)
+- v2→v3 migration guide for kast users — **done**, lives in the kast repo at `docs/MIGRATION_V2_TO_V3.md`
+- CHANGELOG — maintained; `[Unreleased]` still needs a version number
+- **Coordinated release tagging — outstanding.** This is the remaining Phase E work. kast-web tags stop at `v2.0.9` (2026-05-26) while VERSION is 2.0.15, so 2.0.10–2.0.15 shipped untagged; `v2.0.0` and `v1.15` were never tagged either. The kast repo shows the same pattern: VERSION 3.0.52, tags stop at `v3.0.35`.
 
 **Known-unfixed defects live in `docs/development/OPEN_FINDINGS.md`.** Test reports under `tests/runs/` are gitignored, so that file is the tracked record — check it before planning release work, and delete entries as they are fixed. Public-cloud (`app/cloud/`) fixes are deliberately **low priority** as of 2026-11-18 and are not release blockers.
 
@@ -31,7 +38,7 @@ Authoritative planning docs live in the kast repo at `/home/mscollins/kast/docs/
 
 Do not change these surfaces without explicit, coordinated planning:
 
-- **The kast↔kast-web contract** documented in `/home/mscollins/kast/docs/web-integration.md`. Atomic writes (`.tmp` + `rename(2)`), frozen filenames (`{plugin}.json`, `{plugin}_processed.json`, `kast_info.json`, `zap_scan_progress.json`, `missing_issue_ids.json`), file-presence state machine, polling channel.
+- **The kast↔kast-web contract** documented in `/home/admin/kast/docs/web-integration.md`. Atomic writes (`.tmp` + `rename(2)`), frozen filenames (`{plugin}.json`, `{plugin}_processed.json`, `kast_info.json`, `zap_scan_progress.json`, `missing_issue_ids.json`), file-presence state machine, polling channel.
 - **The v2 CLI argv contract** (the `kast --target X --mode passive ...` shape). kast preserves this via a v2-argv translation wrapper, so kast-web's existing `subprocess.Popen([...])` invocations keep working unchanged.
 - **The `_processed.json` per-plugin output format**, including kebab-case keys.
 - **The issue registry data format** in `kast/data/issue_registry.json`.
@@ -51,7 +58,7 @@ The cloud-scan path now flows entirely through kast-web's own infrastructure:
 
 The kast CLI sees only `local` / `remote` / `auto` execution modes — `cloud` was removed in kast D10.
 
-For original design context (now historical): `/home/mscollins/kast/docs/v3-planning/04-kast-web-cloud-migration.md`.
+For original design context (now historical): `/home/admin/kast/docs/v3-planning/04-kast-web-cloud-migration.md`.
 
 ## kast-web modules relevant to cloud scans
 
