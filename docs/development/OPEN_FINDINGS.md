@@ -10,18 +10,21 @@ also captured in a `cases.md` case or a commit message would otherwise be lost.
 `.claude/skills/test-kast-web/cases.md` guards it. Several entries already have
 a case; those are noted.
 
-Last reviewed: 2026-11-18. All entries re-verified against the working tree on
+Last reviewed: 2026-11-18. The deploy-path contradiction that was item 1 is
+resolved — kast-web 2.0 standardises on `/opt/kast-web` and `/var/lib/kast-web`
+with no `2` variants.
+
+Last reviewed: All entries re-verified against the working tree on
 that date.
 
 ---
 
 ## Priority
 
-1. Deploy-path contradiction (release-blocking)
-2. Polling retries forever on error
-3. `allow_registration` gates nothing
-4. System-info export is a stub
-5. *(low priority — see below)* public-cloud items
+1. Polling retries forever on error
+2. `allow_registration` gates nothing
+3. System-info export is a stub
+4. *(low priority — see below)* public-cloud items
 
 Public-cloud fixes (AWS / Azure / GCP, `app/cloud/`) are **deliberately low
 priority** per the project owner, 2026-11-18. They are recorded here for
@@ -29,32 +32,7 @@ completeness, not as release blockers.
 
 ---
 
-## 1. Deploy scripts target a path layout that was abandoned
-
-**Release-blocking.** Not cloud.
-
-kast-web 2.0 installs **in place** under `/var/lib/kast-web` with the
-`kast-web` / `kast-celery` services — confirmed 2026-11-18, and what the running
-host actually uses. Two deployment paths still target the abandoned
-`kast-web2` parallel-install layout:
-
-| File | What it targets |
-|---|---|
-| `scripts/deploy-v2.sh:7` | `PROD_DIR="/opt/kast-web2"` |
-| `scripts/rollback-v2.sh:6` | `PROD_DIR="/opt/kast-web2"`, restarts `kast-web2 kast-celery2` |
-| `utils/upgrade_from_v115.py:42,44` | copies the DB to `/var/lib/kast-web2/kast.db`, app dir `/opt/kast-web2` |
-
-`/var/lib/kast-web2` and `/opt/kast-web2` do not exist on the current host.
-Whichever is right, two of the three deployment paths disagree with the
-decision, and this will surface during the coordinated 3.0 / 2.0 tag.
-
-Related and already fixed: eight `utils/migrate_*.py` scripts hardcoded one or
-other of these paths and now resolve from `DATABASE_URL`
-(commits `fbd2979`, `0f4489f`).
-
----
-
-## 2. Scan-status polling retries forever on any error response
+## 1. Scan-status polling retries forever on any error response
 
 `app/templates/scan_detail.html:13-15`
 
@@ -78,11 +56,11 @@ Fix: check `response.ok` before parsing, and call `stopPolling()` in the error
 path. Note there is a second identical chain at line ~286.
 
 No case guards this. Also note `TC-SCAN-002` asserts "no JS console errors",
-which the unrelated `favicon.ico` 404 (see §5) trips on its own.
+which the unrelated `favicon.ico` 404 (see §4) trips on its own.
 
 ---
 
-## 3. `allow_registration` is a setting that gates nothing
+## 2. `allow_registration` is a setting that gates nothing
 
 The admin settings page offers an "allow registration" checkbox. It persists
 and round-trips correctly (`true` / `false` in `system_settings`), but it is
@@ -105,7 +83,7 @@ is addressed.
 
 ---
 
-## 4. `/admin/system-info/export` is an unimplemented stub
+## 3. `/admin/system-info/export` is an unimplemented stub
 
 `app/routes/admin.py`, `export_system_info()`:
 
@@ -122,7 +100,7 @@ and a redirect. Either implement it or remove the control before the tag.
 
 ---
 
-## 5. Smaller observations
+## 4. Smaller observations
 
 - **No favicon.** `app/static/favicon.ico` does not exist, so every page logs a
   404 in the browser console. Harmless, but it trips any "no console errors"
@@ -142,12 +120,12 @@ and a redirect. Either implement it or remove the control before the tag.
 
 ---
 
-## 6. Public cloud — low priority
+## 5. Public cloud — low priority
 
 Found by the first-ever cloud tier run, 2026-11-18
 (commit `0f4489f`). Deprioritised by the project owner.
 
-### 6a. Editing a cloud credential destroys the stored secret
+### 5a. Editing a cloud credential destroys the stored secret
 
 **Data loss.** `app/cloud/routes.py`, `admin_cloud_credentials_edit()`:
 
@@ -171,7 +149,7 @@ exists only in that column, so it is unrecoverable.
 Fix: skip the assignment when the submitted JSON is empty or equals the
 placeholder. Guarded by `TC-CLOUD-FULL-103`.
 
-### 6b. Four CloudScan statuses are invisible in the admin UI
+### 5b. Four CloudScan statuses are invisible in the admin UI
 
 The code assigns ten statuses; `/admin/cloud/scans` filters cover six.
 
@@ -186,7 +164,7 @@ The code assigns ten statuses; `/admin/cloud/scans` filters cover six.
 
 Guarded by `TC-CLOUD-FULL-113`.
 
-### 6c. Live cloud provisioning has never been tested
+### 5c. Live cloud provisioning has never been tested
 
 `terraform apply`, real instance provisioning, `cloud_provision_task` end to end
 and teardown are all untested. The catalog defers them to a manual pre-release
@@ -195,7 +173,7 @@ edit, so that gate is load-bearing.
 
 ---
 
-## 7. Test coverage gaps
+## 6. Test coverage gaps
 
 Not defects, but known holes:
 

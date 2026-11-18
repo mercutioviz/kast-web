@@ -28,7 +28,7 @@ The scan result files, report format, and kast-web UI are unchanged.
 - kast 3.0 installed at `/usr/local/bin/kast` (replaces 2.x).
 - The kast-web 2.0 database migration has been run:
   ```
-  sudo -u www-data bash -c "cd /opt/kast-web2 && source .env && \
+  sudo -u www-data bash -c "cd /opt/kast-web && source .env && \
       venv/bin/python utils/migrate_cloud_v2.py"
   ```
 - Terraform >= 1.5 installed on the kast-web server (same requirement as before).
@@ -156,7 +156,7 @@ If a scan was running in kast 2.x cloud mode during the upgrade window:
   (the old path). kast-web 2.0 does not know about this state.
 - **Action required**: manually run `terraform destroy` in the old state
   directory, or use the cloud provider console to terminate the instance.
-  New scans use the new state path (`/var/lib/kast-web2/cloud_state/`).
+  New scans use the new state path (`/var/lib/kast-web/cloud_state/`).
 
 
 ## Rollback
@@ -218,7 +218,7 @@ Verify the subnet and VPC routing table allow internet access.
 
 | Item | Path |
 |------|------|
-| Terraform state | `/var/lib/kast-web2/cloud_state/<scan_id>/` |
+| Terraform state | `/var/lib/kast-web/cloud_state/<scan_id>/` |
 | Ephemeral SSH private key | `<state_path>/zap_key.pem` |
 | GCP service account key (temp) | `<state_path>/gcp_sa_key.json` |
 | Terraform configs | `app/cloud/terraform/{aws,azure,gcp}/` |

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Roll /opt/kast-web2 back to its previous deployed commit (HEAD@{1}).
+# Roll /opt/kast-web back to its previous deployed commit (HEAD@{1}).
 # Useful when the latest deploy broke something.
 set -euo pipefail
 
-PROD_DIR="/opt/kast-web2"
+PROD_DIR="/opt/kast-web"
 
 if [[ ! -d "$PROD_DIR/.git" ]]; then
     echo "ERROR: $PROD_DIR is not a git checkout." >&2
@@ -26,7 +26,7 @@ read -rp "Reset --hard to $PREVIOUS and restart services? [y/N] " ans
 [[ "$ans" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 
 git reset --hard "$PREVIOUS"
-sudo systemctl restart kast-web2 kast-celery2
+sudo systemctl restart kast-web kast-celery
 sleep 2
 
 if curl -fsS -o /dev/null "http://127.0.0.1:8001/"; then

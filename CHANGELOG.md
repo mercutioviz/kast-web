@@ -9,6 +9,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **One install path, no `2` suffix.** kast-web 2.0 installs at `/opt/kast-web` with data under `/var/lib/kast-web`, served by the `kast-web` and `kast-celery` units — the same paths and service names 1.x used. The `/opt/kast-web2` parallel-install layout is gone: `deployment/systemd/kast-web2.service`, `kast-celery2.service` and `deployment/nginx/kast-web2.conf` are removed (the first two differed from their non-suffixed siblings only by a `Description` string; the nginx one hardcoded a dev hostname and the parallel-install port), and `scripts/deploy-v2.sh` and `rollback-v2.sh` now target the real install.
+- **The 1.15 upgrade is now staged rather than side-by-side.** It kept its reversibility: `utils/upgrade_from_v115.py` unpacks 2.0 at `/opt/kast-web-new`, copies your database to `/var/lib/kast-web-new`, migrates the copy, boots it on a temporary port to prove it, and only then cuts over by renaming directories — parking 1.x at `/opt/kast-web-v115` and `/var/lib/kast-web-v115`. Your 1.x database is still never modified, rollback is still available (now two pairs of renames, and the script prints the commands), and no second systemd unit or nginx change is needed at any point. The staged `.env` carries the final configuration; `DATABASE_URL` is overridden on the command line during staging, so nothing has to be rewritten at cutover.
+
 ### Fixed
 
 - **The cloud scans admin page returned 500 as soon as it had anything to show.** `/admin/cloud/scans` rendered fine with an empty table but failed for every filter once any `CloudScan` row matched, because `admin/cloud/scans.html` linked via `url_for('scans.view_scan', ...)` — an endpoint that does not exist. Corrected to `scans.detail`. The page had been broken for the whole of Phase D; it only ever worked in the empty state.

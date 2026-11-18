@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Deploy ~/kast-web @ refactor/v2.0 into /opt/kast-web2.
+# Deploy ~/kast-web @ refactor/v2.0 into /opt/kast-web.
 # Run from anywhere; script discovers paths itself.
 set -euo pipefail
 
 DEV_REPO="/home/mscollins/kast-web"
-PROD_DIR="/opt/kast-web2"
+PROD_DIR="/opt/kast-web"
 BRANCH="refactor/v2.0"
 HEALTH_URL="http://127.0.0.1:8001/"
 
@@ -82,7 +82,7 @@ if [[ -n "$NEW_MIG_FILES" ]]; then
 fi
 
 green "Restarting services..."
-sudo systemctl restart kast-web2 kast-celery2
+sudo systemctl restart kast-web kast-celery
 
 sleep 2
 
@@ -90,6 +90,6 @@ green "Health check $HEALTH_URL ..."
 if curl -fsS -o /dev/null -w "%{http_code}\n" "$HEALTH_URL"; then
     green "v2 is up. Old=$OLD_SHA New=$NEW_SHA"
 else
-    red "Health check failed. Check 'sudo journalctl -u kast-web2 -n 50' and 'sudo tail /var/log/kast-web2/error.log'."
+    red "Health check failed. Check 'sudo journalctl -u kast-web -n 50' and 'sudo tail /var/log/kast-web/error.log'."
     exit 1
 fi

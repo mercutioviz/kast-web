@@ -45,13 +45,15 @@ If you are upgrading kast-web alone (kast already at 3.0), skip to [kast-web upg
 
 ## Upgrade strategy
 
-The recommended approach is a **side-by-side install**: deploy kast-web 2.0 alongside the running 1.x installation, migrate the database, verify, then cut over traffic. kast-web 1.x stays intact throughout and can be restarted if something goes wrong.
+kast-web 2.0 lives at `/opt/kast-web` with its data under `/var/lib/kast-web`, served by the `kast-web` and `kast-celery` units — the same paths and service names 1.x used. There is no permanent second install.
+
+To keep the upgrade reversible anyway, 2.0 is **staged** alongside the running 1.x, proved against a copy of your database, and only then swapped into place. Your 1.x install is parked intact rather than overwritten, so rolling back is a pair of renames.
 
 An [in-place upgrade](#in-place-upgrade) is documented as an alternative for simpler setups.
 
 ---
 
-## Side-by-side upgrade (recommended)
+## Staged upgrade (recommended)
 
 ### 1. Install kast 3.0
 
@@ -67,14 +69,14 @@ kast 3.0 ships a v2 argv compatibility wrapper so kast-web's existing subprocess
 
 ```bash
 # Clone or download kast-web 2.0 to a new directory
-sudo git clone <repo-url> /opt/kast-web2
-cd /opt/kast-web2
+sudo git clone <repo-url> /opt/kast-web-new
+cd /opt/kast-web-new
 
 # Install dependencies
 sudo python3 -m venv venv
 sudo venv/bin/pip install -r requirements-production.txt
 sudo venv/bin/pip install --no-deps -e .
-sudo chown -R www-data:www-data /opt/kast-web2
+sudo chown -R www-data:www-data /opt/kast-web-new
 ```
 
 ### 3. Configure the environment
@@ -82,8 +84,8 @@ sudo chown -R www-data:www-data /opt/kast-web2
 Copy your existing `.env` and add the new required variables:
 
 ```bash
-sudo cp /opt/kast-web/.env /opt/kast-web2/.env
-sudo editor /opt/kast-web2/.env
+sudo cp /opt/kast-web/.env /opt/kast-web-new/.env
+sudo editor /opt/kast-web-new/.env
 ```
 
 Add these lines if not already present:
@@ -92,10 +94,12 @@ Add these lines if not already present:
 # Required for encrypting cloud credentials at rest
 ENCRYPTION_KEY=<32-byte hex string>
 
-# Point to new data directory
-DATABASE_URL=sqlite:////var/lib/kast-web2/kast.db
-KAST_RESULTS_DIR=/var/lib/kast-web2/results
+# Final paths — NOT the staging paths. See the note below.
+DATABASE_URL=sqlite:////var/lib/kast-web/kast.db
+KAST_RESULTS_DIR=/var/lib/kast-web/results
 ```
+
+**These are the paths 2.0 will use after cutover, which is why they have no `-new` suffix.** During staging the upgrade script overrides `DATABASE_URL` on the command line so migrations and the health check run against the staging copy. That way nothing in `.env` has to be rewritten at cutover, and there is no window where the file is wrong.
 
 Generate `ENCRYPTION_KEY`:
 
@@ -108,21 +112,32 @@ Keep the same `SECRET_KEY` value from your 1.x `.env`. Changing it will invalida
 ### 4. Create data directories
 
 ```bash
-sudo mkdir -p /var/lib/kast-web2/results
-sudo chown -R www-data:www-data /var/lib/kast-web2
+sudo mkdir -p /var/lib/kast-web-new/results
+sudo chown -R www-data:www-data /var/lib/kast-web-new
 ```
 
 ### 5. Run the automated upgrade script
 
-`utils/upgrade_from_v115.py` stops 1.x services, copies the database, runs all delta migrations, starts 2.0 services, and performs a health check. The 1.x database is not modified.
+`utils/upgrade_from_v115.py` stops the services, copies the database into staging, runs the delta migrations against the **copy**, boots the staged 2.0 on a temporary port to prove it, cuts over by renaming directories, restarts the services and health-checks again. Your 1.x database is never modified.
+
+If anything fails before the cutover step, nothing has moved and 1.x restarts unchanged. If the post-cutover health check fails, the script prints the exact rollback commands.
 
 ```bash
 # Dry run first — shows what will happen without making changes
-sudo python3 /opt/kast-web2/utils/upgrade_from_v115.py --dry-run
+sudo python3 /opt/kast-web-new/utils/upgrade_from_v115.py --dry-run
 
 # Run for real
-sudo python3 /opt/kast-web2/utils/upgrade_from_v115.py
+sudo python3 /opt/kast-web-new/utils/upgrade_from_v115.py
 ```
+
+At cutover the directories are rearranged like this:
+
+| Before | After |
+|---|---|
+| `/opt/kast-web` (1.x) | `/opt/kast-web-v115` |
+| `/opt/kast-web-new` (2.0) | `/opt/kast-web` |
+| `/var/lib/kast-web` (1.x data) | `/var/lib/kast-web-v115` |
+| `/var/lib/kast-web-new` (migrated copy) | `/var/lib/kast-web` |
 
 The script runs these migrations against the copied database, in order:
 
@@ -134,29 +149,30 @@ The script runs these migrations against the copied database, in order:
 | `migrate_ai_user_config.py` | `users.ai_model_override`, `users.ai_base_url` columns |
 | `migrate_ai_presets.py` | `ai_model_presets`, `ai_endpoint_presets` tables |
 | `migrate_ai_scan_flag.py` | `scans.generate_ai_summary` column |
-| `migrate_notes_tags.py` | `scans.notes`, `scans.tags` columns |
 
 Each script is idempotent — safe to re-run if interrupted.
 
-### 6. Install systemd units for kast-web 2.0
+### 6. Service units
+
+**Nothing to install.** 2.0 runs under the same `kast-web` and `kast-celery` units, from the same `/opt/kast-web`, on the same port 8000. The upgrade script restarts them for you in step 5.
+
+If your units predate 2.0 and you want the shipped versions, refresh them *after* cutover:
 
 ```bash
-sudo cp /opt/kast-web2/deployment/systemd/kast-web2.service /etc/systemd/system/
-sudo cp /opt/kast-web2/deployment/systemd/kast-celery2.service /etc/systemd/system/
+sudo cp /opt/kast-web/deployment/systemd/kast-web.service /etc/systemd/system/
+sudo cp /opt/kast-web/deployment/systemd/kast-celery.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now kast-web2 kast-celery2
+sudo systemctl restart kast-web kast-celery
 ```
-
-kast-web 2.0 listens on port 8001 by default (the 2.x units use `--bind 127.0.0.1:8001`). Update Nginx to proxy to the new port, or adjust the service file to use 8000 once 1.x is decommissioned.
 
 ### 7. Verify
 
 ```bash
 # Services are active
-sudo systemctl status kast-web2 kast-celery2
+sudo systemctl status kast-web kast-celery
 
 # Health endpoint responds
-curl -sf http://127.0.0.1:8001/ | head -5
+curl -sf http://127.0.0.1:8000/ | head -5
 
 # Check the admin panel
 # https://<your-server>/admin/
@@ -164,20 +180,17 @@ curl -sf http://127.0.0.1:8001/ | head -5
 
 Submit a test scan and confirm it runs to completion.
 
-### 8. Cut over Nginx and decommission 1.x
+### 8. Decommission 1.x
 
-Once 2.0 is confirmed healthy:
+**Nginx needs no change.** 2.0 occupies the same path and port, so the existing site config keeps working.
+
+Once you are satisfied 2.0 is healthy — log in, check your data is present, run a test scan — remove the parked 1.x tree:
 
 ```bash
-# Update Nginx upstream port (8001 → 8000) and reload
-sudo editor /etc/nginx/sites-available/kast-web
-sudo nginx -t && sudo systemctl reload nginx
-
-# Stop and disable 1.x services (leave data intact)
-sudo systemctl disable --now kast-web kast-celery
+sudo rm -rf /opt/kast-web-v115 /var/lib/kast-web-v115
 ```
 
-The 1.x install at `/opt/kast-web` and its database at `/var/lib/kast-web/kast.db` are left in place and can be restarted at any time for rollback.
+Until you do, that tree is your rollback. Keep it for as long as you want the option.
 
 ---
 
@@ -246,24 +259,28 @@ Full reference for new and changed environment variables in kast-web 2.0:
 
 ## Rollback
 
-If 2.0 has a problem, restart the 1.x services (side-by-side upgrade only):
+If 2.0 has a problem and the parked 1.x tree is still present, roll back by reversing the renames:
 
 ```bash
-sudo systemctl stop kast-web2 kast-celery2
+sudo systemctl stop kast-web kast-celery
+sudo mv /opt/kast-web /opt/kast-web-new
+sudo mv /opt/kast-web-v115 /opt/kast-web
+sudo mv /var/lib/kast-web /var/lib/kast-web-new
+sudo mv /var/lib/kast-web-v115 /var/lib/kast-web
 sudo systemctl start kast-web kast-celery
-# Update Nginx upstream back to port 8000
-sudo systemctl reload nginx
 ```
 
-The 1.x database was not modified. The 2.0 copy at `/var/lib/kast-web2/kast.db` can be discarded.
+Nginx needs no change — the path and port are the same either way.
+
+Your 1.x database was never modified: the upgrade copied it and migrated the copy. The migrated 2.0 database is left at `/var/lib/kast-web-new/kast.db` and can be discarded, or kept to investigate what went wrong.
 
 ---
 
 ## Troubleshooting
 
-**kast-web2 fails to start with "ENCRYPTION_KEY not set"**
+**kast-web fails to start with "ENCRYPTION_KEY not set"**
 
-Add `ENCRYPTION_KEY=<hex string>` to `/opt/kast-web2/.env` and restart.
+Add `ENCRYPTION_KEY=<hex string>` to the `.env` and restart. Before cutover that is `/opt/kast-web-new/.env`; afterwards it is `/opt/kast-web/.env`.
 
 **"InvalidToken" error on ZAP configuration pages**
 
@@ -274,8 +291,8 @@ The `SECRET_KEY` in 2.0's `.env` differs from 1.x. Make sure both use the same v
 The Celery worker is not running or is not connected to Redis. Check:
 
 ```bash
-sudo systemctl status kast-celery2
-sudo journalctl -u kast-celery2 -n 50
+sudo systemctl status kast-celery
+sudo journalctl -u kast-celery -n 50
 redis-cli ping
 ```
 
@@ -284,7 +301,7 @@ redis-cli ping
 Each script is idempotent — re-run it. Check the `schema_migrations` table to see which scripts have already been recorded:
 
 ```bash
-sqlite3 /var/lib/kast-web2/kast.db \
+sqlite3 /var/lib/kast-web/kast.db \
   "SELECT script_name, applied_at FROM schema_migrations ORDER BY applied_at;"
 ```
 
