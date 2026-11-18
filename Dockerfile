@@ -39,14 +39,17 @@ COPY . .
 RUN pip install --no-cache-dir --no-deps -e .
 
 # ---------------------------------------------------------------------------
-# Runtime directories
-# /var/lib/kast-web   — SQLite database + scan results (mount as a volume)
-# app/static/uploads  — logo uploads (persisted inside the data volume or
-#                       bind-mounted separately)
+# Runtime directories — all under /var/lib/kast-web so they land on the volume
+# declared below and survive container removal.
+# /var/lib/kast-web/results — scan output
+# /var/lib/kast-web/logos   — report logos. 2.0.14/2.0.15 moved logo storage
+#   out of the static tree (it was reachable unauthenticated through nginx);
+#   LOGO_STORAGE_DIR is set below so it does not fall back to /app/instance,
+#   which appuser cannot write and which is not on the volume.
 # ---------------------------------------------------------------------------
 RUN mkdir -p /var/lib/kast-web/results \
-             /app/app/static/uploads/logos \
-    && chown -R appuser:appuser /var/lib/kast-web /app/app/static/uploads
+             /var/lib/kast-web/logos \
+    && chown -R appuser:appuser /var/lib/kast-web
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
@@ -59,6 +62,7 @@ ENV FLASK_ENV=production \
     CELERY_BROKER_URL=redis://redis:6379/0 \
     CELERY_RESULT_BACKEND=redis://redis:6379/0 \
     KAST_RESULTS_DIR=/var/lib/kast-web/results \
+    LOGO_STORAGE_DIR=/var/lib/kast-web/logos \
     KAST_CLI_PATH=/usr/local/bin/kast \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
@@ -69,6 +73,13 @@ ENV FLASK_ENV=production \
 # NOTE: The kast CLI binary must be present at KAST_CLI_PATH inside the
 # container. Bind-mount it from the host or build a combined image:
 #   COPY --from=kast-builder /usr/local/bin/kast /usr/local/bin/kast
+
+# NOTE: Cloud scanning (app/cloud) shells out to `terraform`, which is NOT
+# installed here — it would add ~80MB to an image most deployments do not use
+# it in. Local and remote ZAP execution modes work without it. For cloud mode,
+# bind-mount a terraform binary or extend this image:
+#   RUN curl -fsSL https://releases.hashicorp.com/terraform/... -o /tmp/tf.zip \
+#       && unzip /tmp/tf.zip -d /usr/local/bin && rm /tmp/tf.zip
 
 # ---------------------------------------------------------------------------
 # Scan results + database are stateful — declare as a volume so Docker

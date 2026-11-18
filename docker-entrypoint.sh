@@ -1,15 +1,22 @@
 #!/bin/sh
 set -e
 
+# POSIX sh only. The base image's /bin/sh is dash, which has no array slicing:
+# an earlier version used "${@:2}" and every container exited immediately with
+# "Bad substitution". Use shift + "$@" instead.
+
 case "$1" in
     serve)
-        exec kast-web serve --host 0.0.0.0 "${@:2}"
+        shift
+        exec kast-web serve --host 0.0.0.0 "$@"
         ;;
     worker)
-        exec kast-web worker "${@:2}"
+        shift
+        exec kast-web worker "$@"
         ;;
     dev)
-        exec kast-web dev --host 0.0.0.0 "${@:2}"
+        shift
+        exec kast-web dev --host 0.0.0.0 "$@"
         ;;
     *)
         exec "$@"

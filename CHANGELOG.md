@@ -9,6 +9,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — packaging
+
+- **The Docker image never ran.** `docker-entrypoint.sh` carried `#!/bin/sh` but used `"${@:2}"`, a bash array slice. The base image's `/bin/sh` is dash, so every container exited immediately with `Bad substitution` — including the Docker quick start the README recommends. Rewritten in POSIX `sh` using `shift` and `"$@"`. Verified: the web role serves `/auth/login` with 200, the worker role starts Celery, and the HEALTHCHECK goes healthy.
+- **Wheels shipped the cloud module without its Terraform configs.** `pyproject.toml` declared only `templates` and `static` as package data, so `app/cloud/terraform/{aws,azure,gcp}/*.tf` — which `TerraformManager` resolves relative to its own `__file__` at runtime — were absent from the built wheel. A pipx install would have failed at `terraform init`. Verified by installing the wheel into a clean virtualenv and resolving all three provider directories.
+- **Docker stored report logos where they could not be written and would not persist.** The image created and chowned `/app/app/static/uploads/logos`, the pre-2.0.14 location, while `LOGO_STORAGE_DIR` fell back to `/app/instance/logos` — a root-owned path outside the declared volume, so uploads failed for the non-root runtime user and anything written there was lost on container removal. The image now sets `LOGO_STORAGE_DIR=/var/lib/kast-web/logos` and creates it on the volume.
+
 ### Changed
 
 - **One install path, no `2` suffix.** kast-web 2.0 installs at `/opt/kast-web` with data under `/var/lib/kast-web`, served by the `kast-web` and `kast-celery` units — the same paths and service names 1.x used. The `/opt/kast-web2` parallel-install layout is gone: `deployment/systemd/kast-web2.service`, `kast-celery2.service` and `deployment/nginx/kast-web2.conf` are removed (the first two differed from their non-suffixed siblings only by a `Description` string; the nginx one hardcoded a dev hostname and the parallel-install port), and `scripts/deploy-v2.sh` and `rollback-v2.sh` now target the real install.

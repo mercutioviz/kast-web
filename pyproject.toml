@@ -74,6 +74,11 @@ py-modules = [
 "app" = [
     "templates/**/*",
     "static/**/*",
+    # Terraform configs are runtime assets, not source. TerraformManager
+    # resolves them as Path(__file__).parent / "terraform" / <provider>, so a
+    # wheel without them installs the cloud module pointing at a directory
+    # that does not exist and every provision fails at `terraform init`.
+    "cloud/terraform/**/*",
 ]
 
 # ---------------------------------------------------------------------------
