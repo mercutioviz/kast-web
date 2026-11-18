@@ -661,6 +661,60 @@ equivalent to 401 for anonymous.
 - **Expect:** 200; empty-state messaging if no cloud scans
 - **Evidence:** screenshot
 
+### TC-CLOUD-FULL-103 — editing a credential must not destroy the stored secret
+- **Role:** t_admin
+- **Steps:** create a credential with a known secret; then edit it changing ONLY the
+  name (or only `is_active`), leaving the `credentials_json` textarea at its
+  placeholder; re-read the decrypted credentials
+- **Expect:** the stored secret is unchanged. The edit form deliberately shows
+  `{ "...": "credentials stored — paste new JSON to replace" }` and never
+  re-displays the secret; saving that placeholder must be a no-op, not a write.
+- **Evidence:** decrypted `CloudCredential.credentials` before and after
+- **History:** failed 2026-11-18 — the placeholder was written over the real
+  secret, destroying it irrecoverably. See the run report.
+
+### TC-CLOUD-FULL-112 — `/api/cloud/scans/<scan_id>/status`
+- **Role:** t_admin
+- **Pre:** a CloudScan row exists for that scan
+- **Expect:** 200 JSON with `cloud_scan_id`, `status`, `zap_url`, `error_message`
+- **Evidence:** JSON
+
+### TC-CLOUD-FULL-113 — every CloudScan status is reachable in the admin UI
+- **Role:** t_admin
+- **Steps:** seed one CloudScan per status the code actually assigns
+  (`provisioning, scanning, tearing_down, failed, orphaned, torn_down, scheduled,
+  running, manual_review, completed`), then view `/admin/cloud/scans` under each
+  filter (`active`, `failed`, `completed`)
+- **Expect:** every seeded row is visible under at least one filter
+- **History:** failed 2026-11-18 — `scheduled`, `running`, `manual_review` and
+  `completed` appear under no filter and are invisible in the admin UI.
+
+### TC-CLOUD-FULL-114 — cloud admin surfaces are admin-only
+- **Role:** t_power, t_user, t_viewer (negative); t_admin (control)
+- **Routes:** `/admin/cloud/credentials`, `/admin/cloud/credentials/new`,
+  `/admin/cloud/scans`, `/admin/cloud/orphans`, `/api/cloud/orphans`
+- **Expect:** non-admins refused on every route; **t_admin reaches all of them**
+  (the control — a route that 404s or 500s for everyone would otherwise read as
+  "denied")
+- **Evidence:** status matrix including the admin column
+
+### TC-CLOUD-FULL-115 — `/api/cloud/orphans/<id>/cleanup`
+- **Role:** t_admin (positive), t_user / t_viewer (negative)
+- **Expect:** non-admins refused; admin POST with a valid CSRF token returns
+  200 `{ok: true}`, increments `cleanup_attempts`, and writes a
+  `cloud_orphan_cleanup` AuditLog row. The page supplies the token from
+  `<meta name="csrf-token">`, not a form field.
+- **Evidence:** JSON; DB row; AuditLog
+
+> **Note on TC-CLOUD-FULL-100/101/102:** the "edit credential and verify decrypted
+> form prepopulates" step is **wrong** and should not be restored. The form
+> deliberately never re-displays a stored secret. Assert the placeholder instead,
+> and see TC-CLOUD-FULL-103.
+
+> **Note on TC-CLOUD-FULL-111:** assert the page with **rows present**, not just
+> empty. It returned 200 on an empty table while 500ing on any real row for the
+> whole of Phase D — the empty-state-only assertion was a vacuous pass.
+
 > **Out of scope (live):** terraform apply, real instance provisioning,
 > `cloud_provision_task` end-to-end. Cover those in a manual pre-release gate.
 

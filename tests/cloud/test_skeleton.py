@@ -131,9 +131,15 @@ def test_terraform_manager_init():
 
 
 def test_terraform_manager_state_path():
-    from app.cloud.terraform_manager import TerraformManager
+    # kast-web 2.0 installs in place under /var/lib/kast-web; the earlier
+    # /var/lib/kast-web2 parallel-install layout is not what ships. Assert
+    # against the module constant rather than a second hardcoded literal, so
+    # this test tracks the code instead of drifting from it again.
+    from app.cloud.terraform_manager import TerraformManager, _CLOUD_STATE_BASE
+
+    assert _CLOUD_STATE_BASE == '/var/lib/kast-web/cloud_state'
     tm = TerraformManager(provider='aws', scan_id=42)
-    assert tm.state_path == '/var/lib/kast-web2/cloud_state/42'
+    assert tm.state_path == f'{_CLOUD_STATE_BASE}/42'
 
 
 # ---------------------------------------------------------------------------

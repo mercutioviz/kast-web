@@ -11,6 +11,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The cloud scans admin page returned 500 as soon as it had anything to show.** `/admin/cloud/scans` rendered fine with an empty table but failed for every filter once any `CloudScan` row matched, because `admin/cloud/scans.html` linked via `url_for('scans.view_scan', ...)` — an endpoint that does not exist. Corrected to `scans.detail`. The page had been broken for the whole of Phase D; it only ever worked in the empty state.
+- **Four migration scripts targeted a database path that does not exist.** `migrate_ai_byok.py`, `migrate_ai_user_config.py`, `migrate_ai_v1.py` and `migrate_cloud_v2.py` hardcoded `/var/lib/kast-web2/kast.db`, from the abandoned parallel-install layout. kast-web 2.0 installs in place under `/var/lib/kast-web`, so these would have failed outright. They now resolve the database from `DATABASE_URL` with the in-place path as the fallback, matching the other migrations.
+
 - **A scan configuration profile could not be saved unless it was also renamed.** Editing a profile and keeping its name failed with "A profile with this name already exists. Please choose a different name." and saved nothing. `ScanConfigProfileForm` guards its uniqueness check on `self.obj` so an edit can exclude its own row, but the edit route built the form as `ScanConfigProfileForm(obj=profile)` — the WTForms constructor kwarg, which pre-fills field data and does not set `self.obj` — so the guard never applied and every edit collided with the profile's own record. Now sets `form.obj = profile`, matching the ZAP plan and configuration edit routes. Uniqueness is still enforced: renaming onto another profile's name, and creating a profile with an existing name, are both still refused.
 
 ### Security
