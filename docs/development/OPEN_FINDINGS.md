@@ -102,9 +102,11 @@ and a redirect. Either implement it or remove the control before the tag.
 
 ## 4. Smaller observations
 
-- **No favicon.** `app/static/favicon.ico` does not exist, so every page logs a
-  404 in the browser console. Harmless, but it trips any "no console errors"
-  assertion — `TC-SCAN-002` among them.
+- **`/favicon.ico` 404s on every page.** The file *does* exist, at
+  `app/static/images/favicon.ico` — it simply is not served at the root path
+  browsers request. Harmless, but it trips any "no console errors" assertion,
+  `TC-SCAN-002` among them. (Corrected 2026-11-18: an earlier note here said
+  the file was missing.)
 - **`scan_results.status` is not maintained.** It holds `unknown` for most
   plugin rows while `/api/scans/<id>/status` derives completion from
   `executed_at`. Two sources of truth; the column looks authoritative and is not.
