@@ -86,6 +86,11 @@ Write to `tests/runs/YYYY-MM-DD-HHMM-<tier>.md`:
 
 Tell the user the report path and summary line. Don't dump the full table into chat.
 
+`tests/runs/` is gitignored, so reports do not survive the machine. Any finding
+that is **not fixed in the same session** must also be added to
+`docs/development/OPEN_FINDINGS.md`, which is tracked. Delete the entry when it
+is fixed, and leave a case behind to guard it.
+
 ### 5. Tear down
 
 Unless invoked with `--keep-env`, run `scripts/test-env-down.sh` (without `--wipe`). The test DB persists across runs so users created via the UI (TC-AUTH-010) stay available. Run with `--wipe` only when the user asks for a clean slate.

@@ -25,6 +25,8 @@ Authoritative planning docs live in the kast repo at `/home/mscollins/kast/docs/
 
 **Current focus: Phase E — release polish + tagging.** This is what stands between "code is done" and the coordinated kast 3.0 / kast-web 2.0 release. Items in flight: pyproject.toml + pipx packaging, Dockerfile, README rewrite, v2→v3 migration guide for kast users, CHANGELOG, coordinated release tagging.
 
+**Known-unfixed defects live in `docs/development/OPEN_FINDINGS.md`.** Test reports under `tests/runs/` are gitignored, so that file is the tracked record — check it before planning release work, and delete entries as they are fixed. Public-cloud (`app/cloud/`) fixes are deliberately **low priority** as of 2026-11-18 and are not release blockers.
+
 ## Critical: contracts frozen for v3.0
 
 Do not change these surfaces without explicit, coordinated planning:
