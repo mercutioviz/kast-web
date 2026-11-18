@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A scan configuration profile could not be saved unless it was also renamed.** Editing a profile and keeping its name failed with "A profile with this name already exists. Please choose a different name." and saved nothing. `ScanConfigProfileForm` guards its uniqueness check on `self.obj` so an edit can exclude its own row, but the edit route built the form as `ScanConfigProfileForm(obj=profile)` — the WTForms constructor kwarg, which pre-fills field data and does not set `self.obj` — so the guard never applied and every edit collided with the profile's own record. Now sets `form.obj = profile`, matching the ZAP plan and configuration edit routes. Uniqueness is still enforced: renaming onto another profile's name, and creating a profile with an existing name, are both still refused.
+
 ### Security
 
 - **The `viewer` role is now enforced.** `viewer` is documented as "Read-only access", but nothing in the application ever checked it: `POST /scan/new` carried only `@login_required`, so a viewer could create and run scans, and `POST /logos/upload` and the URL-import routes had no role check either, so a viewer could add report logos — shared, prospect-facing whitelabeling assets. Both were confirmed by executing them against a test instance. New `User.can_run_scans` and `User.can_manage_logos` properties provide the missing floor beneath the existing `can_run_active_scans`, gating `/scan/new`, `/logos/upload`, `/logos/import/fetch` and `/logos/import/confirm`. The scan form and the Add Logo controls are hidden from viewers as well, but the server-side checks are the boundary. Active scans were already correctly refused for viewers, so the exposure was passive scans and logo creation.

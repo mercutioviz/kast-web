@@ -323,6 +323,23 @@ Smoke +:
 - **Expect:** scan row references profile id; profile settings applied
 - **Evidence:** DB
 
+### TC-CFG-103 — edit a profile without renaming it
+- **Role:** t_admin
+- **Pre:** two profiles exist, A and B
+- **Steps:** edit A changing only its description, keeping its own name
+- **Expect:** 302, description saved. Editing a record must not collide with its own row.
+- **Controls (all required — a fix here must not simply disable the uniqueness check):**
+  - rename A to B's existing name → refused, 200, A unchanged, error "A profile with this name already exists."
+  - rename A to a genuinely unused name → 302, saved
+  - create a new profile using B's name → refused, 200, no row created
+- **Evidence:** HTTP status + DB row per step
+- **History:** failed on 2026-11-18. `app/forms.py:769` guards the uniqueness
+  check on `self.obj`, but `config_profiles.py` built the form as
+  `ScanConfigProfileForm(obj=profile)` — the WTForms constructor kwarg, which
+  pre-fills fields and does not set `self.obj` — so the guard never applied and
+  every edit collided with its own row. Fixed by adding `form.obj = profile`,
+  matching `zap_admin.py:140` and `:456`.
+
 ## ZAP plans + configs (no container ops in this tier)
 
 ### TC-ZAP-100 — plan CRUD

@@ -119,7 +119,8 @@ def edit_profile(profile_id):
     """Edit a configuration profile"""
     profile = ScanConfigProfile.query.get_or_404(profile_id)
     form = ScanConfigProfileForm(obj=profile)
-    
+    form.obj = profile  # Store for name validation
+
     if form.validate_on_submit():
         try:
             # Validate YAML syntax
