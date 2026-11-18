@@ -146,6 +146,14 @@ def index():
 @login_required
 def create_scan():
     """Create and execute a new scan"""
+    # Baseline permission. Everything below gates an *elevated* capability
+    # (active mode, config profiles, overrides, ZAP plans, remote runners) and
+    # assumes the user may create a scan in the first place; read-only roles
+    # may not. Checked before any form work so a denied request does no work.
+    if not current_user.can_run_scans:
+        flash('You do not have permission to run scans. Your account is read-only.', 'danger')
+        return redirect(url_for('main.index'))
+
     form = ScanConfigForm()
     
     # Populate plugin choices for validation

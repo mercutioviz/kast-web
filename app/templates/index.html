@@ -19,6 +19,16 @@
                 <h4 class="mb-0"><i class="bi bi-play-circle"></i> New Scan</h4>
             </div>
             <div class="card-body">
+                {% if not current_user.can_run_scans %}
+                {# Read-only roles cannot create scans; the server refuses the
+                   POST regardless, this just avoids offering an action that
+                   will be denied. #}
+                <div class="alert alert-secondary mb-0">
+                    <i class="bi bi-eye"></i>
+                    Your account has read-only access, so you cannot start scans.
+                    Contact an administrator if you need to run one.
+                </div>
+                {% else %}
                 <form method="POST" action="{{ url_for('main.create_scan') }}">
                     {{ form.hidden_tag() }}
                     
@@ -434,6 +444,7 @@
                         </button>
                     </div>
                 </form>
+                {% endif %}
                 {% if can_run_active %}
                 <div class="text-center mt-3">
                     <a href="{{ url_for('main.batch_scan') }}" class="btn btn-outline-primary">

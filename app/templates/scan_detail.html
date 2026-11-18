@@ -1016,12 +1016,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="public-link-tab" data-bs-toggle="tab" 
-                                data-bs-target="#public-link" type="button" role="tab">
-                            <i class="bi bi-link-45deg"></i> Public Link
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
                         <button class="nav-link" id="current-shares-tab" data-bs-toggle="tab" 
                                 data-bs-target="#current-shares" type="button" role="tab"
                                 onclick="loadShares()">
@@ -1065,40 +1059,14 @@ document.addEventListener('DOMContentLoaded', function() {
                         </form>
                     </div>
                     
-                    <!-- Public Link Tab -->
-                    <div class="tab-pane fade" id="public-link" role="tabpanel">
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> Public links allow anyone with the link to view this scan without logging in. 
-                            Links are view-only and will expire after the specified period.
-                        </div>
-                        
-                        <form method="POST" action="{{ url_for('scans.generate_public_link', scan_id=scan.id) }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <div class="mb-3">
-                                <label for="expires_in_days_public" class="form-label">Expires in (days)</label>
-                                <input type="number" class="form-control" id="expires_in_days_public" 
-                                       name="expires_in_days" value="7" min="1" max="365" required>
-                                <small class="form-text text-muted">Public links must have an expiration date</small>
-                            </div>
-                            
-                            <button type="submit" class="btn btn-success">
-                                <i class="bi bi-link-45deg"></i> Generate Public Link
-                            </button>
-                        </form>
-                        
-                        <div id="public-link-display" class="mt-4" style="display: none;">
-                            <div class="alert alert-success">
-                                <strong>Public Link Generated!</strong>
-                                <div class="input-group mt-2">
-                                    <input type="text" class="form-control" id="public-link-url" readonly>
-                                    <button class="btn btn-outline-secondary" type="button" onclick="copyPublicLink()">
-                                        <i class="bi bi-clipboard"></i> Copy
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
+                    {# Public Link tab removed for 2.0.
+                       The feature was never functional: generate_public_link minted and
+                       stored a token but no route ever consumed it and no URL was ever
+                       surfaced, so the UI reported success and produced a dead link.
+                       See docs/development/V2.0_RELEASE_DEFECTS.md. Internal
+                       user-to-user sharing below is unaffected. Restore this tab
+                       together with a consuming route, not before. #}
+
                     <!-- Current Shares Tab -->
                     <div class="tab-pane fade" id="current-shares" role="tabpanel">
                         <div id="shares-loading" class="text-center">
@@ -1196,13 +1164,6 @@ function loadShares() {
             document.getElementById('shares-loading').style.display = 'none';
             alert('Error loading shares');
         });
-}
-
-function copyPublicLink() {
-    const input = document.getElementById('public-link-url');
-    input.select();
-    document.execCommand('copy');
-    alert('Link copied to clipboard!');
 }
 
 // Load users for sharing dropdown when modal opens

@@ -7,6 +7,16 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Security
+
+- **The `viewer` role is now enforced.** `viewer` is documented as "Read-only access", but nothing in the application ever checked it: `POST /scan/new` carried only `@login_required`, so a viewer could create and run scans, and `POST /logos/upload` and the URL-import routes had no role check either, so a viewer could add report logos — shared, prospect-facing whitelabeling assets. Both were confirmed by executing them against a test instance. New `User.can_run_scans` and `User.can_manage_logos` properties provide the missing floor beneath the existing `can_run_active_scans`, gating `/scan/new`, `/logos/upload`, `/logos/import/fetch` and `/logos/import/confirm`. The scan form and the Add Logo controls are hidden from viewers as well, but the server-side checks are the boundary. Active scans were already correctly refused for viewers, so the exposure was passive scans and logo creation.
+
+### Removed
+
+- **Public share links are disabled.** The scan detail page advertised links that let "anyone with the link view this scan without logging in", and generating one reported success — but the feature was never functional. `POST /scans/<id>/share/public` minted a token, stored it on a `ScanShare` row and wrote an audit entry, yet no route ever consumed the token and no URL was ever surfaced in the UI, so the user got a success message and a dead link. Dead since sharing was introduced in 2025-11-20. The tab is removed and the endpoint refuses with an explanatory message rather than continuing to mint unusable tokens; set `PUBLIC_SHARE_LINKS_ENABLED` in `app/routes/scans.py` back to `True` once a route that serves a scan by token exists. **Sharing a scan with a specific user is unaffected and continues to work.**
+
 ## [2.0.15] — 2026-11-09
 
 ### Added

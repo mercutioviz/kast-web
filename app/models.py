@@ -60,7 +60,30 @@ class User(UserMixin, db.Model):
     def can_run_active_scans(self):
         """Check if user can run active scans"""
         return self.role in ('admin', 'power_user')
-    
+
+    @property
+    def can_run_scans(self):
+        """Check if user may create scans at all.
+
+        The floor beneath can_run_active_scans: 'viewer' is a read-only role
+        and may not start scans of any mode. Everything that gates an
+        *elevated* scan capability (active mode, config profiles, overrides,
+        ZAP plans, remote runners) assumes this baseline has already been
+        checked.
+        """
+        return self.role in ('admin', 'power_user', 'user')
+
+    @property
+    def can_manage_logos(self):
+        """Check if user may add report logos (upload or URL import).
+
+        Report logos are shared, prospect-facing whitelabeling assets, so the
+        same read-only floor applies. Deleting a logo is gated separately to
+        admin-or-uploader.
+        """
+        return self.role in ('admin', 'power_user', 'user')
+
+
     def to_dict(self):
         """Convert user to dictionary"""
         return {

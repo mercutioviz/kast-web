@@ -13,6 +13,13 @@ import shutil
 
 bp = Blueprint('scans', __name__, url_prefix='/scans')
 
+# Public share links are disabled for 2.0: the feature mints a token but
+# nothing consumes it, so it produced a success message and a dead link.
+# See docs/development/V2.0_RELEASE_DEFECTS.md. Turning this back on requires
+# a route that serves a scan by token (expiry and revocation enforced) and UI
+# that actually surfaces the URL.
+PUBLIC_SHARE_LINKS_ENABLED = False
+
 
 def check_scan_access(scan, required_permission='view'):
     """
@@ -1131,7 +1138,25 @@ def share_with_user(scan_id):
 @bp.route('/<int:scan_id>/share/public', methods=['POST'])
 @login_required
 def generate_public_link(scan_id):
-    """Generate public sharing link"""
+    """Generate public sharing link.
+
+    DISABLED FOR 2.0. The feature was never functional end to end: this
+    endpoint minted a token, stored it on a ScanShare row, wrote an AuditLog
+    entry and flashed "Public link generated successfully" -- but no route
+    ever consumed the token and no URL was ever surfaced in the UI, so the
+    user got a success message and no link. See
+    docs/development/V2.0_RELEASE_DEFECTS.md.
+
+    Refused here rather than left reachable so a stale client or bookmark
+    cannot keep minting dead tokens and bogus audit entries. The UI tab is
+    removed in templates/scan_detail.html. Flip PUBLIC_SHARE_LINKS_ENABLED
+    back on together with a route that consumes the token, not before.
+    """
+    if not PUBLIC_SHARE_LINKS_ENABLED:
+        flash('Public sharing links are not available in this version. '
+              'Share the scan with a specific user instead.', 'info')
+        return redirect(url_for('scans.detail', scan_id=scan_id))
+
     scan = db.session.get(Scan, scan_id)
     if not scan:
         flash('Scan not found', 'danger')

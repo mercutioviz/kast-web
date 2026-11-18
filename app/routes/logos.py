@@ -92,6 +92,11 @@ def manage():
 @login_required
 def upload():
     """Upload a new logo"""
+    # Report logos are shared, prospect-facing assets; read-only roles may not
+    # add them. Deletion is gated separately to admin-or-uploader.
+    if not current_user.can_manage_logos:
+        flash('You do not have permission to add logos. Your account is read-only.', 'danger')
+        return redirect(url_for('logos.manage'))
     # Check if file was uploaded
     if 'logo_file' not in request.files:
         flash('No file uploaded', 'danger')
@@ -280,6 +285,10 @@ def set_default(logo_id):
 @login_required
 def import_fetch():
     """Fetch an image from a user-supplied URL and stage it for confirmation"""
+    # Report logos are shared, prospect-facing assets; read-only roles may not
+    # add them. Deletion is gated separately to admin-or-uploader.
+    if not current_user.can_manage_logos:
+        return jsonify({'error': 'You do not have permission to add logos.'}), 403
     payload = request.get_json(silent=True) or {}
     url = (payload.get('url') or '').strip()
 
@@ -379,6 +388,11 @@ def import_preview(token):
 @login_required
 def import_confirm():
     """Promote a staged import into a real logo"""
+    # Gated as well as import_fetch: confirm is the step that actually creates
+    # the row, so it must not rely on fetch having refused first.
+    if not current_user.can_manage_logos:
+        return jsonify({'error': 'You do not have permission to add logos.'}), 403
+
     payload = request.get_json(silent=True) or {}
     token = (payload.get('token') or '').strip()
     name = (payload.get('name') or '').strip()

@@ -149,7 +149,7 @@ Must pass before any release. Aborts on first blocker.
 - **Positive control (required):** submit the identical payload as `t_user`, who *should* succeed. If the control does not create a scan, the payload is malformed and this case proves nothing — fix the payload before trusting the result.
 - **Expect:** 403 or flash denial; no new row in `scans` table
 - **Evidence:** HTTP status; sqlite count before/after; the control's scan id
-- **Known failure (2026-11-17):** currently FAILS. `t_viewer` creates scans; `/scan/new` has no role gate. See `docs/development/V2.0_RELEASE_DEFECTS.md`.
+- **History:** failed on 2026-11-17 — `t_viewer` could create scans. Fixed by the `can_run_scans` gate on `/scan/new`; this case is the regression guard for it.
 
 ### TC-AUTHZ-SMOKE-003 — t_user cannot submit active scan
 - **Tier:** smoke
