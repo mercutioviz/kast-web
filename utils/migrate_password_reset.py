@@ -13,7 +13,20 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-DB_PATH = Path('/var/lib/kast-web/kast.db')
+REPO_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+# Load .env before resolving the database so DATABASE_URL resolves the same way
+# it does under run.py / celery_worker.py.
+from dotenv import load_dotenv
+load_dotenv(REPO_ROOT / '.env')
+
+from utils.migration_tracker import resolve_db_path
+
+# The DDL below runs through db.engine (create_app), which honours DATABASE_URL.
+# Resolve the backup target the same way so the backup is taken of the database
+# actually being migrated, falling back to the production path when unset.
+DB_PATH = resolve_db_path('sqlite:////var/lib/kast-web/kast.db')
 
 
 def _backup_db():
