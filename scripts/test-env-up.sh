@@ -8,6 +8,7 @@
 #   - Ensures /var/lib/kast-web-test/ exists (uses sudo on first run).
 #   - Creates a Python venv at ./venv if missing and installs requirements.
 #   - Pulls + starts juice-shop and WebGoat Docker containers on loopback.
+#   - Checks the test DB schema against the models and refuses to start on drift.
 #   - Seeds the t_admin user in the test DB.
 #   - Starts gunicorn on TEST_FLASK_PORT and a Celery worker against test redis.
 #   - Waits for the server to respond.
@@ -34,6 +35,9 @@ CELERY_LOG="/tmp/kw-test-celery.log"
 
 log()  { printf '[test-env-up] %s\n' "$*"; }
 die()  { printf '[test-env-up] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# shellcheck source=scripts/test-env-common.sh
+source "$REPO_ROOT/scripts/test-env-common.sh"
 
 # 1. Generate .env.test on first run -----------------------------------------
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -106,13 +110,34 @@ start_container() {
 start_container kw-test-juiceshop bkimminich/juice-shop "$TEST_JUICESHOP_PORT" 3000
 start_container kw-test-webgoat   webgoat/goatandwolf "$TEST_WEBGOAT_PORT" 8080
 
-# 7. Seed admin (db.create_all happens inside seed via create_app) ------------
+# 7. Port precondition --------------------------------------------------------
+# Checked before anything is started, so a blocked port cannot leave a half-built
+# environment (an orphaned celery worker) behind when we bail out.
+if [[ -z "$(find_test_gunicorn "$TEST_FLASK_PORT")" ]] && port_in_use "$TEST_FLASK_PORT"; then
+    die "port ${TEST_FLASK_PORT} is in use but not by a gunicorn from ${VENV_DIR}.
+       Holder: $( (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep ":${TEST_FLASK_PORT}[[:space:]]" | head -1 )
+       If that is a stale test process, stop it with scripts/test-env-down.sh.
+       Note the production install listens on its own port via systemd -- do not kill that."
+fi
+
+# 8. Schema drift check -------------------------------------------------------
+# create_all() (run inside the seed below) creates missing tables but never
+# adds columns to existing ones, and nothing here runs utils/migrate_*.py. On a
+# persistent test DB that means silent drift, surfacing as an OperationalError
+# somewhere deep in the seed. Check first and fail with a readable list.
+if ! python3 utils/check_test_schema.py; then
+    die "test database schema is behind the models (see above)"
+fi
+
+# 9. Seed admin (db.create_all happens inside seed via create_app) ------------
 log "seeding $TEST_ADMIN_USERNAME"
 python3 utils/seed_test_admin.py
 
-# 8. Start Celery worker ------------------------------------------------------
-if [[ -f "$CELERY_PID_FILE" ]] && kill -0 "$(cat "$CELERY_PID_FILE")" 2>/dev/null; then
-    log "celery already running (pid $(cat "$CELERY_PID_FILE"))"
+# 10. Start Celery worker -----------------------------------------------------
+celery_pids=$(find_test_celery)
+if [[ -n "$celery_pids" ]]; then
+    log "celery already running (pid $(echo "$celery_pids" | tr '\n' ' '))"
+    echo "$celery_pids" | head -1 >"$CELERY_PID_FILE"
 else
     log "starting celery worker -> $CELERY_LOG"
     nohup celery -A celery_worker.celery worker --loglevel=info \
@@ -120,9 +145,11 @@ else
     echo $! >"$CELERY_PID_FILE"
 fi
 
-# 9. Start gunicorn -----------------------------------------------------------
-if [[ -f "$FLASK_PID_FILE" ]] && kill -0 "$(cat "$FLASK_PID_FILE")" 2>/dev/null; then
-    log "gunicorn already running (pid $(cat "$FLASK_PID_FILE"))"
+# 11. Start gunicorn ----------------------------------------------------------
+gunicorn_pids=$(find_test_gunicorn "$TEST_FLASK_PORT")
+if [[ -n "$gunicorn_pids" ]]; then
+    log "gunicorn already running (pid $(echo "$gunicorn_pids" | tr '\n' ' '))"
+    echo "$gunicorn_pids" | head -1 >"$FLASK_PID_FILE"
 else
     log "starting gunicorn on 127.0.0.1:${TEST_FLASK_PORT} -> $FLASK_LOG"
     nohup gunicorn --bind "127.0.0.1:${TEST_FLASK_PORT}" \
@@ -131,7 +158,7 @@ else
     echo $! >"$FLASK_PID_FILE"
 fi
 
-# 10. Health check ------------------------------------------------------------
+# 12. Health check ------------------------------------------------------------
 log "waiting for server to come up"
 for i in $(seq 1 30); do
     if curl -sf "http://127.0.0.1:${TEST_FLASK_PORT}/auth/login" >/dev/null; then
